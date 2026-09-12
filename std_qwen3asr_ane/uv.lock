@@ -1839,7 +1839,7 @@ wheels = [
 [[package]]
 name = "standard-asr"
 version = "0.2.0.dev0"
-source = { git = "https://github.com/standard-voice/standard_asr.git?rev=main#3383126e165358e63be1971a671d2a52ffceace6" }
+source = { git = "https://github.com/standard-voice/standard_asr.git?rev=main#b63bb73bdef9be436fbae182d630452fe3a88f0b" }
 dependencies = [
     { name = "numpy" },
     { name = "pydantic" },

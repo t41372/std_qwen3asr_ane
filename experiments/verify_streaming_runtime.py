@@ -34,6 +34,16 @@ async def stream(engine, samples, *, realtime):
         async for event in session:
             events.append(event)
             arrival.append(perf_counter() - started)
+            print(
+                json.dumps(
+                    {
+                        "wall_seconds": arrival[-1],
+                        "event": event.model_dump(mode="json"),
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
     report = check_event_sequence(events, capabilities=engine.declared_capabilities)
     result = session.result()
     result_report = check_transcription_result(
@@ -64,22 +74,30 @@ def main():
     engine = discover_models(strict=True).create(
         "std-qwen3asr-ane/1.7b", model_dir=args.model_dir, stream_chunk_seconds=1.0
     )
-    started = perf_counter()
-    engine.prepare()
-    loaded = perf_counter() - started
-    samples, digest = audio_samples(args.audio)
-    report = asyncio.run(stream(engine, samples, realtime=args.realtime))
-    report.update(model_load_seconds=loaded, audio_sha256=digest)
-    batch = engine.transcribe((samples, 16000))
-    report["batch_result"] = batch.model_dump(mode="json")
-    report["stream_matches_batch"] = report["result"]["text"] == batch.text
-    if args.silence:
-        report["silence"] = []
-        for seconds in (0.1, 0.5, 5.0, 29.99):
-            result = engine.transcribe(
-                (np.zeros(round(seconds * 16000), np.float32), 16000)
-            )
-            report["silence"].append({"audio_seconds": seconds, "text": result.text})
+    report = {}
+    try:
+        started = perf_counter()
+        engine.prepare()
+        loaded = perf_counter() - started
+        samples, digest = audio_samples(args.audio)
+        report = asyncio.run(stream(engine, samples, realtime=args.realtime))
+        report.update(model_load_seconds=loaded, audio_sha256=digest)
+        batch = engine.transcribe((samples, 16000))
+        report["batch_result"] = batch.model_dump(mode="json")
+        report["stream_matches_batch"] = report["result"]["text"] == batch.text
+        if args.silence:
+            report["silence"] = []
+            for seconds in (0.1, 0.5, 5.0, 29.99):
+                result = engine.transcribe(
+                    (np.zeros(round(seconds * 16000), np.float32), 16000)
+                )
+                report["silence"].append(
+                    {"audio_seconds": seconds, "text": result.text}
+                )
+    finally:
+        close_started = perf_counter()
+        engine.close()
+        report["explicit_close_seconds"] = perf_counter() - close_started
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps(report, ensure_ascii=False, indent=2))

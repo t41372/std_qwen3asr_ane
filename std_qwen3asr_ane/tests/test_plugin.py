@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import time
@@ -48,9 +49,24 @@ def bundle(tmp_path: Path) -> Path:
     for filename in files.values():
         payload = tmp_path / filename
         if payload.suffix == ".mlpackage":
-            payload.mkdir()
-            payload /= "Manifest.json"
-        payload.write_text("{}")
+            data = payload / "Data/com.apple.CoreML"
+            (data / "weights").mkdir(parents=True)
+            (data / "model.mlmodel").write_bytes(b"model specification fixture")
+            (data / "weights/custom-name.bin").write_bytes(b"weight fixture")
+            (payload / "Manifest.json").write_text(
+                json.dumps(
+                    {
+                        "fileFormatVersion": "1.0.0",
+                        "itemInfoEntries": {
+                            "model": {"path": "com.apple.CoreML/model.mlmodel"},
+                            "weights": {"path": "com.apple.CoreML/weights"},
+                        },
+                        "rootModelIdentifier": "model",
+                    }
+                )
+            )
+        else:
+            payload.write_text("{}")
     (tmp_path / "manifest.json").write_text(
         json.dumps(
             {
@@ -205,6 +221,81 @@ def test_manifest_cannot_escape_bundle(bundle: Path) -> None:
     manifest["files"]["tokenizer"] = "../outside.json"
     path.write_text(json.dumps(manifest))
     assert create_engine(model_dir=bundle).artifact_status().requirements[0].state == "corrupt"
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "Data/com.apple.CoreML/weights/custom-name.bin",
+        "Data/com.apple.CoreML/weights",
+        "Data/com.apple.CoreML/model.mlmodel",
+        "Data",
+    ],
+)
+def test_package_missing_payload_is_incomplete(bundle: Path, relative: str):
+    path = bundle / "frontend.mlpackage" / relative
+    shutil.rmtree(path) if path.is_dir() else path.unlink()
+    assert create_engine(model_dir=bundle).artifact_status().requirements[0].state == "incomplete"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"itemInfoEntries": []},
+        {"rootModelIdentifier": "absent"},
+        {"itemInfoEntries": {"model": {"path": "../../../outside.bin"}}},
+        {"itemInfoEntries": {"model": {"path": "/outside.bin"}}},
+        {"itemInfoEntries": {"model": {"path": "invalid\u0000path"}}},
+    ],
+)
+def test_package_malformed_manifest_is_corrupt(bundle: Path, change: dict):
+    path = bundle / "frontend.mlpackage/Manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest.update(change)
+    path.write_text(json.dumps(manifest))
+    assert create_engine(model_dir=bundle).artifact_status().requirements[0].state == "corrupt"
+
+
+def test_package_invalid_json_is_corrupt(bundle: Path):
+    (bundle / "frontend.mlpackage/Manifest.json").write_text("{")
+    assert create_engine(model_dir=bundle).artifact_status().requirements[0].state == "corrupt"
+
+
+@pytest.mark.parametrize("relative", ["Data/com.apple.CoreML/weights", "Data", "Manifest.json"])
+def test_package_symlink_escape_is_corrupt(bundle: Path, relative: str):
+    package = bundle / "frontend.mlpackage"
+    outside = bundle / "outside-package"
+    source = package / relative
+    if source.is_dir():
+        shutil.copytree(source, outside)
+        shutil.rmtree(source)
+    else:
+        outside.write_bytes(source.read_bytes())
+        source.unlink()
+    source.symlink_to(outside, target_is_directory=outside.is_dir())
+    assert create_engine(model_dir=bundle).artifact_status().requirements[0].state == "corrupt"
+
+
+def test_package_nested_weight_symlink_escape_is_corrupt(bundle: Path):
+    outside = bundle / "unrelated.bin"
+    outside.write_bytes(b"not package weights")
+    (bundle / "frontend.mlpackage/Data/com.apple.CoreML/weights/extra.bin").symlink_to(outside)
+    assert create_engine(model_dir=bundle).artifact_status().requirements[0].state == "corrupt"
+
+
+def test_weightless_inline_package_is_ready(bundle: Path):
+    package = bundle / "frontend.mlpackage"
+    path = package / "Manifest.json"
+    manifest = json.loads(path.read_text())
+    del manifest["itemInfoEntries"]["weights"]
+    path.write_text(json.dumps(manifest))
+    shutil.rmtree(package / "Data/com.apple.CoreML/weights")
+    assert create_engine(model_dir=bundle).artifact_status().readiness == "ready"
+
+
+def test_empty_weight_payload_is_incomplete(bundle: Path):
+    (bundle / "frontend.mlpackage/Data/com.apple.CoreML/weights/custom-name.bin").write_bytes(b"")
+    assert create_engine(model_dir=bundle).artifact_status().requirements[0].state == "incomplete"
 
 
 def test_language_mapping() -> None:

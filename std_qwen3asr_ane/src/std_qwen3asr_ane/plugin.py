@@ -234,6 +234,67 @@ class Qwen3ASREngine(EngineBase):
         return Qwen3ASRSession(self, gated_params, audio_format, prepared_audio)
 
 
+def _inspect_package(package: Path) -> str:
+    """Check package-declared resources without loading Core ML or reading weights."""
+    manifest_path = package / "Manifest.json"
+    try:
+        if not manifest_path.resolve().is_relative_to(package):
+            return "corrupt"
+        if not manifest_path.is_file():
+            return "incomplete"
+        manifest = json.loads(manifest_path.read_text())
+        if not isinstance(manifest, dict):
+            return "corrupt"
+        entries = manifest.get("itemInfoEntries")
+        root_id = manifest.get("rootModelIdentifier")
+        version = manifest.get("fileFormatVersion")
+        if (
+            not isinstance(entries, dict)
+            or not entries
+            or not isinstance(root_id, str)
+            or root_id not in entries
+            or not isinstance(version, str)
+            or not version.strip()
+        ):
+            return "corrupt"
+        data_root = (package / "Data").resolve()
+        if not data_root.is_relative_to(package):
+            return "corrupt"
+        state = "ready"
+        for identifier, entry in entries.items():
+            if not isinstance(entry, dict):
+                return "corrupt"
+            relative = entry.get("path")
+            if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
+                return "corrupt"
+            payload = (data_root / relative).resolve()
+            if payload == data_root or not payload.is_relative_to(data_root):
+                return "corrupt"
+            if payload.is_file():
+                if payload.stat().st_size == 0:
+                    state = "incomplete"
+            elif payload.is_dir():
+                if identifier == root_id:
+                    return "corrupt"
+                nonempty_file = False
+                # Inspect every descendant, including symlinks, before calling
+                # the directory complete. Weight file names are not prescribed.
+                for child in payload.rglob("*"):
+                    if not child.resolve().is_relative_to(data_root):
+                        return "corrupt"
+                    if child.is_file() and child.stat().st_size > 0:
+                        nonempty_file = True
+                if not nonempty_file:
+                    state = "incomplete"
+            else:
+                state = "incomplete"
+        return state
+    except (ValueError, UnicodeError, RuntimeError):
+        return "corrupt"
+    except FileNotFoundError:
+        return "incomplete"
+
+
 def _inspect_bundle(root: Path) -> tuple[str, str | None]:
     """Inspect local completeness without loading models or claiming device placement.
 
@@ -267,8 +328,10 @@ def _inspect_bundle(root: Path) -> tuple[str, str | None]:
         if not payload.is_relative_to(root) or payload == root:
             return "corrupt", revision
         if payload.suffix == ".mlpackage":
-            payload = payload / "Manifest.json"
-        if not payload.is_file() or payload.stat().st_size == 0:
+            state = _inspect_package(payload)
+            if state != "ready":
+                return state, revision
+        elif not payload.is_file() or payload.stat().st_size == 0:
             return "incomplete", revision
     return "ready", revision
 

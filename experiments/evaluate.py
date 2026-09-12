@@ -16,6 +16,7 @@ import time
 import unicodedata
 from collections import defaultdict
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from math import gcd
 from pathlib import Path
@@ -122,9 +123,50 @@ def audio_samples(path: Path) -> tuple[np.ndarray, str]:
     return np.ascontiguousarray(audio, dtype=np.float32), digest
 
 
-def make_backend(
-    args: argparse.Namespace,
-) -> Callable[[np.ndarray, str | None], tuple[str, str | None, Any]]:
+@dataclass(frozen=True)
+class Backend:
+    transcribe: Callable[[np.ndarray, str | None], tuple[str, str | None, Any]]
+    close: Callable[[], None] | None = None
+    metadata: dict[str, Any] | None = None
+    redact_errors: bool = False
+
+
+def backend_error(exc: Exception, *, redact: bool) -> str:
+    if redact:
+        return f"{type(exc).__name__}: Standard plugin operation failed; configuration details omitted."
+    return f"{type(exc).__name__}: {exc}"
+
+
+def compute_label(args: argparse.Namespace) -> str:
+    if args.backend == "standard":
+        return "plugin_managed"
+    return args.compute_units if args.backend == "coreml" else "cpu_fp32"
+
+
+def make_backend(args: argparse.Namespace) -> Backend:
+    if args.backend == "standard":
+        from standard_asr import RuntimeParams, discover_models
+
+        engine = discover_models(strict=True).create(
+            args.model_key, **args.engine_config
+        )
+
+        def transcribe(
+            audio: np.ndarray, language: str | None
+        ) -> tuple[str, str | None, Any]:
+            result = engine.transcribe((audio, 16000), RuntimeParams(language=language))
+            return result.text, result.detected_language, None
+
+        close = getattr(engine, "close", None)
+        return Backend(
+            transcribe,
+            close=close if callable(close) else None,
+            metadata={
+                "model_key": engine.properties.model_id,
+                "engine_config": engine.config.public_dump(),
+            },
+            redact_errors=True,
+        )
     if args.backend == "coreml":
         from std_qwen3asr_ane.runtime import CoreMLRuntime
 
@@ -140,7 +182,7 @@ def make_backend(
             )
             return result.text, result.language, getattr(result, "timings", None)
 
-        return transcribe
+        return Backend(transcribe, close=runtime.close)
 
     # Optional baseline imports are lazy. No MLX package is installed or imported.
     import torch
@@ -169,7 +211,33 @@ def make_backend(
             result = model.transcribe(audio=(audio, 16000), language=name)[0]
         return result.text, result.language, None
 
-    return transcribe
+    return Backend(transcribe)
+
+
+def close_backend(backend: Backend | None, output: Path) -> dict[str, Any]:
+    """Record cleanup separately from sample scores, including on an interrupted run."""
+    cleanup: dict[str, Any] = {
+        "schema_version": 1,
+        "lifecycle_revision": "explicit_close_v1",
+        "status": "not_loaded" if backend is None else "not_applicable",
+        "seconds": None,
+        "error": None,
+    }
+    if backend is not None and backend.close is not None:
+        begin = time.perf_counter()
+        try:
+            backend.close()
+            cleanup["status"] = "succeeded"
+        except Exception as exc:  # noqa: BLE001 — a failed close is separate lifecycle evidence.
+            cleanup["status"] = "failed"
+            cleanup["error"] = backend_error(exc, redact=backend.redact_errors)
+            print(
+                f"Backend close failed: {cleanup['error']}", file=sys.stderr, flush=True
+            )
+        cleanup["seconds"] = time.perf_counter() - begin
+    cleanup["finished_at"] = datetime.now(UTC).isoformat()
+    write_json(Path(str(output) + ".cleanup.json"), cleanup)
+    return cleanup
 
 
 def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -284,89 +352,105 @@ def write_json(path: Path, data: Any) -> None:
 
 def run(args: argparse.Namespace) -> int:
     rows = manifest_rows(args.manifest.resolve())
-    if not args.model_dir.is_dir():
+    if args.backend != "standard" and not args.model_dir.is_dir():
         raise ValueError(f"Model directory must already exist: {args.model_dir}")
+    model_dir = str(args.model_dir.resolve()) if args.model_dir is not None else None
+    token_budget = None if args.backend == "standard" else args.max_new_tokens
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    if args.output.exists() or Path(str(args.output) + ".summary.json").exists():
+    if any(
+        Path(str(args.output) + suffix).exists()
+        for suffix in ("", ".summary.json", ".cleanup.json")
+    ):
         raise ValueError(f"Refusing to overwrite run: {args.output}")
     started = datetime.now(UTC).isoformat()
     setup_error = None
     start = time.perf_counter()
     try:
-        transcribe = make_backend(args)
+        backend = make_backend(args)
     except Exception as exc:  # noqa: BLE001 — persist model-load failures for every sample.
-        setup_error = f"{type(exc).__name__}: {exc}"
-        transcribe = None
+        setup_error = backend_error(exc, redact=args.backend == "standard")
+        backend = None
     load_seconds = time.perf_counter() - start
     results = []
-    with args.output.open("x") as output:
-        for item in rows:
-            audio = None
-            audio_error = None
-            audio_hash = None
-            try:
-                audio, audio_hash = audio_samples(Path(item["audio_path"]))
-                if item.get("audio_sha256") and item["audio_sha256"] != audio_hash:
-                    raise ValueError("Audio SHA256 does not match manifest")
-            except Exception as exc:  # noqa: BLE001 — malformed audio must remain in results.
-                audio_error = f"{type(exc).__name__}: {exc}"
-            language = (
-                item.get("language") if args.language_mode == "manifest" else None
-            )
-            for index in range(-args.warmups, args.repeats):
-                record = {
-                    "id": item["id"],
-                    "reference": item["reference"],
-                    "language": item.get("language"),
-                    "split": item.get("split"),
-                    "forced_language": language,
-                    "language_mode": args.language_mode,
-                    "audio_path": item["audio_path"],
-                    "audio_sha256": audio_hash,
-                    "audio_seconds": len(audio) / 16000 if audio is not None else None,
-                    "backend": args.backend,
-                    "model_dir": str(args.model_dir.resolve()),
-                    "compute_units": args.compute_units
-                    if args.backend == "coreml"
-                    else "cpu_fp32",
-                    "max_new_tokens": args.max_new_tokens,
-                    "normalizer": NORMALIZER,
-                    "phase": "warmup" if index < 0 else "measured",
-                    "repeat": index,
-                    "hypothesis": None,
-                    "detected_language": None,
-                    "seconds": None,
-                    "rtf": None,
-                    "scores": None,
-                    "error": setup_error or audio_error,
-                }
-                if record["error"] is None:
-                    begin = time.perf_counter()
-                    try:
-                        hypothesis, detected, timings = transcribe(audio, language)
-                        record["seconds"] = time.perf_counter() - begin
-                        if not isinstance(hypothesis, str):
-                            raise TypeError("Backend returned non-string hypothesis")
-                        record.update(
-                            hypothesis=hypothesis,
-                            detected_language=detected,
-                            rtf=record["seconds"] / record["audio_seconds"],
-                            scores=score(item["reference"], hypothesis),
-                        )
-                        if isinstance(timings, dict):
-                            record["backend_timings"] = timings
-                    except Exception as exc:  # noqa: BLE001 — backend failures are benchmark data.
-                        record["seconds"] = time.perf_counter() - begin
-                        record["error"] = f"{type(exc).__name__}: {exc}"
-                output.write(
-                    json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n"
+    try:
+        with args.output.open("x") as output:
+            for item in rows:
+                audio = None
+                audio_error = None
+                audio_hash = None
+                try:
+                    audio, audio_hash = audio_samples(Path(item["audio_path"]))
+                    if item.get("audio_sha256") and item["audio_sha256"] != audio_hash:
+                        raise ValueError("Audio SHA256 does not match manifest")
+                except Exception as exc:  # noqa: BLE001 — malformed audio must remain in results.
+                    audio_error = f"{type(exc).__name__}: {exc}"
+                language = (
+                    item.get("language") if args.language_mode == "manifest" else None
                 )
-                output.flush()
-                results.append(record)
-                print(
-                    f"{item['id']} {record['phase']} {index}: {record['error'] or 'ok'}",
-                    flush=True,
-                )
+                for index in range(-args.warmups, args.repeats):
+                    record = {
+                        "id": item["id"],
+                        "reference": item["reference"],
+                        "language": item.get("language"),
+                        "split": item.get("split"),
+                        "forced_language": language,
+                        "language_mode": args.language_mode,
+                        "audio_path": item["audio_path"],
+                        "audio_sha256": audio_hash,
+                        "audio_seconds": len(audio) / 16000
+                        if audio is not None
+                        else None,
+                        "backend": args.backend,
+                        "model_dir": model_dir,
+                        "compute_units": compute_label(args),
+                        "max_new_tokens": token_budget,
+                        "normalizer": NORMALIZER,
+                        "phase": "warmup" if index < 0 else "measured",
+                        "repeat": index,
+                        "hypothesis": None,
+                        "detected_language": None,
+                        "seconds": None,
+                        "rtf": None,
+                        "scores": None,
+                        "error": setup_error or audio_error,
+                    }
+                    if args.backend == "standard":
+                        record["model_key"] = args.model_key
+                    if record["error"] is None:
+                        begin = time.perf_counter()
+                        try:
+                            hypothesis, detected, timings = backend.transcribe(
+                                audio, language
+                            )
+                            record["seconds"] = time.perf_counter() - begin
+                            if not isinstance(hypothesis, str):
+                                raise TypeError(
+                                    "Backend returned non-string hypothesis"
+                                )
+                            record.update(
+                                hypothesis=hypothesis,
+                                detected_language=detected,
+                                rtf=record["seconds"] / record["audio_seconds"],
+                                scores=score(item["reference"], hypothesis),
+                            )
+                            if isinstance(timings, dict):
+                                record["backend_timings"] = timings
+                        except Exception as exc:  # noqa: BLE001 — backend failures are benchmark data.
+                            record["seconds"] = time.perf_counter() - begin
+                            record["error"] = backend_error(
+                                exc, redact=args.backend == "standard"
+                            )
+                    output.write(
+                        json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n"
+                    )
+                    output.flush()
+                    results.append(record)
+                    print(
+                        f"{item['id']} {record['phase']} {index}: {record['error'] or 'ok'}",
+                        flush=True,
+                    )
+    finally:
+        cleanup = close_backend(backend, args.output)
     summary = {
         "schema_version": 1,
         "started_at": started,
@@ -374,23 +458,30 @@ def run(args: argparse.Namespace) -> int:
         "manifest": str(args.manifest.resolve()),
         "manifest_sha256": hashlib.sha256(args.manifest.read_bytes()).hexdigest(),
         "backend": args.backend,
-        "model_dir": str(args.model_dir.resolve()),
-        "model_metadata": model_metadata(args.model_dir),
-        "model_load_seconds": load_seconds,
+        "model_dir": model_dir,
+        "model_metadata": (backend.metadata if backend is not None else {})
+        if args.backend == "standard"
+        else model_metadata(args.model_dir),
+        "model_load_seconds": None if args.backend == "standard" else load_seconds,
         "model_load_error": setup_error,
+        "model_close_seconds": cleanup["seconds"],
+        "model_close_error": cleanup["error"],
+        "cleanup_record": str(Path(str(args.output) + ".cleanup.json").resolve()),
         "normalizer": NORMALIZER,
         "quality_repeat": 0,
-        "timing_scope": "synchronous transcribe only; excludes audio decode/resample and model load; includes mel/prefill/decode",
+        "timing_scope": "synchronous standard engine.transcribe; includes any lazy plugin initialization; excludes audio file decode/resampling and engine construction"
+        if args.backend == "standard"
+        else "synchronous transcribe only; excludes audio decode/resample and model load; includes mel/prefill/decode",
         "warmups_per_sample": args.warmups,
         "repeats": args.repeats,
         "configuration": {
-            "compute_units": args.compute_units
-            if args.backend == "coreml"
-            else "cpu_fp32",
-            "max_new_tokens": args.max_new_tokens,
+            "compute_units": compute_label(args),
+            "max_new_tokens": token_budget,
             "language_mode": args.language_mode,
-            "seed": args.seed,
-            "torch_threads_requested": args.torch_threads,
+            "seed": None if args.backend == "standard" else args.seed,
+            "torch_threads_requested": None
+            if args.backend == "standard"
+            else args.torch_threads,
             "torch_threads_effective": sys.modules["torch"].get_num_threads()
             if args.backend == "official" and "torch" in sys.modules
             else None,
@@ -398,8 +489,16 @@ def run(args: argparse.Namespace) -> int:
         "environment": environment(),
         **aggregate(results),
     }
+    if args.backend == "standard":
+        summary["model_key"] = args.model_key
+        summary["engine_create_seconds"] = load_seconds
+        summary["configuration"]["language_resolution"] = (
+            "manifest_override"
+            if args.language_mode == "manifest"
+            else "plugin_default"
+        )
     write_json(Path(str(args.output) + ".summary.json"), summary)
-    return 1 if any(r["error"] for r in results) else 0
+    return 1 if cleanup["error"] or any(r["error"] for r in results) else 0
 
 
 def paired_bootstrap(
@@ -580,11 +679,30 @@ def compare(args: argparse.Namespace) -> int:
     return 1 if problems else 0
 
 
+def engine_config_json(value: str) -> dict[str, Any]:
+    try:
+        config = json.loads(value)
+    except (ValueError, TypeError):
+        raise argparse.ArgumentTypeError(
+            "Engine configuration must be a JSON object."
+        ) from None
+    if not isinstance(config, dict):
+        raise argparse.ArgumentTypeError("Engine configuration must be a JSON object.")
+    return config
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument("--backend", choices=("coreml", "official"))
+    result.add_argument("--backend", choices=("coreml", "official", "standard"))
     result.add_argument("--manifest", type=Path)
     result.add_argument("--model-dir", type=Path)
+    result.add_argument("--model-key", help="Installed Standard ASR entry-point key.")
+    result.add_argument(
+        "--engine-config",
+        type=engine_config_json,
+        default={},
+        help="JSON object passed to the standard plugin's typed config; only public_dump is recorded.",
+    )
     result.add_argument("--output", type=Path, required=True)
     result.add_argument(
         "--compute-units", choices=("cpu_and_ne", "cpu_only"), default="cpu_and_ne"
@@ -616,8 +734,16 @@ def main() -> int:
         )
     if not 100 <= args.bootstrap_samples <= 100000:
         cli.error("bootstrap-samples must be between 100 and 100000")
-    if not args.compare and not all((args.backend, args.manifest, args.model_dir)):
-        cli.error("run mode requires --backend, --manifest and --model-dir")
+    if not args.compare:
+        if not all((args.backend, args.manifest)):
+            cli.error("run mode requires --backend and --manifest")
+        if args.backend == "standard":
+            if not args.model_key:
+                cli.error("standard backend requires --model-key")
+            if args.model_dir is not None:
+                cli.error("For standard plugins, pass model_dir inside --engine-config")
+        elif args.model_dir is None:
+            cli.error("coreml/official backends require --model-dir")
     try:
         return compare(args) if args.compare else run(args)
     except (ValueError, TypeError, OSError, KeyError) as exc:
