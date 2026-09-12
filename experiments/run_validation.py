@@ -632,7 +632,7 @@ def claims(steps):
         "actual_device": steps["trace"],
         "energy": {
             "status": "unavailable",
-            "reason": "Energy measurement requires password-protected sudo; interactive sudo is never invoked",
+            "reason": "No validated CPU/GPU/ANE energy evidence is available; inaccessible or stalled counters must not be treated as zero consumption",
             "joules": None,
             "power_reduction_verified": False,
         },
