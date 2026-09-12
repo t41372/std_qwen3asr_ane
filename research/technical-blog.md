@@ -107,3 +107,37 @@ MLX參照使用獨立uv環境（mlx-audio0.5.3、mlx0.32.2、transformers5.17.0�
 同一份mel輸入下，ANE與官方window encoder的embedding相對L2高達16.6–22.2%，cosine約0.975–0.987。Host mel與官方mel相對誤差僅5–9e-7，官方encoder改吃host mel只變約3e-6，排除了host特徵處理。最初synthetic mel的好結果沒有覆蓋真語音分布；這是本次驗證流程要記住的教訓。新的優先方向是encoder原生activation／融合行為，先作GELU與分階段數值探測，沒有盲目改大模型。
 
 公開engine.close及context manager也已加入：與推理共用Lock，成功才清runtime，可重新prepare。Retirement以指數退避避免閒置高頻polling，interpreter shutdown不再嘗試創建清理thread。這改善正常explicit close路徑；不將Python interpreter teardown當作已被完整證明安全的情境。
+
+## 2026-09-12 — 11：找到 encoder GELU 誤差與精確替代
+
+GELU probe在861真實conv1 activation量到原生ANE相對L2誤差2.735%，而未融合的精確erf公式只有0.0433%，約63倍改善。FFN第0/4/23層亦有同方向差異。前端尚未進入Transformer就已有4.45–5.48%的embedding誤差，後續24層再將它放大。
+
+單純改成`0.5*x*(1+erf(x/sqrt(2)))`仍會被CoreML的`common::fuse_gelu_exact`融合回原生GELU。移除該pass（也移除tanh approximation fusion）後，erf/mul/add圖維持全部preferred ANE，且微模型實測保持精度。這次可以保留數學上精確的GELU，不必接受tanh近似。
+
+正式converter新增pass policy及結構guard：若輸出MIL重新出現native gelu/silu即讓conversion失敗，避免未來coremltools升級把修正悄悄融合掉。Encoder的所有conv、FFN及最後projector使用erf公式。29項encoder/decoder PyTorch parity測試通過。
+
+候選`artifacts/qwen3-asr-1.7b-precise`只替換frontend與encoder圖，保留stable-SiLU decoder；兩個新weight.bin的SHA256又與舊版完全相同，得以共享。這次在bundle內保存human-readable conversion source snapshot及hash，並在build結束檢查source沒有於途中更動；補上早期實驗只存fingerprint卻未保留source內容的可重現性缺口。再次啟動相同400筆評測，仍未用新200筆的錯誤樣本來選擇修正。
+
+## 2026-09-12 — 12：最終驗證、封裝與交付邊界
+
+400/400推理完成、零失敗。舊診斷中文100筆从277錯降到232錯，六個代表的數字與「热巧克力」均恢復官方形式。未參與診斷的新100英文WER為官方34/2382、ANE33/2382；新100中文CER為官方244/3737、ANE246/3737。這些觀察接近參照，但置信區間仍不足以通過更嚴格的普遍非劣性release gate。完整數值與區間另外集中於results.md，不用混合診斷樣本的總平均掩蓋統計限制。
+
+最終tokenizer採官方wrapper使用的fix_mistral_regex=True；該選項會改pre-tokenizer的大小寫／Unicode切分。未直接假定它無影響：保留父bundle，另建final bundle，枚舉390個audio-token長度×31個語言／auto選項，共12090個default prompt，input IDs全部一致；其他tokenizer組件也完全相同。因此既有無context batch品質證據可沿用，context及stream prefix另做測試。replay工具為experiments/finalize_tokenizer.py。
+
+Final bundle的10個graph與precise逐檔hash相同，明確重用父計畫，不浪費重複compile。新的隔離trace仍實際執行兩語音訊：623筆ANE Prediction涵蓋全部元件、無額外background/unmatched ANE，source／graph／tokenizer／trace全部hash綁定。Target GPU為0，但4筆GPU事件無process歸屬，限制如實保留。
+
+在沒有本專案其他推理並行時，正式Standard ASR插件warm測量中位數為英文2.105秒、中文0.513秒；同官方BF16權重的MLX為0.435／0.137秒。修正沒有讓ANE贏過MLX，不能宣稱更快；功耗仍無權限，不宣稱省電。可用磁碟曾由12GiB恢復至71GiB，沒有人工刪除任何外部快取、snapshot或其他應用資料，不能把恢復原因當作已被驗證。
+
+最後以final bundle跑realtime中文、batch一致性與四種長度靜音，全部通過，explicit close正常。預設artifact路徑切到final，舊T1保留為native-t1並保存歷史alias映射。Artifact status補上package內部模型／weights存在性與symlink containment檢查；通用evaluator新增Standard ASR backend以及finally close／cleanup sidecar，後續其他硬體plugin可沿用同一corpus與評分，不需再寫ASR呼叫膠水。
+
+uv已建立wheel與sdist；乾淨runtime環境不安裝Torch即可探索模型與檢查artifact。Git main直接依賴無法單靠offline解析，因此乾淨安裝使用已授權網路取main，得到b63bb73bdef9be436fbae182d630452fe3a88f0b；比對runtime source與原3383126版本完全相同。交付保持research preview：30秒session上限、沒有時間戳／diarization／長串流rollover、沒有能耗數據，且品質release coverage仍不足。
+
+## 2026-09-12 — 13：補查無管理員功耗來源
+
+為避免把「powermetrics需要密碼」誤當成所有能耗途徑都不可用，另用Astra medium子代理做有界研究。依macmon固定commit的primary source，在工作區編譯幾KB的Objective-C IOReport讀取器；沒有安裝global工具或更改系統設定。離開Codex sandbox後以普通UID501即可訂閱Energy Model，證明此路徑不需要sudo。
+
+但在這個macOS27 build，四個CPU busy workers期間CPU Energy全為0。進一步以已知ANE小模型跑10.000692秒、10,721次有限輸出predict，前中後25個窗口的CPU／ANE0／DRAM0仍全0。GPU在24/25窗口會計數，但不能替代CPU＋ANE總耗能。這是無效／停滯counter，不是零功耗。
+
+IORegistry的電池整機功率也可無root讀取，約與Voltage×InstantAmperage一致；45秒觀測中有一次約35.9秒後才刷新的變化，積分語義與cadence未校準，不能拿來評估短utterance。原始資料與時鐘偏移校正保存在artifacts/power-probe，結論見nonroot-power.md。能耗gate仍unavailable，現在有比單純權限不足更完整的原因，未為了交付而編造省電數字。
+
+最終程式通過156個測試、Ruff與Standard ASR compliance（含sync bridge）。自動workflow的protocol與actual-device gates通過；品質的嚴格release gate仍inconclusive。乾淨wheel環境無Torch、使用tokenizers0.23.2及最新main，實際中文轉錄與result compliance均成功；wheel source與工作區package逐檔一致，LICENSE與NOTICE亦已打包。

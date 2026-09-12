@@ -223,3 +223,37 @@ agent 按序執行：capability probe → 小模型 API smoke → 單 block pari
 此輪label沒有compiler UUID suffix，因此sidecar記 `compiled_label_uuid=null`，不捏造識別碼。`t16-full-asr-isolated-attribution.json` 以協調隔離、exact model labels、launched候選參數、成功輸出與manifest/package hashes綁定證據；trace後重算全部模型檔hash與計畫時一致。manifest SHA為 `09e8cc648a8e6269c77bad0b5e16a741fdfed062f5131093bf0a0640e0d18f02`。詳細角色計數與限制見 `artifacts/telemetry/t16-evidence.md`。
 
 嚴格區分三類結論：**可見ANE Prediction** 覆蓋實際T16候選全部graph；**CPU工作量未知**，因Core ML signpost表仍空且CPU前後處理不在graph計畫內；**CPU_ONLY失敗** 僅指先前T1 layer編譯失敗，T16沒有做CPU_ONLY相容性驗證。此次不是WER gate，也不是速度或能耗benchmark。ANE table仍沒有PID，隔離與label/hashbinding提升歸屬可靠性，但不等於硬體PID attestation。
+
+## 同日最終候選：precise graph、固定buffer生命週期與run hash
+
+主agent將最終候選改為 `artifacts/qwen3-asr-1.7b-precise`：encoder使用unfused erf GELU，decoder使用stable-exp SiLU。較早T16證據不再能直接替這個實際graph版本背書，因此依指派僅做一次完整計畫收集與一次隔離batch trace；沒有轉模型、下載或複製權重。
+
+先與plugin agent協調，確認evaluate與CoreML路徑的當前修改已落定。此時runtime使用固定FP32 borrowed-input buffers、複製outputs及explicit close；evaluate在finally關閉backend，另保存cleanup sidecar。Plugin agent確認檔案已寫完且Ruff通過，並凍結這些路徑直到trace後hash核對完成。將10份source/run-input保存快照與SHA，避免trace日後只剩一個無法還原的腳本名字。
+
+使用既有 `inspect_bundle_placement.py` 完成10graph計畫，保存於 `artifacts/validation/precise-placement/`，包含逐graph JSON、完整模型檔hash及collection.log。12,028個有cost算子全部preferred ANE，14,432個unknown全部是const。Frontend27、encoder4,740、每decoder1,030、LM head51個known-cost ANE ops；沒有已知CPU/GPU preferred。與舊T16計畫保存的weight hash比較，10個weight.bin內容全部一致，包括9個改變activation表達式的graph和原本不變的LM head；這是內容一致驗證，並未把它誤稱為inode共享驗證。
+
+主agent確認所有managed ANE/CPU大推理已停止，只做host工作後，啟動唯一一次 `precise-full-asr-isolated` trace。**12:31:24.636–12:32:11.333 America/Phoenix**，90秒上限下實際錄製46.696507秒，兩筆中英文batch smoke成功，target exit0。Explicit-close sidecar回報 `explicit_close_v1 / succeeded`，無cleanup error。
+
+這次實際ANE hardware Prediction有 **623** 筆：frontend21、encoder3、7decoder各77、LM head60，全部具候選對應的compiler-UUID label，沒有generic/unmatched/background Prediction。Prediction interval總和 **2.368766724秒**；10個Compile intervals的26.574534083秒另列，不混成推理時長。此計數與舊T16的599不同，不能硬套舊輸出或舊trace的調用量。
+
+GPU hardware table有183,540筆系統級活動，target PID對應0筆，但4筆process未知；所以只能說沒有觀察到target-attributed GPU活動，不能聲稱絕對GPU零工作。ANE表仍無PID，CoreML summary/raw signpost仍空，因此逐operation的實際CPU時間仍未知。沒有替precise重測CPU_ONLY，也沒有將舊T1編譯失敗当作本候選的負對照。
+
+錄完後重新核對全部source、source快照及graph檔hash，一致；再將原始trace每個檔的相對路徑、大小和SHA排序，生成canonical JSON tree hash。Attribution sidecar同時綁定manifest、placement summary、trace summary/tree、source manifest、evaluation輸出、cleanup報告和command list，生成run fingerprint。完成這些大檔hash讀取後才通知主agent可開始正式latency/silence，並通知plugin解除source凍結。
+
+此候選manifest SHA為 `7ae9d6e0af119b3e1c3f58a13919e1bb42ff2ba39291fe83ac3ef5df3fa8606d`，run fingerprint為 `ca9d4dbdddc7753ce54505601cb923bb77189701aeeb521961fb2a9254a963a0`。Raw trace邏輯檔案總量659,571,728 bytes，比初始200MB預估大，主要伴隨大量系統GPU事件；開始時只讀preflight顯示71GiB可用，沒有清除任何raw evidence或他人cache。
+
+完整說明與hash規約見 `artifacts/telemetry/precise-evidence.md`；gate應使用 `precise-full-asr-isolated-attribution.json` 與對應summary，不能再沿用T16 sidecar。這證明最終precise **batch** 候選的主要graph有實際ANE活動，且此次資源關閉成功；並非streaming驗證、普遍WER/CER非劣性、正式latency比較或節能證明。主agent另有400筆品質結果，其樣本數與統計力限制不因這兩筆smoke或硬體trace而消失。
+
+## 最後metadata/tokenizer修正：避免重編譯，仍綁定新final身份
+
+主agent最後將precise以APFS clone建立 `artifacts/qwen3-asr-1.7b-final`，只按官方 `from_pretrained(fix_mistral_regex=True)` 修正tokenizer pretokenizer與相關manifest metadata。既有equivalence報告記錄390種audio-token counts乘31種language settings（含auto），共12,090組default prompt input IDs完全相同，非pretokenizer部分也相同。此範圍是無任意context的batch；不能延伸成所有stream-prefix等價。
+
+依指派不再inspect十個graph。逐package驗證完整檔案集合與每檔SHA，全部與precise-placement相同，並核對相同macOS build26A428、architecture及coremltools版本。將父計畫JSON原樣作為重用證據，產出 `artifacts/validation/final-placement/summary.json`，明列parent summary/manifest hashes、reuse理由及 `coreml_reinspection_performed=false`。另hash實際final tokenizer、embedding、mel filters和equivalence報告；保存12份source/run-input快照。這樣既避免無意義的CoreML重inspect，也不拿舊manifest identity替新bundle背書。
+
+在主agent確認source/runtime/evaluate凍結且無其他managed推理下，只再錄一次 `final-full-asr-isolated`。**12:59:09.601–12:59:52.574 America/Phoenix**，90秒上限內實際42.972844秒、target exit0、explicit close succeeded。兩筆hypotheses與precise smoke逐字相同。
+
+Final硬體trace有623筆ANE Prediction，全部對應新run的10個compiled UUID labels：frontend21、encoder3、7decoder各77、LM head60，沒有generic/unmatched/background Prediction。Prediction intervals累計2.311256917秒，compile/load另列。GPU有41,500筆系統事件，target-attributed為0，unknown-process為4；仍不聲稱絕對GPU零活動。ANE無PID及CoreML signposts空表的限制維持不變。
+
+錄製後再次核對所有graph、auxiliary runtime assets、source及快照hash，全部相同；保存原始trace tree hash與新run fingerprint，綁定equivalence報告、輸出、cleanup及command list。原始trace邏輯檔案大小219,399,510 bytes；preflight47GiB可用，沒有清cache或刪舊證據。完成export和大檔hash後立即通知主agent可跑最後stream/silence，且本task不再執行推理、不改source或model artifacts。
+
+Final manifest SHA為 `9c705eba4ee069b04b13dcb08ab8abdcfcc1ba889aa925fc5f0c2ce26b28f659`，run fingerprint為 `e43cdb6578ac6ae793fc2d5113c3f4385755162f6c64b85bcc12c800721acf92`。說明見 `artifacts/telemetry/final-evidence.md`，strict gate使用 `final-full-asr-isolated-attribution.json`；後續只promote canonical symlink，保持實際final artifact不變即可保留hashbinding。這仍只是有界batch硬體驗證，普遍品質非劣性、streaming/silence、CPU_ONLY相容性與節能由其各自證據決定。

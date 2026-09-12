@@ -2,6 +2,8 @@
 
 This workspace develops a Standard ASR 0.2 plugin and a reproducible Core ML conversion pipeline for the official Qwen3-ASR 1.7B checkpoint.
 
+Read the [measured results](research/results.md) for the held-out quality comparison, ANE hardware evidence, streaming limits, and MLX timing comparison. In this workspace, `artifacts/qwen3-asr-1.7b` points to the final corrected bundle; historical variants remain available for reproduction.
+
 **Research preview.** The protocol adapter passes Standard ASR main compliance, including a real transcription result. The complete frontend, encoder, all decoder partitions, and vocabulary head execute with `CPU_AND_NE`. Instruments hardware traces confirm ANE predictions for every major component. Corpus quality and performance comparisons are recorded separately; energy savings have not been measured.
 
 The maintained Python package is in [`std_qwen3asr_ane/`](std_qwen3asr_ane/). Experiments, reference checkouts, model artifacts, and research notes stay outside the package. The [chronological technical blog](research/technical-blog.md) records decisions and failures; [prior art](research/prior-art.md) distinguishes existing Core ML ports from demonstrated ANE inference.
