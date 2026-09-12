@@ -20,7 +20,11 @@ from typing import Any
 import numpy as np
 import torch
 from torch import nn
-from torch.nn import functional as F
+
+
+def exact_gelu(x: torch.Tensor) -> torch.Tensor:
+    """Exact GELU expression; conversion must disable native GELU fusion."""
+    return 0.5 * x * (1 + torch.erf(x * (2**-0.5)))
 
 
 class ChannelLayerNorm(nn.Module):
@@ -87,9 +91,9 @@ class AudioFrontend(nn.Module):
     def forward(
         self, mel_features: torch.Tensor, conv1_mask: torch.Tensor, conv2_mask: torch.Tensor
     ) -> torch.Tensor:
-        x = F.gelu(self.conv2d1(mel_features)) * conv1_mask
-        x = F.gelu(self.conv2d2(x)) * conv2_mask
-        x = F.gelu(self.conv2d3(x))
+        x = exact_gelu(self.conv2d1(mel_features)) * conv1_mask
+        x = exact_gelu(self.conv2d2(x)) * conv2_mask
+        x = exact_gelu(self.conv2d3(x))
         x = x.reshape(1, self.flattened_channels, 1, -1)
         return self.conv_out(x) + self.positions
 
@@ -130,7 +134,7 @@ class AudioEncoderLayer(nn.Module):
 
     def forward(self, x: torch.Tensor, key_mask: torch.Tensor) -> torch.Tensor:
         x = x + self.self_attn(self.self_attn_layer_norm(x), key_mask)
-        x = x + self.fc2(F.gelu(self.fc1(self.final_layer_norm(x))))
+        x = x + self.fc2(exact_gelu(self.fc1(self.final_layer_norm(x))))
         return x
 
 
@@ -147,7 +151,7 @@ class AudioTransformer(nn.Module):
     def forward(self, hidden_states: torch.Tensor, key_mask: torch.Tensor) -> torch.Tensor:
         for layer in self.layers:
             hidden_states = layer(hidden_states, key_mask)
-        return self.proj2(F.gelu(self.proj1(self.ln_post(hidden_states))))
+        return self.proj2(exact_gelu(self.proj1(self.ln_post(hidden_states))))
 
 
 def load_encoder_weights(module: nn.Module, source_dir: Path) -> None:
@@ -173,6 +177,8 @@ def load_encoder_weights(module: nn.Module, source_dir: Path) -> None:
 def build_encoder(source_dir: str | Path, output_dir: str | Path) -> dict[str, Any]:
     """Export the frontend and one masked attention window; return bundle metadata."""
     import coremltools as ct
+
+    from .passes import ane_pass_pipeline, verify_activation_operators
 
     source_dir, output_dir = Path(source_dir), Path(output_dir)
     config = json.loads((source_dir / "config.json").read_text())["thinker_config"]["audio_config"]
@@ -219,12 +225,14 @@ def build_encoder(source_dir: str | Path, output_dir: str | Path) -> dict[str, A
             compute_precision=ct.precision.FLOAT16,
             compute_units=ct.ComputeUnit.CPU_AND_NE,
             skip_model_load=True,
+            pass_pipeline=ane_pass_pipeline(),
             inputs=[
                 ct.TensorType(name=name, shape=shape, dtype=np.float32)
                 for name, shape in inputs.items()
             ],
             outputs=[ct.TensorType(name=output_name, dtype=np.float32)],
         )
+        verify_activation_operators(model)
         path = output_dir / f"{role}.mlpackage"
         model.save(str(path))
         files.append({"role": role, "path": path.name})

@@ -60,7 +60,9 @@ def test_official_processor_feature_and_audio_placeholder_parity() -> None:
     processor_module = pytest.importorskip(
         "qwen_asr.core.transformers_backend.processing_qwen3_asr"
     )
-    tokenizer = transformers.AutoTokenizer.from_pretrained(SOURCE, local_files_only=True)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        SOURCE, local_files_only=True, fix_mistral_regex=True
+    )
     extractor = transformers.WhisperFeatureExtractor.from_pretrained(SOURCE, local_files_only=True)
     template = json.loads((SOURCE / "chat_template.json").read_text())["chat_template"]
     processor = processor_module.Qwen3ASRProcessor(extractor, tokenizer, chat_template=template)

@@ -219,7 +219,9 @@ def test_real_tokenizer_prompt_parity() -> None:
     if not SOURCE.exists():
         pytest.skip("Local source tokenizer assets have not been downloaded")
     transformers = pytest.importorskip("transformers")
-    tokenizer = transformers.AutoTokenizer.from_pretrained(SOURCE, local_files_only=True)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        SOURCE, local_files_only=True, fix_mistral_regex=True
+    )
     template = json.loads((SOURCE / "chat_template.json").read_text())["chat_template"]
     expected = tokenizer.apply_chat_template(
         [

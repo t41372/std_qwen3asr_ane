@@ -57,7 +57,9 @@ class GeluContext(nn.Module):
 def sample_activation(value):
     flat = value.detach().float().flatten()
     # Uniformly sample the whole tensor; do not select only the first chunk or channel.
-    indices = torch.linspace(0, flat.numel() - 1, int(np.prod(SHAPE)), dtype=torch.float64).long()
+    indices = torch.linspace(
+        0, flat.numel() - 1, int(np.prod(SHAPE)), dtype=torch.float64
+    ).long()
     sample = flat[indices].reshape(SHAPE).contiguous().numpy()
     return sample, {
         "full_shape": list(value.shape),

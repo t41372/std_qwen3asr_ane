@@ -35,7 +35,7 @@ def build_bundle(
     decoder = build_decoder(
         source, output, cache_length=cache_length, token_batch_size=token_batch_size
     )
-    tokenizer = AutoTokenizer.from_pretrained(source, local_files_only=True)
+    tokenizer = AutoTokenizer.from_pretrained(source, local_files_only=True, fix_mistral_regex=True)
     tokenizer.backend_tokenizer.save(str(output / "tokenizer.json"))
     processor = WhisperFeatureExtractor.from_pretrained(source, local_files_only=True)
     np.save(output / "mel_filters.npy", processor.mel_filters.astype(np.float32))
@@ -73,6 +73,8 @@ def build_bundle(
         },
         "validation_status": "unvalidated",
         "activation": "stable_exp_silu",
+        "encoder_activation": "unfused_erf_gelu",
+        "tokenizer_fix_mistral_regex": True,
         **decoder,
     }
     temporary = output / "manifest.json.tmp"

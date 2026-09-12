@@ -224,6 +224,8 @@ def convert_partition(
 ):
     import coremltools as ct
 
+    from .passes import verify_activation_operators
+
     count = module.token_batch_size
     examples = (
         torch.zeros(1, config["hidden_size"], 1, count),
@@ -255,6 +257,7 @@ def convert_partition(
         compute_units=ct.ComputeUnit.CPU_AND_NE,
         skip_model_load=True,
     )
+    verify_activation_operators(model)
     model.save(str(output))
 
 
