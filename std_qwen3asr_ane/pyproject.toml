@@ -1,0 +1,39 @@
+[project]
+name = "std-qwen3asr-ane"
+version = "0.1.0a1"
+description = "Qwen3-ASR 1.7B on Apple Neural Engine, with Standard ASR integration"
+license = "Apache-2.0"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@main",
+  "coremltools>=9.0",
+  "numpy>=2.0",
+  "tokenizers>=0.22",
+  "soundfile>=0.13",
+  "scipy>=1.15",
+]
+
+[project.entry-points."standard_asr.models"]
+"std-qwen3asr-ane/1.7b" = "std_qwen3asr_ane.plugin:Qwen3ASREngine"
+
+[project.scripts]
+qwen3-asr-ane = "std_qwen3asr_ane.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.4", "ruff>=0.12"]
+convert = ["torch>=2.7", "safetensors>=0.5", "huggingface-hub>=0.34", "transformers>=4.57,<5", "qwen-asr>=0.0.6", "jiwer>=4.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

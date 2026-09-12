@@ -1,0 +1,304 @@
+{
+  "protocol_version": "0.2.0",
+  "properties": {
+    "engine_id": "std-qwen3asr-ane",
+    "model_name": "1.7b",
+    "protocol_version": "0.2.0",
+    "accepted_input": [
+      "array"
+    ],
+    "native_sample_rate": 16000,
+    "accepted_sample_rates": [
+      16000
+    ],
+    "required_input_sample_rate": 16000,
+    "max_file_size": null,
+    "max_audio_duration": null,
+    "wire_encodings": [
+      "pcm_s16le",
+      "pcm_f32le"
+    ],
+    "selectable_languages": [
+      "zh",
+      "en",
+      "yue",
+      "ar",
+      "de",
+      "fr",
+      "es",
+      "pt",
+      "id",
+      "it",
+      "ko",
+      "ru",
+      "th",
+      "vi",
+      "ja",
+      "tr",
+      "hi",
+      "ms",
+      "nl",
+      "sv",
+      "da",
+      "fi",
+      "pl",
+      "cs",
+      "fil",
+      "fa",
+      "el",
+      "ro",
+      "hu",
+      "mk",
+      "auto"
+    ],
+    "detectable_languages": [
+      "zh",
+      "en",
+      "yue",
+      "ar",
+      "de",
+      "fr",
+      "es",
+      "pt",
+      "id",
+      "it",
+      "ko",
+      "ru",
+      "th",
+      "vi",
+      "ja",
+      "tr",
+      "hi",
+      "ms",
+      "nl",
+      "sv",
+      "da",
+      "fi",
+      "pl",
+      "cs",
+      "fil",
+      "fa",
+      "el",
+      "ro",
+      "hu",
+      "mk"
+    ],
+    "description": "Qwen3-ASR 1.7B using locally converted Core ML models targeting ANE."
+  },
+  "capabilities": {
+    "batch": {
+      "language": {
+        "runtime_override": {
+          "supported": true
+        },
+        "candidate_languages": {
+          "supported": false,
+          "constraints": null
+        }
+      },
+      "word_timestamps": {
+        "supported": false,
+        "granularities": []
+      },
+      "guidance": {
+        "prompt": {
+          "supported": true,
+          "constraints": {
+            "max_tokens": null
+          }
+        },
+        "phrase_hints": {
+          "supported": false,
+          "constraints": {
+            "max_terms": null,
+            "max_chars_per_term": null,
+            "max_words_per_term": null
+          }
+        }
+      },
+      "diarization": {
+        "supported": false,
+        "always_on": {
+          "supported": false
+        },
+        "constraints": {
+          "max_speakers": null
+        }
+      }
+    },
+    "streaming": {
+      "language": {
+        "runtime_override": {
+          "supported": true
+        },
+        "candidate_languages": {
+          "supported": false,
+          "constraints": null
+        }
+      },
+      "word_timestamps": {
+        "supported": false,
+        "granularities": []
+      },
+      "diarization": {
+        "supported": false,
+        "always_on": {
+          "supported": false
+        },
+        "constraints": {
+          "max_speakers": null
+        }
+      },
+      "guidance": {
+        "prompt": {
+          "supported": true,
+          "constraints": {
+            "max_tokens": null
+          }
+        },
+        "phrase_hints": {
+          "supported": false,
+          "constraints": {
+            "max_terms": null,
+            "max_chars_per_term": null,
+            "max_words_per_term": null
+          }
+        }
+      },
+      "emits_partials": {
+        "supported": true
+      },
+      "re_segments": {
+        "supported": false
+      },
+      "word_stability": {
+        "supported": false
+      },
+      "reconnect": {
+        "mode": "unsupported"
+      },
+      "finality_level": {
+        "mode": "closed"
+      },
+      "timestamps": {
+        "mode": "none"
+      }
+    },
+    "streaming_input": {
+      "supported": true
+    },
+    "streaming_output": {
+      "supported": true
+    },
+    "self_resamples": {
+      "supported": false
+    }
+  },
+  "metadata": {
+    "artifacts": {
+      "applicable": true,
+      "supports_explicit_acquisition": false,
+      "may_acquire_during_inference": false
+    },
+    "x_qwen3asr_streaming": {
+      "algorithm": "cumulative_audio_prefix_rollback",
+      "max_session_audio_seconds": 30,
+      "persistent_causal_encoder_state": false,
+      "segment_rollover_supported": false
+    }
+  },
+  "config_schema": {
+    "additionalProperties": false,
+    "description": "Local settings; a relative model directory is relative to the working directory.",
+    "properties": {
+      "engine": {
+        "const": "std-qwen3asr-ane",
+        "default": "std-qwen3asr-ane",
+        "title": "Engine",
+        "type": "string"
+      },
+      "strict": {
+        "default": true,
+        "description": "Unsupported-parameter policy: True=strict, False=best_effort.",
+        "title": "Strict",
+        "type": "boolean"
+      },
+      "allow_private_urls": {
+        "default": false,
+        "description": "Opt-in to relax the SSRF policy so an AudioUrl may target a private/loopback/link-local address (HTTPS is still required). False by default; set True only for a trusted internal endpoint.",
+        "title": "Allow Private Urls",
+        "type": "boolean"
+      },
+      "default_language": {
+        "default": "auto",
+        "title": "Default Language",
+        "type": "string"
+      },
+      "default_candidate_languages": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Default candidate languages.",
+        "title": "Default Candidate Languages"
+      },
+      "model_dir": {
+        "default": "artifacts/qwen3-asr-1.7b",
+        "description": "Locally built model directory, relative to the current working directory.",
+        "format": "path",
+        "title": "Model Dir",
+        "type": "string"
+      },
+      "max_new_tokens": {
+        "default": 256,
+        "maximum": 4096,
+        "minimum": 1,
+        "title": "Max New Tokens",
+        "type": "integer"
+      },
+      "stream_chunk_seconds": {
+        "default": 2.0,
+        "maximum": 30.0,
+        "minimum": 0.1,
+        "title": "Stream Chunk Seconds",
+        "type": "number"
+      },
+      "stream_unfixed_chunks": {
+        "default": 2,
+        "minimum": 0,
+        "title": "Stream Unfixed Chunks",
+        "type": "integer"
+      },
+      "stream_unfixed_tokens": {
+        "default": 5,
+        "minimum": 0,
+        "title": "Stream Unfixed Tokens",
+        "type": "integer"
+      },
+      "stream_max_audio_seconds": {
+        "default": 30.0,
+        "exclusiveMinimum": 0,
+        "maximum": 30.0,
+        "title": "Stream Max Audio Seconds",
+        "type": "number"
+      },
+      "stream_audio_queue_size": {
+        "default": 4,
+        "maximum": 128,
+        "minimum": 1,
+        "title": "Stream Audio Queue Size",
+        "type": "integer"
+      }
+    },
+    "title": "Qwen3ASRConfig",
+    "type": "object"
+  }
+}

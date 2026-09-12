@@ -1,0 +1,109 @@
+# 將 Qwen3-ASR 1.7B 移植到 Apple Neural Engine：實驗紀錄
+
+這份紀錄按時間順序更新。成功條件是 Standard ASR main 協議可用、主要模型計算有 ANE 執行證據、辨識品質有對照、效率與耗能可重現；Core ML 格式本身不是 ANE 成功證據。
+
+## 2026-09-12 — 01：建立工作區與查證起點
+
+工作區最初只有空的 `std_qwen3asr_ane/` 與一份過往研究對話。實機為 M5 Max、64 GB、macOS 27.0 build 26A428，可用磁碟約 85 GiB。所有模型、依賴快取與實驗資料安排在工作區內，避免污染其他專案。
+
+取得 Standard ASR main，commit `3383126e165358e63be1971a671d2a52ffceace6`，套件版本 `0.2.0.dev0`。公開 v0.1.1 不作為開發目標；依賴指向 main，uv lock 將記錄實際 commit。
+
+第一輪搜尋找到既有 1.7B Core ML 模型；其 GPU/FP32 decoder 限制仍須逐個查證，因此目前不能宣稱這是第一個 Core ML 移植，也不能把既有模型的 Core ML 標籤當成 ANE 證據。過往 ChatGPT 對話只作研究線索。
+
+遇到的第一個環境問題是 sandbox shell 無法解析 GitHub；以受審核的網路存取重新 clone 成功。沒有修改全域網路設定。`aufklarer/qwen3-asr-swift` 已不存在，改讀實際可取得的 fork 並尋找維護中的上游。
+
+發現參考 encoder 省略原始 chunk/block attention，這種簡化不能在未評測下繼承。將以官方模型和逐段數值比較確保語義，而不是只追求轉換成功。
+
+## 2026-09-12 — 02：接口先閉環，模型分開驗證
+
+建立 uv 套件 `std-qwen3asr-ane`、model key `std-qwen3asr-ane/1.7b`。建構與探索不載入權重，artifact status 只檢查本機 bundle，不偷偷下載或用一次假轉錄觸發安裝。尚無發布的轉換成品，因此 acquisition 回報結構化 `action_required`，指向本機 build 命令。17 個 adapter 測試及官方 compliance run 通過；這些測試使用假 runtime，只證明接口契約。
+
+取得官方 1.7B checkpoint，共約 4.3 GiB，存於 `artifacts/source/Qwen3-ASR-1.7B`。Python 3.12 venv 與 uv/Hugging Face cache 均在工作區。第一個安裝錯誤是 hatchling 預設拒絕 direct Git dependency，設定 allow-direct-references 後成功。當次 resolver 選到 coremltools 9.0、torch 2.14.0；後者超出 coremltools 宣告已測試的 2.7.0，保留警告並以真實轉換測試確認，不把安裝成功當相容性證据。
+
+encoder 採 100-frame conv chunk 與 104-token attention window，保留尾部與位置重設語義。短於100-frame的單獨音訊需要清掉多餘 convolution activations；這和把所有輸入補零後直接裁輸出不同。20項 PyTorch parity 測試通過。又發現官方 eager 路徑未傳入 block mask，因此與 FA2 的 cu_seqlens 路徑不同；我們把語義選擇明確記錄為獨立 FA2 windows，後續辨識品質比較須揭露此差異。
+
+## 2026-09-12 — 03：第一個 ANE decoder 圖與數值反例
+
+以真實 layer 0 權重建立 Conv2d projections、穩定 RMSNorm、固定128長度 MLState cache 的 decoder probe。Core ML 圖成功轉換。MLComputePlan 報告249個具有 cost 的運算全部 preferred ANE，另310個無 cost 的項目全部是 const。這只是編譯器預計分配，尚非硬體 telemetry。
+
+第一次用64倍 residual縮放，PyTorch 重寫與官方 layer 的最大誤差約1e-6，但 Core ML CPU+ANE 連續8個token的相對L2誤差約0.19–0.25，雖然全部有限值且每步約1–3 ms，仍完全不能接受。這是一個必要的失敗測試：速度、圖分配、沒有NaN三者都不足以判定模型正確。正在用不同縮放倍數與 CPU_ONLY 對照定位；權重被縮得過小、FP16 subnormal行為列為待驗假設，尚未認定根因。
+
+CPU_ONLY 的第一個圖在載入時出現 Core ML execution plan error -14。調整無上限 clamp 的圖表達（改成 maximum），分離編譯和數值問題。所有探測的log與JSON保留在 `artifacts/probes/`。
+
+系統的 Core ML compiler 在sandbox內不能建立工作目錄，即使 TMPDIR 指向 /private/tmp 仍然失敗。事先向使用者說明後，對限定模型的 compile/predict/plan 使用受審核執行；只允許框架正常管理 temporary/cache，未修改系統設定、未使用 sudo。
+
+## 2026-09-12 — 04：完整模型第一次說出正確文字
+
+撤掉64倍全域縮放，保留以amax穩定化RMSNorm。epsilon改以sqrt(epsilon)先除尺度再平方表示，避免把重要常數直接存成FP16 subnormal；這項改寫的layer0實測仍約1%相對L2誤差，不能說它已完全解決ANE數值差異。
+
+逐層掃描28層真實prompt：FP16 residual最大10880、gate最大145、up最大137.75、product最大14904，全程有限；最終8/8 argmax符合官方FP32。最後一層將約10840的residual降到496，觀察到相消誤差。這輪證據反對不必要的全域縮放，也支持先測真實音訊。
+
+完成bundle：frontend、24-layer encoder、7個4-layer decoder partitions、19塊詞彙projection、CPU embedding、tokenizer與mel filters。官方source revision為`7278e1e70fe206f11671096ffdd38061171dd6e5`；從所有Hugging Face download metadata交叉檢查commit一致，寫入source.json及bundle manifest。
+
+首次端到端在完全禁止GPU的CPU_AND_NE設定成功：官方英文15.051秒音訊→7.277秒，中文4.204秒→2.324秒。英文輸出與作者提供reference只差開頭Mm；中文「甚至出现交易几乎停滞的情况。」完全一致。與官方PyTorch FP32/eager對照，英文原版開頭是「Uh huh」，其餘一致；中文相同。官方CPU4threads本次約3.166秒/0.807秒。這些是小樣本smoke且可能有並行實驗干擾，不能宣稱WER穩定或效能勝出。
+
+首輪分階段timing定位瓶頸：英文features0.002秒、encoder0.032秒、prefill5.800秒、generation1.443秒；中文encoder0.010秒、prefill1.982秒。應先優化prefill，而非繼續微調已很快的encoder。完整adapter/mel/decoder測試當時77項通過。
+
+## 2026-09-12 — 05：建立動態證據與分塊prefill實驗
+
+Xcode Instruments CLI成功錄到Neural Engine hardware table；layer0 probe的8687次predict與8687筆同名ANE Prediction事件一一吻合。這比compute plan更強，但目前只覆蓋單層probe；完整ASR trace正在收集。
+
+CPU_ONLY負對照在CoreML compiler發生E5MinimalCpu / error -14，不能宣稱已得到有效負對照。保留失敗trace與log，仍可分別查實際ANE事件、模型標籤與CPU_ONLY支援缺陷。
+
+開始T=16固定寬度decoder實驗：prefill一次16token，generation仍只讓一個有效token更新cache，其餘padding的update matrix全部為0。整個utterance使用同一個模型及MLState，避免不同prefill/decode模型之間不可假定的state共享。PyTorch測試驗證分塊、尾部2token、最後單token與逐token的hidden及KV cache一致。新bundle另存`artifacts/qwen3-asr-1.7b-t16`，保留已成功的T=1模型作對照。
+
+## 2026-09-12 — 06：速度改善、完整硬體證據與第一個 corpus gate 失敗
+
+T16維持兩個smoke逐字輸出不變，英文從7.277秒降至2.024秒，prefill從5.800秒降至0.452秒；中文從2.324秒降至0.507秒。這是首輪時序證據，不把profiled或並行量測當正式benchmark。
+
+針對T16全部10個graph收集plan：11,720個有cost算子全部preferred ANE，14,292個unknown全為const，各graph分別有完整成本，不跨graph加總成虛構FLOPs比例。第一次完整T16 trace與100筆品質評測碰在一起，留下大量背景ANE事件；自動gate正確判為inconclusive。停止其他ANE工作後重錄：599筆Prediction，7個decoder各74次、frontend21、encoder3、LM head57，沒有额外背景Prediction，target GPU events為0。Sidecar綁定實際bundle/trace/模型hash；ANE schema沒有PID，因此只以隔離、模型標籤和預期调用量歸屬，沒有捏造逐operation CPU timing。
+
+固定200筆評測在看模型結果之前完成選樣：LibriSpeech test-clean100筆、40位speaker、808秒；FLEURS Mandarin test100筆、1091秒，無speaker欄位，僅按gender各50筆，不能宣稱speaker平衡。來源revision、parquet hash、每條音訊hash與reference都保存。
+
+英文100筆：official FP32 WER47/2094=2.2445%，ANE43/2094=2.0535%；差值-0.191pp，utterance paired bootstrap95%區間[-0.475,+0.050]pp。中文100筆：official CER247/3663=6.7431%，ANE277/3663=7.5621%；差值+0.819pp，95%區間[+0.283,+1.487]pp。所有200條均正常結束，但**中文品質gate失敗**，不能用英文的改善抵消中文退步，也不能宣布模型已品質等價。
+
+MLX參照使用獨立uv環境（mlx-audio0.5.3、mlx0.32.2、transformers5.17.0），直接strict-load同一份官方BF16權重並在記憶體轉置conv，不另下載或修改source。MLX中文同100筆CER236/3663=6.4428%。暖機後smoke英文約0.439秒、中文約0.140秒，明顯快於目前ANE候選。這是誠實的限制：ANE移植已成立，速度尚未追上MLX，功耗又沒有可用權限，不能宣傳節能。
+
+## 2026-09-12 — 07：否證最初假說，改查精度
+
+中文主要回歸中的部分樣本涉及阿拉伯數字與中文數字表記。仍保留事先固定的raw CER評分，不能在看完測試結果後改normalizer把回歸洗掉。以10個事後選出的diagnostic樣本做官方FP32 global/window成對比較：global重跑10/10一致；改成window反而少2個errors，候選仍多26個errors。MLX也確實使用window attention。因此「分窗語義導致主要退步」被否證，不能為了讓baseline看起來更近而盲目改encoder。
+
+下一步是4個代表樣本的官方CPU FP16對照，以及單layer混合精度CoreML probe：主要conv/matmul/softmax保留FP16，其餘scalar/residual math保留FP32，分辨普通FP16量化、ANE subnormal/fusion與最後layer大值相消。先只建96MB單層，避免在尚未證實方向時再產生完整4.4GB模型。
+
+另外，工作區約18GB、系統temporary約5.6GB，但可用磁碟從最初85GiB降到14GiB。尚未確定其餘下降由何處造成；不假定全是我們的cache，也不清理其他應用或Time Machine快照。已停止新增大模型變體；MLX重用原weights就是為了避免再耗4.4GB。權限探測`sudo -n powermetrics`立即回報需要密碼，未取得或索取密碼，能耗繼續標為unavailable。
+
+## 2026-09-12 — 08：隔離 ANE SiLU 誤差
+
+四個代表樣本的官方整模型CPU FP16全部與FP32 normalized文字一致，CER totals均為2，而原ANE候選為13。普通FP16本身不能解釋回歸。Encoder LayerNorm微模型一開始全被分配到CPU；加入identity 1×1 projection才取得真正ANE計畫。直接寫F.layer_norm與手寫版幾乎相同，因為MIL早已融合成layer_norm+batch_norm，沒有證據支持盲目替換norm。
+
+主線建立無KV state的first-token decoder，逐一輸出norm、v、attention residual、gate、up、product及final，排除cache和attention歧義。真實token151644上，ANE gate/up誤差約0.12–0.15%，但SiLU product突然升到1.34%。把**ANE實際輸出的gate/up**帶回CPU重算精確product，仍與ANE product差1.32%，於是排除了上游誤差累積。
+
+微圖比較發現，F.silu與x*sigmoid(x)都被MIL融合成原生silu，兩者均不準。x*(tanh(x/2)+1)/2降低誤差，但負端有相消。最後選用`x * exp(min(x,0)) / (1 + exp(-abs(x)))`：exp輸入永遠非正、分母介於1與2、無clipping、MIL不會再融合回silu。四個真token的product誤差降至0.046–0.054%，約26–39倍改善，全部算子仍preferred ANE。完整單layer誤差也下降，但這仍不能替代整模型品質驗證。
+
+另外嘗試FP32 scalar/residual + FP16重運算的mixed圖，仍遇CoreML execution plan -14。改單次cache寫入不能解決；直接copy_又觸發coremltools的No matching select or slice，完整slice assignment雖可export但CPU_ONLY仍拒絕。這個方向沒有證明有效，正式SiLU ablation回復已驗證的原cache表達，僅改SiLU。
+
+新候選用APFS clone共享未變模型，重新轉decoder後比對binary SHA256，7個weight.bin全與原來相同，因此再以hardlink共享已驗證不變的權重。新版本只新增graph描述，避免多佔2.7GB權重。這也提供很直接的ablation證據：權重一個bit都沒變，改的是graph math。新候選`artifacts/qwen3-asr-1.7b-stable-silu`仍標unvalidated。
+
+將原deterministic corpus selection延伸到每語言200筆，確認前100筆與原版完全一致，新增的後100筆與任何診斷樣本不重疊。在候選推理前封存兩種用途：200筆舊樣本作diagnostic retest，200筆新樣本作held-out。已啟動完整400筆候選和新200筆官方參照。早期回報顯示單算子精度改善並未立刻消除所有中文數字表記差異，因此繼續做encoder/decoder hybrid交叉定位，沒有提前宣布成功。
+
+## 2026-09-12 — 09：加入 streaming，真機測試揭露生命週期問題
+
+使用者追加streaming與盡可能多Standard ASR能力的要求。核對官方：streaming公開入口目前限vLLM，算法是累積音訊重新编码、前幾chunk不固定prefix、之後回退K個raw output tokens，再接續解碼。不是已有可直接搬用的持久causal encoder state。
+
+實作Standard ASR v0.2 session：PCM16/float32增量輸入、whole-input streaming output、batch/stream context prompt、語言override、partial→closed→done、tail flush、cancel與有界queue backpressure。Raw metadata與可見文字分開，rollback避免UTF-8截斷；partial的stable_until保守為0。Phrase hints仍透過標準的degrade_to_prompt，不假裝native boost；候選語言hard restriction、timestamps、diarization等未有真正引擎支持者仍不宣告。當前session明確限30秒，超限structured error，不以未驗證的rollover偷偷切詞。
+
+首輪mock/契約測試通過，真實realtime中文卻出現SIGSEGV。讀取本次python crash報告，故障在背景dispatch thread的_PyObject_Free→libcoremlpython→MLFeatureValue dealloc→MLE5InputPortBinder resetAfterLingering。小模型thread/main-thread/idle對照未穩定重現，因此不能把假說當完整根因證明。
+
+源碼檢查發現coremltools9的predict會把提供的FP16 NumPy input原地替換為新的FP32 array。只保留原FP16 arrays無法保住實際被native借用的owner。加入每模型一組固定FP32 buffers，以copyto填資料，輸出也copy成host-owned arrays；沒有逐call無限保留。close先dropmodel，依Python refcount確認native借用退場再放buffers，timeout明確失敗並保留資源。
+
+同一完整模型連做兩輪4.2039秒realtime中文，每輪正常closed→done、event compliance通過、final均「甚至出现交易几乎停滞的情况。」；每輪idle5秒、explicit close（約41ms）與close後idle5秒全部正常、exit0。這是已在真機驗證的ownership mitigation，尚非小模型乾淨A/B的底層bug證明。全部原始記錄保存在`artifacts/evaluation/smoke/streaming-lifetime-persistent.jsonl`。
+
+## 2026-09-12 — 10：以 hybrid 交叉測試定位真正的品質瓶頸
+
+穩定SiLU候選在舊中文前79筆只從233降到232 errors，許多數字表記仍未恢復。因此把「算子誤差已降低」與「端到端CER已修好」明確分開。
+
+選四個既有diagnostic樣本861/331/192/554，每個在獨立有timeout的process交叉兩條路徑：ANE encoder＋官方FP32 decoder，以及官方FP32 window encoder＋ANE stable decoder。結果4/4轉錄完全隨encoder走：前者重現候選，後者恢復官方；CER totals分別13與2。這包含不只是數字格式的192「这巧克力」對「热巧克力」。
+
+同一份mel輸入下，ANE與官方window encoder的embedding相對L2高達16.6–22.2%，cosine約0.975–0.987。Host mel與官方mel相對誤差僅5–9e-7，官方encoder改吃host mel只變約3e-6，排除了host特徵處理。最初synthetic mel的好結果沒有覆蓋真語音分布；這是本次驗證流程要記住的教訓。新的優先方向是encoder原生activation／融合行為，先作GELU與分階段數值探測，沒有盲目改大模型。
+
+公開engine.close及context manager也已加入：與推理共用Lock，成功才清runtime，可重新prepare。Retirement以指數退避避免閒置高頻polling，interpreter shutdown不再嘗試創建清理thread。這改善正常explicit close路徑；不將Python interpreter teardown當作已被完整證明安全的情境。

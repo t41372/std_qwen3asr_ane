@@ -1,0 +1,10 @@
+Qwen3-ASR architecture and official checkpoint
+Copyright 2026 The Qwen team, Alibaba Group and the HuggingFace Inc. team.
+Licensed under the Apache License, Version 2.0.
+https://github.com/QwenLM/Qwen3-ASR
+https://huggingface.co/Qwen/Qwen3-ASR-1.7B
+
+The conversion modules independently express the official architecture using
+static Core ML-compatible graphs. Reference implementation details and source
+revisions are recorded in the workspace research documents. Model weights are
+downloaded separately and are not included in this Python distribution.
