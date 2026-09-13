@@ -122,6 +122,21 @@ Copy本身約62.7–64.4ms；兩輪同時量到的serial基準接近（EN約2.10
 
 原始檔：`artifacts/evaluation/smoke/shared-state-full-k7.jsonl`、`copied-state-full-k7-control.jsonl`；含來源hash的摘要：`shared-state-full-comparison.json`。腳本是已存在的`experiments/benchmark_speculative.py`，只切換`--state-transfer share|copy`。這項已備妥工作現在已完成驗證，接續仍依使用者的新workflow決定下一步。
 
+### 純1.7B逐token解碼的寬prefill對照
+
+另用`experiments/benchmark_dualwidth_greedy.py`，在同一組generation handles上交替普通T16與T64 prefill，兩邊都直接呼叫正式`CoreMLRuntime.transcribe()`的greedy loop。**沒有載入草稿模型、沒有oracle、沒有修改正式插件。** 兩音訊、各一warmup和三次測量，共8組配對／16次推理，token完全一致且close成功。
+
+| 中位數 | T16 prefill | T64 prefill＋共用state |
+|---|---:|---:|
+| 英文完整推理 | 2.0954秒 | 1.8178秒 |
+| 中文完整推理 | 0.5100秒 | 0.4333秒 |
+| 英文prefill | 0.4193秒 | 0.1415秒 |
+| 中文prefill | 0.1522秒 | 0.0733秒 |
+
+生成部分基本不變。這支持一條不依賴輔助ASR的核心優化，但仍慢於MLX、仍只有兩段smoke的品質證據。此原型額外載入完整prefill runtime增加約0.394秒（base載入1.612秒），尚未消除重複encoder/head handles的成本，也未量新能耗。
+
+完整紀錄與環境／script／runtime／manifest hashes：`artifacts/evaluation/smoke/dualwidth-greedy.jsonl`、`dualwidth-greedy.summary.json`。若接續採用此路線，先解決載入成本和更廣品質驗證，再考慮整合預設引擎。
+
 ## SenseVoiceSmall 支線：現況與問題
 
 起因：0.6B Qwen draft 仍有28層，相同16Q/8KV heads，在ANE上逐token成本過高。嘗試改用非自回歸 CTC 模型一次提出整段文字，由1.7B逐token驗證。它是可能的加速輔助，並不完成或替代1.7B移植本身。

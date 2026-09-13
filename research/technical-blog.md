@@ -217,3 +217,11 @@ infrequent-reshape hint、將-inf mask改為-10000、提高LayerNorm epsilon及r
 Shared state的英文中位1.6903秒，copy控制1.7565秒，相差66.2ms；中文0.4528對0.5221秒，相差69.3ms。Copy本身62.7–64.4ms，而兩程序同時量到的serial target基準都約英文2.10秒、中文0.512秒。結果支持在這個host與這組相容models中避免state拷貝能省掉這部分開銷；不將兩個smoke推廣成所有shape、CoreML版本、廣泛品質或能耗證明，且完整流程仍慢於MLX。
 
 原始資料與帶hash摘要保存在artifacts/evaluation/smoke/shared-state-full-k7.jsonl、copied-state-full-k7-control.jsonl、shared-state-full-comparison.json，結果補入HANDOFF.md。沒有改預設引擎或產物。
+
+## 2026-09-12 — 22：驗證純1.7B greedy的寬prefill收益
+
+自動續行時，將範圍限制為已驗證的共用state對核心1.7B路徑是否有益。新增獨立benchmark子類，只覆寫prepare_prompt的路由；兩種模式沿用相同正式greedy loop與generation handles。沒有0.6B draft或SenseVoice，也沒有oracle草稿。各次配對交替執行順序，兩段smoke各一warmup及三次測量，8組配對的全部token相同、explicit close成功，記錄complete與verified_pairs，失敗不會冒充完整驗證。
+
+英文完整推理由2.0954秒降到1.8178秒（約13.3%），中文0.5100秒降到0.4333秒（約15.0%）。英文prefill由0.4193秒降至0.1415秒，中文0.1522秒降至0.0733秒；生成時間基本不變。這是可以歸因到prefill的核心改善，但還沒有勝過MLX，也不是廣泛品質或節能證明。
+
+原型額外完整載入prefill runtime，因此base載入1.612秒之外另需約0.394秒。沒有隱藏這項冷啟動取捨，也沒有將原型整合為預設插件。資料與來源hash在artifacts/evaluation/smoke/dualwidth-greedy.jsonl及dualwidth-greedy.summary.json，更新handoff供新workflow評估。
