@@ -6,17 +6,17 @@ The model is converted to Core ML, Apple's model runtime, with the GPU excluded.
 
 ## Results
 
-Measured on a MacBook Pro M5 Max (64 GB, macOS 27.0). Latency is the median of 5 warm runs on two official test recordings (English 15 s, Chinese 4 s). Energy is the whole-machine power estimate from the Mac's power controller (`PSTR`), integrated over equal work and divided by seconds of audio; it is not a wall meter. Memory is the system-wide wired memory added by loading the model and transcribing. Quality is paired word error rate (English, LibriSpeech) and character error rate (Chinese, FLEURS) on 200 held-out sentences; "same" means no measurable difference from the official FP32 model. Methods, limits and raw numbers are in [research/results-2026-09-13.md](research/results-2026-09-13.md) (Chinese); terms are in [research/glossary.md](research/glossary.md).
+Measured on a MacBook Pro M5 Max (64 GB, macOS 27.0). Latency is the median of 5 warm runs on two official test recordings (English 15 s, Chinese 4 s). Energy is the whole-machine power estimate from the Mac's power controller (`PSTR`), integrated over equal work and divided by seconds of audio; it is not a wall meter. Memory is the system-wide wired memory added by loading the model and transcribing. Quality is paired word error rate (English, LibriSpeech) and character error rate (Chinese, FLEURS) on 200 selection and 200 held-out sentences; "same" means every paired difference from the official FP32 model is within 0.3 percentage points with a confidence interval that includes zero. Methods, limits and raw numbers are in [research/results-2026-09-13.md](research/results-2026-09-13.md) (Chinese); terms are in [research/glossary.md](research/glossary.md).
 
 | Path | EN 15 s | ZH 4 s | J per audio second | Wired memory | Quality vs official |
 |---|---:|---:|---:|---:|---|
 | Neural Engine, FP16 (uncompressed) | 2.06 s | 0.50 s | 3.19 | 4.2 GB | same |
 | **Neural Engine, 8-bit (default)** | **1.43 s** | **0.35 s** | **2.34** | **2.6 GB** | same |
 | Neural Engine verify + GPU draft (optional) | 0.60 s | 0.20 s | 38% below default | 6.4 GB | identical tokens to default |
-| GPU, MLX 8-bit | 0.30 s | 0.11 s | pending | pending | pending |
-| GPU, MLX bf16 | 0.46 s | 0.14 s | 1.99 | 4.1 GB | pending |
-| GPU, MLX 4-bit | 0.21 s | 0.09 s | 1.15 | 2.1 GB | pending |
-| GPU, official PyTorch (MPS, bf16) | 0.78 s | 0.20 s | not measured | not measured | pending |
+| GPU, MLX 8-bit | 0.30 s | 0.11 s | pending | pending | same |
+| GPU, MLX bf16 | 0.46 s | 0.14 s | 1.99 | 4.1 GB | same |
+| GPU, MLX 4-bit | 0.21 s | 0.09 s | 1.15 | 2.1 GB | Chinese +0.5 to +1.0 pp worse |
+| GPU, official PyTorch (MPS, bf16) | 0.78 s | 0.20 s | not measured | not measured | same |
 | CPU, official PyTorch (FP32) | 2.74 s | 0.80 s | not measured | not measured | reference |
 
 What the numbers say:
@@ -24,7 +24,7 @@ What the numbers say:
 - On this machine every GPU path is faster than the Neural Engine path. The Neural Engine draws about a third of the GPU paths' average power, adds little to the Python process's memory, and leaves the GPU idle.
 - Relative to the FP16 Neural Engine bundle, the 8-bit bundle's gains come from weight compression (27% faster, 27% less energy) and from splitting the decoder into 2 Core ML files instead of 7 (about 5%). Serial decoding on the Neural Engine is bound by per-element weight decompression; nothing else moved these numbers.
 - The optional draft path doubles speed without changing output: a 0.6B model on the GPU proposes 15 tokens, the 1.7B model on the Neural Engine verifies them in one call and keeps only the prefix it would have produced itself. Every emitted token is the 1.7B model's own choice. Cost: a second model in memory and a busy GPU.
-- 8-bit compression: the ANE bundle uses palettized weights (a lookup table per 32 output channels) for the decoder and output layer; the MLX 8-bit reference uses affine quantization of the decoder only (group 64). Same bit width, different scheme.
+- The like-for-like comparison is Neural Engine 8-bit against MLX 8-bit: same bit width, same measured quality. The ANE bundle uses palettized weights (a lookup table per 32 output channels) for the decoder and output layer; the MLX 8-bit reference uses affine quantization of the decoder only (group 64). MLX 4-bit is the fastest path but loses 0.5 to 1.0 percentage points of Chinese character accuracy, the same trade this project rejected for its own 4-bit bundle.
 
 Not supported: word timestamps, speaker diarization, restricting candidate languages, and audio longer than 30 seconds per utterance. Streaming (partial results while audio arrives) is supported through the serial path.
 
