@@ -135,25 +135,37 @@ def build(args, config) -> Path:
     return args.output
 
 
-def benchmark(path: Path, cache_length: int, *, samples=30, warmups=10) -> dict:
+def benchmark(path: Path, cache_length: int, *, samples=30, warmups=10, position=None) -> dict:
+    """Time one decode step at a mid-cache position with a random hidden state.
+
+    All-zero inputs would let a compiler or hardware skip work, so the hidden
+    state is Gaussian, the query attends to a realistic number of positions and
+    rotary inputs are the real cos/sin at that position.
+    """
     spec = ct.models.MLModel(str(path), skip_model_load=True).get_spec()
+    if position is None:
+        position = cache_length // 2
+    generator = np.random.default_rng(20260913)
     feed = {}
     for item in spec.description.input:
         shape = tuple(item.type.multiArrayType.shape)
         if item.name == "position":
-            feed[item.name] = np.array([0], dtype=np.int32)
+            feed[item.name] = np.array([position], dtype=np.int32)
         elif item.name == "attention_mask":
             mask = np.full(shape, -1e4, dtype=np.float32)
-            mask[..., 0] = 0
+            mask[..., : position + 1] = 0
             feed[item.name] = mask
         elif item.name == "update_mask":
             update = np.zeros(shape, dtype=np.float32)
-            update[..., 0] = 1
+            update[..., position] = 1
             feed[item.name] = update
-        elif item.name == "cosine":
-            feed[item.name] = np.ones(shape, dtype=np.float32)
+        elif item.name in ("cosine", "sine"):
+            frequencies = 1e6 ** (-np.arange(0, 128, 2, dtype=np.float32) / 128)
+            phase = position * frequencies
+            values = np.cos(phase) if item.name == "cosine" else np.sin(phase)
+            feed[item.name] = np.broadcast_to(values[None, :, None, None], shape).astype(np.float32)
         else:
-            feed[item.name] = np.zeros(shape, dtype=np.float32)
+            feed[item.name] = generator.standard_normal(shape).astype(np.float32)
     started = perf_counter()
     model = ct.models.MLModel(str(path), compute_units=ct.ComputeUnit.CPU_AND_NE)
     load_seconds = perf_counter() - started
@@ -211,7 +223,13 @@ def main():
         args.output.with_suffix(".build.json").write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps({k: v for k, v in report.items() if k != "op_types"}), flush=True)
         return
+    if args.benchmark_only:
+        # The variant is fixed at build time; recover it from the build record.
+        build_record = args.output.with_suffix(".build.json")
+        if build_record.exists():
+            report["mode"] = json.loads(build_record.read_text()).get("mode", args.mode)
     report.update(benchmark(args.output, args.cache_length))
+    report["input_protocol"] = "gaussian_hidden_state_mid_cache_position_v2"
     args.output.with_suffix(".floor.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({k: v for k, v in report.items() if k != "op_types"}), flush=True)
 

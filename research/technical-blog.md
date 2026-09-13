@@ -251,15 +251,19 @@ Shared state的英文中位1.6903秒，copy控制1.7565秒，相差66.2ms；中�
 
 ## 2026-09-13 — 24：完整壓縮 bundle 的 selection-set 結果與候選決定
 
-以 `qwen3-asr-ane compress` 從 `qwen3-asr-1.7b-final` 產生兩個完整 bundle 並 compile：LUT8 g32（decoder 7×403→203 MB，head 622→314 MB）與 LUT4 g16（decoder 7×101 MB，head 157 MB）。MLComputePlan：壓縮後的 partition 1030 個有成本算子全部 preferred ANE，head 51 個亦全部 ANE，沒有把 LUT 解壓推回 CPU。
+以 `qwen3-asr-ane compress` 從 `qwen3-asr-1.7b-final` 產生兩個完整 bundle 並 compile：LUT8 g32（decoder 7×403→203 MB，head 622→314 MB）與 LUT4 g16（decoder 7×101 MB，head 157 MB）。MLComputePlan（此時只查了 LUT4 g16 的 `decoder_00` 與 `lm_head`）：partition 1030 個有成本算子全部 preferred ANE，head 51 個亦全部 ANE；另有 1267／142 個沒有成本估計的算子（常數）裝置為 unknown。選定候選 LUT8 的全部 8 個 graph 在第 25 節另行檢查。
 
-同一 process 內的 smoke warm latency（各 1 warmup、5 次，中位數）：
+同一 process 內的 smoke warm latency（各 1 warmup、5 次，中位數；GPU baseline 在同一場次序列量測，輸出文字與 ANE 相同）。預先登記時已知 partition 級 LUT8 約快 28%，但沒有任何完整 bundle 的品質結果；15% 的 latency 門檻是在那個先驗下寫的。如預期，M5 Max 的 GPU 路徑在 latency 上全部快於 ANE：
 
 | bundle | 英文 15.05 s | 中文 4.20 s | 首次載入 |
 |---|---:|---:|---:|
 | FP16（起點） | 2.060 s | 0.502 s | 1.86 s（已快取） |
 | LUT8 g32 | 1.502 s（−27%） | 0.368 s（−27%） | 34.1 s（首次特化） |
 | LUT4 g16 | 1.543 s | 0.365 s | 34.2 s |
+| MLX-Audio 0.5.3 BF16（GPU） | 0.455 s | 0.139 s | 1.31 s |
+| MLX-Audio 8-bit（GPU，decoder-only 量化） | 0.296 s | 0.110 s | 0.62 s |
+| MLX-Audio 4-bit（GPU，decoder-only 量化） | 0.214 s | 0.088 s | 0.57 s |
+| 官方 PyTorch MPS bf16 sdpa（GPU；3 次） | 0.784 s | 0.198 s | 4.34 s |
 
 Selection set（100 EN LibriSpeech + 100 ZH FLEURS，warmups 0、repeats 1，與既有 FP16 結果配對）：
 
@@ -269,4 +273,4 @@ Selection set（100 EN LibriSpeech + 100 ZH FLEURS，warmups 0、repeats 1，與
 | LUT8 g32 | 42/2094 = 2.006% | 231/3663 = 6.306% | EN 0.000 [0.000, 0.000]；ZH −0.027 [−0.086, 0.000] | 0.097 |
 | LUT4 g16 | 49/2094 = 2.340% | 259/3663 = 7.071% | EN +0.334 [−0.146, +0.826]；ZH +0.737 [−0.077, +1.554] | 0.096 |
 
-LUT8 的英文輸出與 FP16 逐字完全相同，中文只差一個字元；對官方 FP32 仍是 −0.239／−0.437 pp。LUT4 g16 雖然速度相同，但兩語的點估計都超過預先登記的門檻（EN ≤ +0.25、ZH ≤ +0.40），依規則淘汰，不因為記憶體較小而放寬。**候選確定為 LUT8 g32**，接著只對它跑一次 held-out gate、ABBA 能耗、記憶體、Instruments trace、串流與 compliance。速度改善來自 ANE 按元素解壓的快速路徑，與位元數無關，因此 4-bit 只有記憶體優勢；若之後要用 4-bit，需要更好的量化方法（例如逐群更小、或校準式），不是換 group size 就能解決。
+LUT8 的英文 normalized 錯誤數與 FP16 逐句相同（Δ=0、CI [0, 0] 是配對錯誤數相同的結果，不代表位元相同）：原始字串有 7/100 英文、7/100 中文不同，例如一個專名替換與句界移動，中文淨錯誤數少 1 個字元；對官方 FP32 仍是 −0.239／−0.437 pp。另要說明：品質 baseline 是 `qwen3-asr-1.7b-precise`（9/12 的既有結果，tokenizer 與 final 不同但 `tokenizer-equivalence.json` 證明無 context 的 batch input IDs 全部相同），latency baseline 是由 `final` 編譯的 `-compiled`，也是 LUT8 的直接父產物；corpus RTF 的 FP16 0.135 來自 9/12 的 precise run，同日的 compiled FP16 smoke RTF 為 0.133。LUT4 g16 雖然速度相同，但兩語的點估計都超過預先登記的門檻（EN ≤ +0.25、ZH ≤ +0.40），依規則淘汰，不因為記憶體較小而放寬。**候選確定為 LUT8 g32**，接著只對它跑一次 held-out gate、ABBA 能耗、記憶體、Instruments trace、串流與 compliance。速度改善來自 ANE 按元素解壓的快速路徑，與位元數無關，因此 4-bit 只有記憶體優勢；若之後要用 4-bit，需要更好的量化方法（例如逐群更小、或校準式），不是換 group size 就能解決。
