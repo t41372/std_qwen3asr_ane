@@ -164,11 +164,11 @@ def main() -> None:
     ]
     wall = sum(row["seconds"] for row in workload if row.get("phase") == "measured")
     trace_files = tree_manifest(Path(f"{prefix}.trace"))
-    time_info = ET.parse(f"{prefix}-time-info.xml").getroot()
-    target = {}
-    for node in time_info.iter():
-        if node.get("id") and node.tag in ("pid", "return-exit-status", "duration"):
-            target[node.tag] = node.text
+    # The target process is recorded once in the trace table of contents as
+    # <process pid=... return-exit-status=...>; time-info carries no PID.
+    toc = ET.parse(f"{prefix}-toc.xml").getroot()
+    target_node = toc.find("./run/info/target/process")
+    target = dict(target_node.attrib) if target_node is not None else {}
     prediction_total = sum(item["duration_sum_ns"] for item in candidate_models)
     sidecar = {
         "schema_version": 1,

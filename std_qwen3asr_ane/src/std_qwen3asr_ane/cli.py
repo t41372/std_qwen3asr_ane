@@ -26,7 +26,7 @@ def main(argv: list[str] | None = None) -> int:
         "--layers-per-partition",
         type=int,
         choices=(4, 7, 14),
-        default=4,
+        default=14,
         help="decoder layers per Core ML model; 14 measured fastest, 28 fails to load on macOS 27",
     )
     compress = commands.add_parser(
