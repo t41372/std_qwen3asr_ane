@@ -141,3 +141,31 @@ uv已建立wheel與sdist；乾淨runtime環境不安裝Torch即可探索模型�
 IORegistry的電池整機功率也可無root讀取，約與Voltage×InstantAmperage一致；45秒觀測中有一次約35.9秒後才刷新的變化，積分語義與cadence未校準，不能拿來評估短utterance。原始資料與時鐘偏移校正保存在artifacts/power-probe，結論見nonroot-power.md。能耗gate仍unavailable，現在有比單純權限不足更完整的原因，未為了交付而編造省電數字。
 
 最終程式通過156個測試、Ruff與Standard ASR compliance（含sync bridge）。自動workflow的protocol與actual-device gates通過；品質的嚴格release gate仍inconclusive。乾淨wheel環境無Torch、使用tokenizers0.23.2及最新main，實際中文轉錄與result compliance均成功；wheel source與工作區package逐檔一致，LICENSE與NOTICE亦已打包。
+
+## 2026-09-12 — 14：撤回過早完成判定，繼續改善串流、速度與能耗驗證
+
+使用者指出上述研究版沒有達成原始目標。這個判斷正確：ANE placement、協議相容和有限樣本的品質接近，只完成部分工作；不能把剩餘目標寫成限制就宣告完成。建立新的 active goal，要求長串流、速度優化、可信能耗對照與充分品質驗證完成後才關閉。
+
+30秒是目前bundle metadata、session buffer和1024-token decoder cache共同設下的產品限制，不是Qwen3-ASR的streaming上限。官方公開streaming依然累積音訊並回退文字prefix，沒有現成的無限causal encoder state可直接使用。下一版先建立精確prompt-prefix重用：比較完整embedding的實際值，只重用完全相同的因果前綴，向下對齊prefill block，再覆寫改變的suffix；未來位置的stale KV由mask隔離。長session另外擴展cache與設計有證據的分段，不能只拿掉檢查。
+
+載入路徑檢查發現每個runtime都重新開啟.mlpackage。Apple文件指出CompiledMLModel配合穩定.mlmodelc路徑才能重用裝置特化快取，因此新增明確的immutable compiled-bundle實驗，保存來源檔案hash與host版本，在相同權重下量測冷啟動與warm推理。這時尚未把預期改善當成量測結果。
+
+第二輪功耗probe直接檢查364個Energy Model channel的原始payload：CPU SRAM等替代channel與ANE同樣凍結，但CPU residency正常前進。這縮小到能量資料路徑，仍不能斷言是某個特定driver bug。另找到可由普通使用者讀取的SMC PSTR整機功率，每秒有更新；先做受控負載與cadence驗證，再規劃長時間等工作量能耗對照。
+
+## 2026-09-12 — 15：載入改善、真實串流重用與第一組有效整機能耗
+
+相同final FP16模型轉成穩定.mlmodelc路徑。第一次runtime載入36.335秒，第二個獨立process只有1.539秒，兩個smoke的全部文字一致。Warm英文仍約2.1秒、中文約0.50秒；這是一個明確的重複啟動改善，沒有把它混同於token生成加速。功能成為`qwen3-asr-ane compile --source ... --output ...`明確準備指令，來源保持不變，compiled bundle保留來源檔案hash，Standard ASR artifact檢查亦支持這種格式。
+
+Exact streaming prefix context已整合。真實15秒英文串流的closed文字與batch相同，event/result compliance通過，explicit close正常。這個real-run是功能驗證，當時另有CPU轉換工作，不採其latency作性能證據。193個測試通過，包含context失敗後的NaN cache恢復、不同session隔離及compiled artifact存在性檢查。三分鐘測試目前只是fake runtime契約驗證；真正更長artifact與長音訊驗證仍待完成。
+
+SMC active control的30秒閒置／四CPU負載／恢復平均12.18／53.95／15.86W，確認正常負載響應與過渡延遲。接著在沒有其他本專案模型工作時，ANE與MLX各完成相同60輪兩音訊，共120次辨識、1155.31125秒音訊。ANE用155.152秒、估計5876.40J（5.086J／音訊秒）；MLX用34.375秒、2681.05J（2.321J／音訊秒）。ANE平均37.88W低於MLX的77.99W，但因為更慢，總能耗約2.19倍。數據推翻了「低瓦數就比較省電」的直覺，優化需要降低每項有用工作的能耗。
+
+這一組是SMC整機估計、單次A/B診斷，沒有外部功率計校準或ANE逐裝置歸屬。兩次都在AC且充電；power trace保存這些條件，PSTR遠低於含充電的SystemPowerIn，不能把它稱為wall-plug energy。邊界平移±2秒的估計範圍ANE5838.69–5904.56J，MLX2551.67–2794.81J；這個差距遠大於邊界延遲，但更小的未來改善需要ABBA重複和條件檢查。原始證據在artifacts/power-v2/asr-baseline-{ane-a1,mlx-b1}。
+
+## 2026-09-12 — 16：從 token 寬度轉向權重頻寬與解碼算法
+
+真實四層partition的固定T1約3.838ms，而既有T16约4.2ms，消除15個padding位置只提供小幅改善。大部分成本是權重供應，不能靠Python微調補足與MLX的差距。小型多function模型載入報functionName/modeltype錯誤；小型與真實四層EnumeratedShapes模型雖能轉換，卻在此host執行計畫建構報-14。固定真實T1可正常執行。這些是具體實驗的失敗，尚未證明所有CoreML flexible/stateful組合都不支援；若需雙寬度，公開MLState read/write提供明確狀態轉移的替代路徑。
+
+開始投影權重palettization，保留FP16 activation、穩定SiLU、相同KV布局。為避免對數億重複BF16來源值跑昂貴的隨機k-means，利用FP16最多65536個bit patterns建立完整histogram，以元素出現次數作Lloyd更新權重，再按實際FP16 LUT精度重算nearest assignment。這仍優化全部權重的MSE，沒有抽樣，也不等於端到端品質保證。四層weight.bin由384MiB降到8-bit的193MiB；實際T1中位数2.747ms，比FP16約快28%。6-bit約2.877ms，顯示bit更少不自動更快。4-bit仍在測量。
+
+使用者進一步要求各benchmark都勝過MLX，實作改由主代理為主，研究子代理只處理有界資料查核。量化還有品質與頻寬上限，因此開始研究0.6B作draft、1.7B作最終verifier的精確greedy speculative decoding：一次搬入1.7B權重可驗證多個token，只有被1.7B驗證的前綴才能輸出。這是待實作與測試的方向，絕不把draft結果直接冒充1.7B。

@@ -298,6 +298,22 @@ def test_empty_weight_payload_is_incomplete(bundle: Path):
     assert create_engine(model_dir=bundle).artifact_status().requirements[0].state == "incomplete"
 
 
+def test_compiled_bundle_presence_and_weight_validation(bundle: Path):
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    compiled = bundle / "frontend.mlmodelc"
+    (compiled / "weights").mkdir(parents=True)
+    for relative in ("coremldata.bin", "model.mil", "weights/weight.bin"):
+        (compiled / relative).write_bytes(b"compiled fixture")
+    manifest["files"]["frontend"] = compiled.name
+    manifest_path.write_text(json.dumps(manifest))
+    assert create_engine(model_dir=bundle).artifact_status().readiness == "ready"
+    (compiled / "weights/weight.bin").unlink()
+    assert create_engine(model_dir=bundle).artifact_status().requirements[0].state == "incomplete"
+    (compiled / "weights/weight.bin").symlink_to(bundle / "embedding.npy")
+    assert create_engine(model_dir=bundle).artifact_status().requirements[0].state == "corrupt"
+
+
 def test_language_mapping() -> None:
     assert len(LANGUAGE_NAMES) == 30
     assert normalize_model_language("Cantonese") == "yue"

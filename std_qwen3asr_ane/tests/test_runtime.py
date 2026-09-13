@@ -124,6 +124,34 @@ def test_runtime_import_does_not_load_conversion_or_model_frameworks() -> None:
     subprocess.run([sys.executable, "-c", code], check=True)
 
 
+def test_compiled_artifacts_use_compiled_loader(bundle: Path, fake_coreml) -> None:
+    module = sys.modules["coremltools"]
+    module.models.CompiledMLModel = module.models.MLModel
+
+    def forbidden_package_load(*args, **kwargs):
+        pytest.fail("Compiled bundle invoked the source-package loader")
+
+    module.models.MLModel = forbidden_package_load
+    path = bundle / "manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["files"] = {
+        role: name.replace(".mlpackage", ".mlmodelc") for role, name in manifest["files"].items()
+    }
+    manifest["decoder_partitions"] = [
+        name.replace(".mlpackage", ".mlmodelc") for name in manifest["decoder_partitions"]
+    ]
+    path.write_text(json.dumps(manifest))
+    runtime = CoreMLRuntime(bundle)
+    try:
+        assert all(model.compute_units == "cpu_and_ne" for model in fake_coreml)
+        assert (
+            runtime.transcribe(np.zeros(8000, np.float32), language="en", max_new_tokens=3).text
+            == "hello"
+        )
+    finally:
+        runtime.close()
+
+
 def test_complete_decode_masks_scaling_and_reset(bundle: Path, fake_coreml) -> None:
     runtime = CoreMLRuntime(bundle)
     result = runtime.transcribe(np.zeros(8000, dtype=np.float32), language="en", max_new_tokens=3)
@@ -290,6 +318,48 @@ def test_runtime_continuation_preserves_raw_prefix(bundle: Path, fake_coreml) ->
     assert result.token_ids == (1,)
     with pytest.raises(ValueError, match="system slot"):
         build_prompt(runtime.tokenizer, 7, None, "<|audio_pad|>", context="terms")
+
+
+def test_streaming_context_reuses_states_and_only_exact_prompt_blocks(bundle: Path, fake_coreml):
+    _set_token_batch_size(bundle, 16)
+    runtime = CoreMLRuntime(bundle)
+    runtime.prompt_template = "hello " * 32 + "<|audio_pad|>"
+    context = runtime.new_decoder_context()
+    first = runtime.transcribe(
+        np.zeros(8000), language=None, max_new_tokens=3, decoder_context=context
+    )
+    previous_calls = len(runtime.decoders[0].calls)
+    runtime.lm_head.tokens[:] = [1, runtime.tokenizer.token_to_id("<|im_end|>")]
+    second = runtime.transcribe(
+        np.zeros(16000), language=None, max_new_tokens=3, decoder_context=context
+    )
+    assert first.text == second.text == "hello"
+    for decoder, state in zip(runtime.decoders, context.states, strict=True):
+        assert decoder.states == [state]
+        assert all(call_state is state for _, call_state in decoder.calls)
+    # 32 identical text embeddings plus unchanged fake audio; the old partial
+    # T16 block is replayed at position32 and new audio fills its suffix.
+    new_calls = runtime.decoders[0].calls[previous_calls:]
+    assert len(new_calls) == 2
+    assert new_calls[0][0]["update_mask"][0, 0, 0, 32] == 1
+    assert new_calls[1][0]["update_mask"][0, 0, 0, 45] == 1
+
+
+def test_generation_failure_resets_streaming_reuse_metadata(bundle: Path, fake_coreml):
+    _set_token_batch_size(bundle, 16)
+    runtime = CoreMLRuntime(bundle)
+    runtime.prompt_template = "hello " * 32 + "<|audio_pad|>"
+    context = runtime.new_decoder_context()
+    runtime.transcribe(np.zeros(8000), language=None, max_new_tokens=3, decoder_context=context)
+    runtime.lm_head.tokens[:] = [1]
+    with pytest.raises(RuntimeError, match="before EOS"):
+        runtime.transcribe(np.zeros(8000), language=None, max_new_tokens=1, decoder_context=context)
+    assert context._prompt is None
+    previous_calls = len(runtime.decoders[0].calls)
+    runtime.lm_head.tokens[:] = [runtime.tokenizer.token_to_id("<|im_end|>")]
+    runtime.transcribe(np.zeros(8000), language=None, max_new_tokens=1, decoder_context=context)
+    first_retry = runtime.decoders[0].calls[previous_calls][0]
+    assert first_retry["update_mask"][0, 0, 0, 0] == 1
 
 
 def _set_token_batch_size(bundle: Path, size: int) -> None:

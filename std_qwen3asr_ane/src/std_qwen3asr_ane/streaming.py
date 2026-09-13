@@ -1,4 +1,4 @@
-"""Bounded Qwen prefix-rollback streaming over repeated cumulative audio decoding.
+"""Bounded Qwen prefix-rollback streaming with exact decoder-prefix state reuse.
 
 This follows the upstream streaming strategy, not a causal audio encoder cache.
 Every partial is revisable; only an end-of-input closed event is immutable.
@@ -35,8 +35,9 @@ class _Cancelled(Exception):
 
 
 class _AudioLimit(Exception):
-    def __init__(self, seconds: float):
+    def __init__(self, seconds: float, source: str):
         self.seconds = seconds
+        self.source = source
 
 
 class Qwen3ASRSession(TranscriptionSession):
@@ -73,6 +74,7 @@ class Qwen3ASRSession(TranscriptionSession):
         self._last_raw = ""
         self._last_result = None
         self._pcm_tail = b""
+        self._decoder_context = None
 
     async def finish(self) -> None:
         """Flush the final partial audio chunk, then close the utterance."""
@@ -86,6 +88,9 @@ class Qwen3ASRSession(TranscriptionSession):
     async def _close(self) -> None:
         self._native_cancelled.set()
         self._cancel_requested.set()
+        # An in-flight native worker keeps its own context reference until it
+        # finishes. Do not reset state from the async thread while it is used.
+        self._decoder_context = None
 
     async def _until_cancelled(self, operation: Awaitable[_T]) -> _T:
         task = asyncio.ensure_future(operation)
@@ -108,19 +113,32 @@ class Qwen3ASRSession(TranscriptionSession):
             runtime = self.engine._ensure_model_loaded()
             limit = min(self.engine.config.stream_max_audio_seconds, runtime.max_audio_seconds)
             if samples.size > int(limit * SAMPLE_RATE):
-                raise _AudioLimit(limit)
+                source = (
+                    "bundle_audio_limit"
+                    if runtime.max_audio_seconds < self.engine.config.stream_max_audio_seconds
+                    else "configured_session_limit"
+                )
+                raise _AudioLimit(limit, source)
+            if self._decoder_context is None:
+                self._decoder_context = runtime.new_decoder_context()
+            decoder_context = self._decoder_context
             prefix = ""
             if self._decode_count >= self.engine.config.stream_unfixed_chunks:
                 prefix = rollback_prefix(
                     runtime.tokenizer, self._last_raw, self.engine.config.stream_unfixed_tokens
                 )
-            return runtime.transcribe(
-                samples,
-                language=None if self.params.language == "auto" else self.params.language,
-                max_new_tokens=self.engine.config.max_new_tokens,
-                context=self.params.prompt or "",
-                prefix_text=prefix,
-            )
+            try:
+                return runtime.transcribe(
+                    samples,
+                    language=None if self.params.language == "auto" else self.params.language,
+                    max_new_tokens=self.engine.config.max_new_tokens,
+                    context=self.params.prompt or "",
+                    prefix_text=prefix,
+                    decoder_context=decoder_context,
+                )
+            except Exception:
+                decoder_context.reset()
+                raise
 
     async def _decode(self, samples: np.ndarray) -> TranscriptionEvent:
         result = await self._until_cancelled(asyncio.to_thread(self._recognize, samples.copy()))
@@ -163,7 +181,7 @@ class Qwen3ASRSession(TranscriptionSession):
             raise ValueError("PCM input ended in an incomplete sample")
 
     async def _produce(self) -> AsyncIterator[TranscriptionEvent]:
-        accumulated = np.empty(self._sample_limit, dtype=np.float32)
+        accumulated = np.empty(min(self._sample_limit, self._chunk_samples), dtype=np.float32)
         next_decode = self._chunk_samples
         try:
             async for samples in self._input_samples():
@@ -174,7 +192,12 @@ class Qwen3ASRSession(TranscriptionSession):
                 received = self._received_samples + len(samples)
                 if received > self._sample_limit:
                     self._received_samples = received
-                    raise _AudioLimit(self._sample_limit / SAMPLE_RATE)
+                    raise _AudioLimit(self._sample_limit / SAMPLE_RATE, "configured_session_limit")
+                if received > accumulated.size:
+                    capacity = min(self._sample_limit, max(received, accumulated.size * 2))
+                    grown = np.empty(capacity, dtype=np.float32)
+                    grown[: self._received_samples] = accumulated[: self._received_samples]
+                    accumulated = grown
                 accumulated[self._received_samples : received] = samples
                 self._received_samples = received
                 while next_decode <= received:
@@ -201,9 +224,14 @@ class Qwen3ASRSession(TranscriptionSession):
                 "audio_limit_exceeded",
                 extra={
                     "max_audio_seconds": exc.seconds,
+                    "limit_source": exc.source,
                     "received_audio_seconds": self._received_samples / SAMPLE_RATE,
                     "processed_audio_seconds": self._processed_samples / SAMPLE_RATE,
-                    "message": "This session's validated audio context limit was exceeded; no rollover was applied.",
+                    "message": (
+                        "Audio exceeds the configured session duration."
+                        if exc.source == "configured_session_limit"
+                        else "Audio exceeds the loaded bundle's declared duration; a larger-context bundle is required."
+                    ),
                 },
             )
         except ValueError as exc:

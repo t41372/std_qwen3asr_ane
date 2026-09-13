@@ -70,7 +70,7 @@ class Qwen3ASRConfig(LanguageConfigMixin, BaseConfig[Literal["std-qwen3asr-ane"]
     stream_chunk_seconds: float = Field(default=2.0, ge=0.1, le=30.0)
     stream_unfixed_chunks: int = Field(default=2, ge=0)
     stream_unfixed_tokens: int = Field(default=5, ge=0)
-    stream_max_audio_seconds: float = Field(default=30.0, gt=0, le=30.0)
+    stream_max_audio_seconds: float = Field(default=180.0, gt=0, allow_inf_nan=False)
     stream_audio_queue_size: int = Field(default=4, ge=1, le=128)
 
 
@@ -113,7 +113,9 @@ class Qwen3ASREngine(EngineBase):
         ),
         x_qwen3asr_streaming={
             "algorithm": "cumulative_audio_prefix_rollback",
-            "max_session_audio_seconds": 30,
+            "effective_session_audio_limit": "minimum_of_configuration_and_loaded_bundle_duration",
+            "decoder_prefix_reuse": "exact_embeddings_at_token_batch_boundaries",
+            "context_limits": "session_configuration_and_bundle_audio_and_decoder_token_capacity",
             "persistent_causal_encoder_state": False,
             "segment_rollover_supported": False,
         },
@@ -295,6 +297,22 @@ def _inspect_package(package: Path) -> str:
         return "incomplete"
 
 
+def _inspect_compiled_package(package: Path) -> str:
+    """Check our compiled ML Program layout without starting device specialization."""
+    if not package.is_dir():
+        return "incomplete"
+    for child in package.rglob("*"):
+        if not child.resolve().is_relative_to(package):
+            return "corrupt"
+    # These are the Core ML compiler's ML Program metadata and executable MIL
+    # files. Our ASR graphs also all have weights; discovery remains a presence
+    # check, with binary compatibility validated by Core ML during prepare().
+    required = (package / "coremldata.bin", package / "model.mil", package / "weights/weight.bin")
+    if any(not path.is_file() or path.stat().st_size == 0 for path in required):
+        return "incomplete"
+    return "ready"
+
+
 def _inspect_bundle(root: Path) -> tuple[str, str | None]:
     """Inspect local completeness without loading models or claiming device placement.
 
@@ -329,6 +347,10 @@ def _inspect_bundle(root: Path) -> tuple[str, str | None]:
             return "corrupt", revision
         if payload.suffix == ".mlpackage":
             state = _inspect_package(payload)
+            if state != "ready":
+                return state, revision
+        elif payload.suffix == ".mlmodelc":
+            state = _inspect_compiled_package(payload)
             if state != "ready":
                 return state, revision
         elif not payload.is_file() or payload.stat().st_size == 0:

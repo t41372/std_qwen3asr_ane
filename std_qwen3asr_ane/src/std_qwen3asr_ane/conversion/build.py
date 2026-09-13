@@ -7,6 +7,8 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+SUPPORTED_CHECKPOINTS = {"Qwen/Qwen3-ASR-1.7B", "Qwen/Qwen3-ASR-0.6B"}
+
 
 def build_bundle(
     source: Path, output: Path, *, cache_length=1024, reuse_encoder=False, token_batch_size=1
@@ -21,6 +23,9 @@ def build_bundle(
     source, output = source.resolve(), output.resolve()
     if not (source / "config.json").is_file():
         raise FileNotFoundError(f"Download the official checkpoint first: {source}")
+    provenance = json.loads((source / "source.json").read_text())
+    if provenance.get("model_id") not in SUPPORTED_CHECKPOINTS or not provenance.get("revision"):
+        raise ValueError("Source metadata must identify a supported pinned Qwen3-ASR checkpoint")
     torch.set_num_threads(4)
     output.mkdir(parents=True, exist_ok=True)
     # The manifest is a completion marker: an interrupted build must not expose
@@ -52,13 +57,9 @@ def build_bundle(
     files = {entry["role"]: entry["path"] for entry in encoder["files"]}
     files.update(decoder.pop("files"))
     files.update(tokenizer="tokenizer.json", mel_filters="mel_filters.npy")
-    source_metadata = source / "source.json"
-    if not source_metadata.is_file():
-        raise FileNotFoundError("source.json is required to record the exact source revision")
-    provenance = json.loads(source_metadata.read_text())
     manifest = {
         "schema_version": 1,
-        "model_id": "Qwen/Qwen3-ASR-1.7B",
+        "model_id": provenance["model_id"],
         "source_revision": provenance["revision"],
         "files": files,
         "created_at": datetime.now(UTC).isoformat(),
@@ -83,10 +84,11 @@ def build_bundle(
     return manifest
 
 
-def download_source(destination: Path, *, revision="main"):
+def download_source(destination: Path, *, revision="main", model_id="Qwen/Qwen3-ASR-1.7B"):
     from huggingface_hub import HfApi, snapshot_download
 
-    model_id = "Qwen/Qwen3-ASR-1.7B"
+    if model_id not in SUPPORTED_CHECKPOINTS:
+        raise ValueError("Unsupported Qwen3-ASR checkpoint")
     commit = HfApi().model_info(model_id, revision=revision).sha
     snapshot_download(
         model_id,

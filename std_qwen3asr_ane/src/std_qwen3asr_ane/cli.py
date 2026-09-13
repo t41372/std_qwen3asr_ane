@@ -22,6 +22,11 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--cache-length", type=int, choices=(512, 1024, 2048), default=1024)
     build.add_argument("--reuse-encoder", action="store_true")
     build.add_argument("--token-batch-size", type=int, choices=(1, 8, 16, 32), default=1)
+    compile_command = commands.add_parser(
+        "compile", help="Prepare a separate host-compiled bundle for faster subsequent loads"
+    )
+    compile_command.add_argument("--source", type=Path, required=True)
+    compile_command.add_argument("--output", type=Path, required=True)
     inspect = commands.add_parser("inspect", help="Report anticipated compute placement")
     inspect.add_argument("model", type=Path)
     inspect.add_argument(
@@ -47,6 +52,10 @@ def main(argv: list[str] | None = None) -> int:
             reuse_encoder=args.reuse_encoder,
             token_batch_size=args.token_batch_size,
         )
+    elif args.command == "compile":
+        from .compiled import compile_bundle
+
+        result = compile_bundle(args.source, args.output)
     elif args.command == "inspect":
         from .diagnostics import inspect_compute_plan
 

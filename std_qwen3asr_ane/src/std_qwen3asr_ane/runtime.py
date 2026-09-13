@@ -26,6 +26,7 @@ from .audio import (
     log_mel_spectrogram,
 )
 from .languages import LANGUAGE_NAMES, normalize_model_language
+from .streaming_context import DecoderPrefixContext
 
 # Last-resort owners during interpreter teardown, when starting cleanup threads
 # is forbidden. Explicit close is the supported, observable shutdown path.
@@ -201,15 +202,23 @@ class CoreMLRuntime:
     calls, including model initialization. Direct users must do the same.
     """
 
-    def __init__(self, model_dir: Path, *, compute_units: str = "cpu_and_ne") -> None:
+    def __init__(
+        self,
+        model_dir: Path,
+        *,
+        compute_units: str = "cpu_and_ne",
+        model_id: str = "Qwen/Qwen3-ASR-1.7B",
+    ) -> None:
         if compute_units not in {"cpu_and_ne", "cpu_only"}:
             raise ValueError("compute_units must be 'cpu_and_ne' or 'cpu_only'")
         self.model_dir = Path(model_dir).expanduser().resolve()
+        if model_id not in {"Qwen/Qwen3-ASR-1.7B", "Qwen/Qwen3-ASR-0.6B"}:
+            raise ValueError("Unsupported Qwen3-ASR checkpoint")
         self.manifest = json.loads((self.model_dir / "manifest.json").read_text())
         if (
             type(self.manifest.get("schema_version")) is not int
             or self.manifest.get("schema_version") != 1
-            or self.manifest.get("model_id") != "Qwen/Qwen3-ASR-1.7B"
+            or self.manifest.get("model_id") != model_id
         ):
             raise ValueError("Unsupported model bundle identity or schema")
         files = self.manifest["files"]
@@ -262,9 +271,11 @@ class CoreMLRuntime:
         )
 
         def load(relative: str):
-            return PersistentInputModel(
-                ct.models.MLModel(str(self._path(relative)), compute_units=unit)
+            path = self._path(relative)
+            model_type = (
+                ct.models.CompiledMLModel if path.suffix == ".mlmodelc" else ct.models.MLModel
             )
+            return PersistentInputModel(model_type(str(path), compute_units=unit))
 
         self.frontend = load(files["frontend"])
         self.encoder = load(files["encoder"])
@@ -401,6 +412,16 @@ class CoreMLRuntime:
             / self.residual_scale
         )
 
+    def new_decoder_context(self) -> DecoderPrefixContext:
+        """Allocate private partition states for one serialized streaming utterance."""
+        return DecoderPrefixContext(
+            owner=self,
+            states=[model.make_state() for model in self.decoders],
+            token_batch_size=self.token_batch_size,
+            cache_length=self.cache_length,
+            make_states=lambda: [model.make_state() for model in self.decoders],
+        )
+
     def transcribe(
         self,
         samples: np.ndarray,
@@ -409,6 +430,7 @@ class CoreMLRuntime:
         max_new_tokens: int,
         context: str = "",
         prefix_text: str = "",
+        decoder_context: DecoderPrefixContext | None = None,
     ) -> RuntimeResult:
         started = perf_counter()
         samples = np.asarray(samples, dtype=np.float32)
@@ -436,7 +458,6 @@ class CoreMLRuntime:
         prompt_done = perf_counter()
         audio = self._encode_audio(features) / self.residual_scale
         encoder_done = perf_counter()
-        states = [model.make_state() for model in self.decoders]
         audio_index = 0
         prompt_embeddings = []
         for token in prompt:
@@ -449,23 +470,33 @@ class CoreMLRuntime:
         if audio_index != audio.shape[-1] or not prompt_embeddings:
             raise RuntimeError("Prompt placeholders do not match encoded audio")
         embeddings = np.concatenate(prompt_embeddings, axis=-1)
-        for position in range(0, len(prompt), self.token_batch_size):
-            hidden = self._decode_step(
-                embeddings[..., position : position + self.token_batch_size], position, states
-            )
+        if decoder_context is None:
+            states = [model.make_state() for model in self.decoders]
+            for position in range(0, len(prompt), self.token_batch_size):
+                hidden = self._decode_step(
+                    embeddings[..., position : position + self.token_batch_size], position, states
+                )
+        else:
+            prefill = decoder_context.prefill(embeddings, decode_step=self._decode_step, owner=self)
+            hidden, states = prefill.hidden, prefill.states
         prefill_done = perf_counter()
         generated = []
-        for index in range(max_new_tokens):
-            token = self._next_token(hidden)
-            if token in self.eos_token_ids:
-                break
-            generated.append(token)
-            if index + 1 < max_new_tokens:
-                hidden = self._decode_step(self._embedding(token), len(prompt) + index, states)
-        else:
-            raise RuntimeError(
-                "Generation reached max_new_tokens before EOS; refusing a truncated transcript"
-            )
+        try:
+            for index in range(max_new_tokens):
+                token = self._next_token(hidden)
+                if token in self.eos_token_ids:
+                    break
+                generated.append(token)
+                if index + 1 < max_new_tokens:
+                    hidden = self._decode_step(self._embedding(token), len(prompt) + index, states)
+            else:
+                raise RuntimeError(
+                    "Generation reached max_new_tokens before EOS; refusing a truncated transcript"
+                )
+        except Exception:
+            if decoder_context is not None:
+                decoder_context.reset()
+            raise
         generation_done = perf_counter()
         raw_text = prefix_text + self.tokenizer.decode(generated, skip_special_tokens=True)
         text, detected = parse_output(raw_text, language)

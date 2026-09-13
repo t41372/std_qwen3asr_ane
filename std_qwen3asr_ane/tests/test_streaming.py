@@ -52,8 +52,28 @@ def engine():
             self.release = Event()
             self.finished = Event()
             self.block = False
+            self.contexts = []
 
-        def transcribe(self, samples, *, language, max_new_tokens, context="", prefix_text=""):
+        def new_decoder_context(self):
+            context = SimpleNamespace(reset_count=0)
+
+            def reset():
+                context.reset_count += 1
+
+            context.reset = reset
+            self.contexts.append(context)
+            return context
+
+        def transcribe(
+            self,
+            samples,
+            *,
+            language,
+            max_new_tokens,
+            context="",
+            prefix_text="",
+            decoder_context=None,
+        ):
             self.entered.set()
             if self.block:
                 assert self.release.wait(3), "Test did not release the worker"
@@ -64,6 +84,7 @@ def engine():
                     "context": context,
                     "prefix": prefix_text,
                     "max_new_tokens": max_new_tokens,
+                    "decoder_context": decoder_context,
                 }
             )
             raw = "language English<asr_text>hello world again today"
@@ -71,7 +92,10 @@ def engine():
             return SimpleNamespace(text="hello world again today", language="en", raw_text=raw)
 
     result = create_engine(
-        stream_chunk_seconds=0.5, stream_unfixed_chunks=2, stream_unfixed_tokens=1
+        stream_chunk_seconds=0.5,
+        stream_unfixed_chunks=2,
+        stream_unfixed_tokens=1,
+        stream_max_audio_seconds=30,
     )
     result._runtime = Runtime()
     return result
@@ -102,6 +126,10 @@ def test_incremental_pcm_tail_prefix_and_closed_event(engine):
         engine._runtime.calls[-1]["samples"], samples.astype(np.float32) / 32768
     )
     assert all(call["context"] == "technical vocabulary" for call in engine._runtime.calls)
+    assert len(engine._runtime.contexts) == 1
+    assert all(
+        call["decoder_context"] is engine._runtime.contexts[0] for call in engine._runtime.calls
+    )
     assert [call["prefix"] for call in engine._runtime.calls[:2]] == ["", ""]
     expected = rollback_prefix(
         engine._runtime.tokenizer, "language English<asr_text>hello world again today", 1
@@ -144,6 +172,8 @@ def test_finish_flush_and_fresh_session_reset(engine):
     first = asyncio.run(scenario())
     second = asyncio.run(scenario())
     assert len(engine._runtime.calls) == 2
+    assert len(engine._runtime.contexts) == 2
+    assert engine._runtime.contexts[0] is not engine._runtime.contexts[1]
     assert all(
         call["prefix"] == "" and len(call["samples"]) == 1000 for call in engine._runtime.calls
     )
@@ -241,6 +271,7 @@ def test_invalid_or_overlong_audio_is_terminal(engine, wire, code):
     assert not engine._runtime.calls
     if code == "audio_limit_exceeded":
         assert events[-1].extra["received_audio_seconds"] > 30
+        assert events[-1].extra["limit_source"] == "configured_session_limit"
     assert_compliant(events, engine)
 
 
@@ -253,6 +284,7 @@ def test_bundle_limit_smaller_than_session_limit_is_structured(engine):
     )
     assert events[-1].code == "audio_limit_exceeded"
     assert events[-1].extra["max_audio_seconds"] == 0.25
+    assert events[-1].extra["limit_source"] == "bundle_audio_limit"
     assert_compliant(events, engine)
 
 
@@ -265,6 +297,7 @@ def test_default_wire_format_and_native_error_projection(engine):
     events = asyncio.run(recorded(session, [np.zeros(8000, dtype="<i2").tobytes()]))
     assert session.audio_format.encoding == "pcm_s16le"
     assert events[-1].type == "error" and events[-1].code == "engine_error"
+    assert engine._runtime.contexts[0].reset_count == 1
     assert_compliant(events, engine)
 
 
@@ -298,3 +331,35 @@ def test_prompt_and_phrase_hint_degradation_are_real_capabilities(engine):
         )
     report = check_streaming_param_gating(engine)
     assert report.passed, report.issues
+
+
+def test_three_minute_session_keeps_complete_audio_and_one_private_decoder_context(engine):
+    engine.config = engine.config.model_copy(
+        update={"stream_max_audio_seconds": 180, "stream_chunk_seconds": 30}
+    )
+    engine._runtime.max_audio_seconds = 180
+    samples = np.linspace(-0.5, 0.5, 180 * 16000, dtype=np.float32)
+    wire = samples.astype("<f4").tobytes()
+    session = engine.start_transcription(audio_format=FORMAT)
+    events = asyncio.run(recorded(session, [wire[:12345], wire[12345:]]))
+    assert [len(call["samples"]) for call in engine._runtime.calls] == [
+        seconds * 16000 for seconds in range(30, 181, 30)
+    ]
+    np.testing.assert_array_equal(engine._runtime.calls[-1]["samples"], samples)
+    assert len(engine._runtime.contexts) == 1
+    assert all(
+        call["decoder_context"] is engine._runtime.contexts[0] for call in engine._runtime.calls
+    )
+    assert all(event.stable_until == 0 for event in events if event.type == "partial")
+    assert events[-2].finality == "closed"
+    assert events[-2].extra["audio_prefix_seconds"] == 180
+    assert session._decoder_context is None
+    assert_compliant(events, engine)
+
+
+def test_stream_duration_is_configurable_beyond_thirty_seconds_and_finite():
+    assert create_engine().config.stream_max_audio_seconds == 180
+    assert create_engine(stream_max_audio_seconds=600).config.stream_max_audio_seconds == 600
+    for value in [0, -1, float("inf"), float("nan")]:
+        with pytest.raises(ValueError):
+            create_engine(stream_max_audio_seconds=value)

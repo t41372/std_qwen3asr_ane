@@ -1,5 +1,7 @@
 """Numerical invariants for the static decoder representation."""
 
+import copy
+
 import pytest
 import torch
 from qwen_asr.core.transformers_backend.configuration_qwen3_asr import Qwen3ASRTextConfig
@@ -7,6 +9,37 @@ from qwen_asr.core.transformers_backend.modeling_qwen3_asr import Qwen3ASRThinke
 from transformers.cache_utils import DynamicCache
 
 from std_qwen3asr_ane.conversion.decoder import DecoderPartition, StableRMSNorm, stable_silu
+
+
+@pytest.mark.parametrize("width", [1, 4])
+def test_grouped_attention_preserves_causal_outputs_and_kv_states(width):
+    torch.manual_seed(17)
+    config = Qwen3ASRTextConfig(
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=8,
+        num_key_value_heads=4,
+        head_dim=8,
+    ).to_dict()
+    reference = DecoderPartition(config, 2, 32, token_batch_size=width).eval()
+    grouped = copy.deepcopy(reference)
+    for layer in grouped.layers:
+        layer.enable_grouped_attention()
+    with torch.inference_mode():
+        for position in (0, width, 2 * width, width):
+            x = torch.randn(1, 64, 1, width)
+            row_positions = torch.arange(position, position + width)
+            angles = row_positions / 1000000 ** (torch.arange(4).float()[:, None] / 4)
+            visible = torch.arange(32)[None] <= row_positions[:, None]
+            mask = torch.where(visible, 0.0, -10000.0)[None, None]
+            update = torch.nn.functional.one_hot(row_positions, 32).float()[None, None]
+            inputs = (x, angles.cos()[None, :, None], angles.sin()[None, :, None], mask, update)
+            torch.testing.assert_close(grouped(*inputs), reference(*inputs), atol=2e-6, rtol=2e-6)
+            for (_, expected), (_, actual) in zip(
+                reference.named_buffers(), grouped.named_buffers(), strict=True
+            ):
+                torch.testing.assert_close(actual, expected, atol=2e-6, rtol=2e-6)
 
 
 def test_stable_silu_preserves_reference_across_activation_range():

@@ -81,6 +81,27 @@ class DecoderLayer(nn.Module):
         self.gate_proj = projection(width, config["intermediate_size"])
         self.up_proj = projection(width, config["intermediate_size"])
         self.down_proj = projection(config["intermediate_size"], width)
+        self.grouped_attention = False
+
+    def enable_grouped_attention(self) -> None:
+        """Reorder projection channels so each attention call batches all KV heads.
+
+        With two queries per KV head, order [0,1,2,3,...] becomes [0,2,...,1,3,...].
+        Reordering the output projection's input columns preserves the function.
+        Call only after loading weights, before tracing or starting inference.
+        """
+        if self.grouped_attention:
+            return
+        group_size = self.heads // self.kv_heads
+        order = [
+            kv * group_size + group for group in range(group_size) for kv in range(self.kv_heads)
+        ]
+        with torch.no_grad():
+            query = self.q_proj.weight.reshape(self.heads, self.head_dim, -1)
+            output = self.o_proj.weight.reshape(-1, self.heads, self.head_dim)
+            self.q_proj.weight.copy_(query[order].reshape_as(self.q_proj.weight))
+            self.o_proj.weight.copy_(output[:, order].reshape_as(self.o_proj.weight))
+        self.grouped_attention = True
 
     def _rotary(self, x, cosine, sine):
         half = self.head_dim // 2
@@ -89,14 +110,11 @@ class DecoderLayer(nn.Module):
 
     def forward(self, x, cosine, sine, mask, update_mask, key_cache, value_cache):
         normalized = self.input_layernorm(x)
-        q = self.q_norm(
-            self.q_proj(normalized).reshape(self.heads, self.head_dim, 1, self.token_batch_size)
-        )
-        k = self.k_norm(
-            self.k_proj(normalized).reshape(self.kv_heads, self.head_dim, 1, self.token_batch_size)
-        )
+        tokens = x.shape[-1]
+        q = self.q_norm(self.q_proj(normalized).reshape(self.heads, self.head_dim, 1, tokens))
+        k = self.k_norm(self.k_proj(normalized).reshape(self.kv_heads, self.head_dim, 1, tokens))
         q, k = self._rotary(q, cosine, sine), self._rotary(k, cosine, sine)
-        v = self.v_proj(normalized).reshape(self.kv_heads, self.head_dim, 1, self.token_batch_size)
+        v = self.v_proj(normalized).reshape(self.kv_heads, self.head_dim, 1, tokens)
         if self.token_batch_size == 1:
             key_cache.mul_(1 - update_mask)
             key_cache.add_(k * update_mask)
@@ -108,8 +126,28 @@ class DecoderLayer(nn.Module):
             key_cache.add_(torch.matmul(k.transpose(1, 2), update_mask).transpose(1, 2))
             value_cache.mul_(1 - occupied)
             value_cache.add_(torch.matmul(v.transpose(1, 2), update_mask).transpose(1, 2))
-        # Each query head uses one KV head; avoiding a materialized GQA repeat
-        # lets the compiler reuse the cache without a rank-five tensor.
+        if self.grouped_attention:
+            attended = self._grouped_attention(q, key_cache, value_cache, mask)
+        else:
+            attended = self._headwise_attention(q, key_cache, value_cache, mask)
+        x = x + self.o_proj(attended)
+        normalized = self.post_attention_layernorm(x)
+        return x + self.down_proj(
+            stable_silu(self.gate_proj(normalized)) * self.up_proj(normalized)
+        )
+
+    def _grouped_attention(self, q, key_cache, value_cache, mask):
+        outputs = []
+        for group in range(self.heads // self.kv_heads):
+            queries = q[group * self.kv_heads : (group + 1) * self.kv_heads]
+            scores = torch.matmul(queries.permute(0, 2, 3, 1), key_cache.transpose(1, 2))
+            probabilities = torch.softmax(scores * self.head_dim**-0.5 + mask, dim=-1)
+            attended = torch.matmul(probabilities, value_cache.permute(0, 2, 3, 1))
+            outputs.append(attended.permute(0, 3, 1, 2).reshape(1, -1, 1, q.shape[-1]))
+        return torch.cat(outputs, dim=1)
+
+    def _headwise_attention(self, q, key_cache, value_cache, mask):
+        # Each query head uses one KV head without materializing a GQA repeat.
         outputs = []
         group_size = self.heads // self.kv_heads
         for head in range(self.heads):
@@ -124,11 +162,7 @@ class DecoderLayer(nn.Module):
             probabilities = torch.softmax(scores + mask, dim=-1)
             attended = torch.matmul(probabilities, value_cache[kv : kv + 1].permute(0, 2, 3, 1))
             outputs.append(attended.permute(0, 3, 1, 2))
-        x = x + self.o_proj(torch.cat(outputs, dim=1))
-        normalized = self.post_attention_layernorm(x)
-        return x + self.down_proj(
-            stable_silu(self.gate_proj(normalized)) * self.up_proj(normalized)
-        )
+        return torch.cat(outputs, dim=1)
 
 
 class DecoderPartition(nn.Module):
@@ -183,7 +217,13 @@ class SourceWeights:
 
     def __init__(self, source: Path):
         self.source = source
-        self.index = json.loads((source / "model.safetensors.index.json").read_text())["weight_map"]
+        index_path = source / "model.safetensors.index.json"
+        if index_path.is_file():
+            self.index = json.loads(index_path.read_text())["weight_map"]
+        else:
+            # The optional smaller draft checkpoint is distributed in one file.
+            with safe_open(source / "model.safetensors", framework="pt", device="cpu") as archive:
+                self.index = {name: "model.safetensors" for name in archive.keys()}  # noqa: SIM118
 
     def get(self, name: str) -> torch.Tensor:
         with safe_open(self.source / self.index[name], framework="pt", device="cpu") as archive:
@@ -220,7 +260,13 @@ def compute_precision(mode: str):
 
 
 def convert_partition(
-    module: DecoderPartition, config: dict, output: Path, cache_length: int, precision="fp16"
+    module: DecoderPartition,
+    config: dict,
+    output: Path,
+    cache_length: int,
+    precision="fp16",
+    *,
+    token_sizes: tuple[int, ...] | None = None,
 ):
     import coremltools as ct
 
@@ -244,11 +290,26 @@ def convert_partition(
         for name, value in module.named_buffers()
     ]
     io_dtype = np.float32 if precision == "mixed" else np.float16
+    shapes = [tuple(value.shape) for value in examples]
+    if token_sizes is not None:
+        if (
+            count == 1
+            or count not in token_sizes
+            or any(size < 1 or size > cache_length for size in token_sizes)
+        ):
+            raise ValueError("Enumerated token sizes require a multi-token trace and valid widths")
+        shapes = [
+            ct.EnumeratedShapes(
+                shapes=[(*shape[:axis], size, *shape[axis + 1 :]) for size in token_sizes],
+                default=shape,
+            )
+            for shape, axis in zip(shapes, (3, 3, 3, 2, 2), strict=True)
+        ]
     model = ct.convert(
         traced,
         inputs=[
-            ct.TensorType(name=name, shape=tuple(value.shape), dtype=io_dtype)
-            for name, value in zip(names, examples)
+            ct.TensorType(name=name, shape=shape, dtype=io_dtype)
+            for name, shape in zip(names, shapes, strict=True)
         ],
         outputs=[ct.TensorType(name="output_hidden_states", dtype=io_dtype)],
         states=states,
