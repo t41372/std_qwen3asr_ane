@@ -1,10 +1,14 @@
 # std-qwen3asr-ane
 
-An experimental Standard ASR 0.2 plugin that runs Qwen3-ASR 1.7B through Core ML with GPU excluded (`CPU_AND_NE`). Its offline converter targets ANE for the audio encoder, all decoder layers, and vocabulary projection. Tokenization, mel preprocessing, embedding lookup, and generation control run on CPU.
+A [Standard ASR](https://github.com/standard-voice/standard_asr) 0.2 plugin that runs the Qwen3-ASR 1.7B speech recognition model on the Apple Neural Engine. The Neural Engine is the low-power AI unit in Apple Silicon, separate from the CPU and GPU. The model is converted to Core ML, Apple's model runtime, with the GPU excluded. The audio encoder, all 28 decoder layers and the output layer run on the Neural Engine. Tokenization, audio feature extraction and the decoding loop run on the CPU.
 
-Install from the development workspace with uv. Run every command from the
-workspace root (the directory containing `std_qwen3asr_ane/`), because bundles
-are resolved relative to the working directory at `artifacts/`:
+Model key: `std-qwen3asr-ane/1.7b`. Terms are explained in the workspace's [glossary](../research/glossary.md) (in Chinese).
+
+## Install and prepare the model
+
+Requirements: Apple Silicon Mac, macOS 15 or later, Python 3.12, [uv](https://docs.astral.sh/uv/). Run every command from the workspace root (the directory that contains `std_qwen3asr_ane/`), because model files are looked up at `artifacts/` relative to the current directory.
+
+Four steps: download the original checkpoint, convert it to Core ML, compress the weights to 8 bits, compile for fast loading.
 
 ```sh
 export UV_CACHE_DIR="$PWD/.cache/uv"
@@ -17,33 +21,38 @@ uv run --project std_qwen3asr_ane --group convert qwen3-asr-ane compress \
   --source artifacts/qwen3-asr-1.7b-fp16 --output artifacts/qwen3-asr-1.7b-lut8 --bits 8
 uv run --project std_qwen3asr_ane qwen3-asr-ane compile \
   --source artifacts/qwen3-asr-1.7b-lut8 --output artifacts/qwen3-asr-1.7b
-uv run --project std_qwen3asr_ane qwen3-asr-ane transcribe recording.wav
 ```
 
-`download` fetches the pinned checkpoint revision. `build` converts it to FP16
-Core ML models (two 14-layer decoder models by default, 16-token graph, 1024
-cache positions). `compress` palettizes the decoder and vocabulary-head weights
-to 8 bits per group of 32 output channels; the audio graphs stay FP16, and the
-command refuses to write a bundle whose weights were not actually compressed.
-`compile` produces stable `.mlmodelc` paths so later process launches reuse
-device specialization (first load about 35 seconds, later loads under 2
-seconds). Only `download` and `build` need the `convert` dependency group;
-runtime does not require PyTorch. Every bundle starts as `unvalidated`; the
-measured quality and hardware evidence in the workspace's research notes apply
-to the bundles they name.
+What each step does:
 
-If the bundle is missing, `qwen3-asr-ane transcribe` and the Standard ASR CLI
-print the preparation sequence above; `STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR`
-or `--model-dir` selects another bundle.
+- `download` fetches the pinned checkpoint revision (about 4.3 GB). Everything after this is offline.
+- `build` converts it to Core ML at full precision. The decoder is split into two files of 14 layers each; the decoder graph processes 16 tokens per call and keeps a 1024-position cache, which covers 30 seconds of audio.
+- `compress` shrinks the decoder and output-layer weights to 8 bits using a lookup table shared by every 32 output channels. The audio encoder stays at full precision. The command refuses to write a bundle whose weights did not actually get compressed.
+- `compile` writes the bundle in the form macOS loads directly. The first load takes about 35 seconds while the system optimizes for the device; later loads take under 2 seconds.
+
+Only `download` and `build` need the `convert` dependency group (PyTorch). Running the model does not.
+
+If the model files are missing, `qwen3-asr-ane transcribe` and the Standard ASR CLI print the steps above instead of a traceback. To use a different bundle, pass `--model-dir` or set `STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR`.
+
+## Use
+
+```sh
+uv run --project std_qwen3asr_ane qwen3-asr-ane transcribe recording.wav
+```
 
 ```python
 from standard_asr import discover_models
 
 engine = discover_models().create("std-qwen3asr-ane/1.7b", model_dir="artifacts/qwen3-asr-1.7b")
-result = engine.transcribe("recording.wav")
-print(result.text)
+print(engine.transcribe("recording.wav").text)
 ```
 
-The Standard ASR dependency follows unreleased main (protocol 0.2), pinned by the uv lockfile. Streaming exposes revisable partials, closed finals, cancellation, backpressure, language selection and context prompts. Each session retains decoder state only for exactly unchanged prompt embeddings. `stream_max_audio_seconds` defaults to 180 seconds and is configurable; effective duration also depends on the loaded bundle's declared audio limit and decoder token capacity. The original 1024-position bundle declares 30 seconds. A larger application setting alone does not extend that artifact's capacity. There are no timestamps, diarization, long-form rollover, or automatic model downloads during inference. Token-budget exhaustion raises an error rather than returning a truncated transcript.
+Streaming (recognize while audio is still arriving) is supported: revisable partial results, a final result when the stream closes, cancellation, backpressure, language selection and a context prompt of up to 128 tokens. A session keeps its decoder state only while the prompt is unchanged. The default streaming limit is 180 seconds and is configurable, but the actual limit is also bounded by the loaded bundle: the default bundle declares 30 seconds, and a larger application setting does not extend it.
 
-This is a research preview. Compute-device constraints alone do not prove ANE placement. The development workspace records actual Instruments traces, numerical comparisons, and quality evaluation separately. No corpus-wide quality equivalence or energy savings are promised by this package.
+Not supported: word timestamps, speaker diarization, long-form rollover, restricting candidate languages, and automatic model download during inference. If generation hits the token budget the plugin raises an error rather than returning a truncated transcript.
+
+## What this package does and does not claim
+
+Every freshly built bundle is marked `unvalidated`. Requesting the Neural Engine does not prove the model runs there. The workspace's research notes hold the actual evidence: Instruments traces showing Neural Engine activity, numerical comparisons against the original model, and quality evaluation on fixed test sets. Those results apply to the specific bundles they name. This package itself promises no quality equivalence or energy savings.
+
+The Standard ASR dependency follows its unreleased main branch (protocol 0.2), pinned by the uv lock file.

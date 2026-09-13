@@ -1,5 +1,13 @@
 # Optimization loop scripts
 
+Shell scripts that run the measurements in the order the results file reports
+them. Terms (smoke, selection set, held-out, ABBA, trace) are explained in
+`research/glossary.md`. In short: "smoke" is two official test recordings
+(English 15 s, Chinese 4 s); "selection" is 200 sentences used to choose
+between candidates; "held-out" is another 200 used once for the final check;
+"ABBA" is alternating run order for energy measurements; a "trace" is an
+Instruments recording of Neural Engine and GPU activity.
+
 These are the serial, hardware-bound stages of the candidate loop used in this
 workspace. They are shell wrappers over the model-agnostic tools
 (`experiments/evaluate.py`, `experiments/benchmark_energy.py`,

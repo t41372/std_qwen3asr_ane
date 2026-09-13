@@ -1,10 +1,14 @@
 # MLX draft environment
 
-A separate environment for the GPU-draft speculative experiment: `mlx-audio`
+The speculative-decoding experiment: a small model (Qwen3-ASR-0.6B) runs on
+the GPU through MLX and guesses the next 15 tokens; the 1.7B model on the
+Neural Engine verifies all 15 in one call and keeps only the prefix it would
+have produced itself. Output is identical to plain decoding, only faster. This
+lives in its own environment because `mlx-audio`
 0.5.3 requires `transformers>=5.14`, which conflicts with the plugin's
 `convert` group (`transformers<5`, pinned by `qwen-asr`). The plugin itself is
-installed here as an editable path dependency, so the ANE target and the MLX
-draft share one process.
+installed here as an editable path dependency, so the Neural Engine model and
+the GPU draft model share one process.
 
 ```sh
 export UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface"
