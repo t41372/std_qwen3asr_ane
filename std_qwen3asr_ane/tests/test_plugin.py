@@ -41,9 +41,9 @@ from std_qwen3asr_ane.plugin import (
 )
 
 
-@pytest.fixture
-def bundle(tmp_path: Path) -> Path:
+def make_bundle(tmp_path: Path) -> Path:
     """A complete file layout, intentionally not a usable model."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
     files = {
         "frontend": "frontend.mlpackage",
         "encoder": "encoder.mlpackage",
@@ -85,6 +85,11 @@ def bundle(tmp_path: Path) -> Path:
         )
     )
     return tmp_path
+
+
+@pytest.fixture
+def bundle(tmp_path: Path) -> Path:
+    return make_bundle(tmp_path)
 
 
 @pytest.fixture
@@ -163,19 +168,24 @@ def test_config_environment_and_explicit_precedence(monkeypatch: pytest.MonkeyPa
     assert create_engine(model_dir="local/explicit").config.model_dir == Path("local/explicit")
 
 
-def test_missing_artifact_reports_build_action_without_side_effects(tmp_path: Path) -> None:
+def test_missing_artifact_reports_actions_without_side_effects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     root = tmp_path / "missing"
     engine = create_engine(model_dir=root)
+    monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: False)
     report = engine.artifact_status()
     (requirement,) = report.requirements
     assert report.readiness == "unavailable"
     assert requirement.state == "missing"
     assert requirement.location == root
-    assert requirement.required_actions[0].kind == "provide_artifacts"
+    assert not requirement.can_acquire_now
+    assert requirement.acquisition_blocker == "action_required"
+    assert requirement.required_actions[0].kind == "install_external"
     message = requirement.required_actions[0].message
+    assert "--group convert" in message and "standard-asr pull std-qwen3asr-ane/1.7b" in message
     assert "qwen3-asr-ane build --token-batch-size 16" in message
     assert "qwen3-asr-ane compile" in message and str(root) in message
-    assert not requirement.can_acquire_now
     assert not requirement.may_acquire_during_inference
     assert engine.artifact_status() == report
     with pytest.raises(ArtifactAcquisitionError) as caught:
@@ -183,11 +193,24 @@ def test_missing_artifact_reports_build_action_without_side_effects(tmp_path: Pa
     assert caught.value.reason == "action_required"
     assert caught.value.report == report
     assert caught.value.required_actions == requirement.required_actions
-    with pytest.raises(ArtifactUnavailableError):
+    with pytest.raises(ArtifactUnavailableError) as unavailable:
         engine.prepare()
+    assert "standard-asr pull" in (unavailable.value.hint or "")
     with pytest.raises(ArtifactUnavailableError):
         engine.transcribe((np.zeros(1600, dtype=np.float32), 16000))
     assert not root.exists()
+    # With the toolchain installed the framework may run the conversion itself.
+    monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: True)
+    (requirement,) = engine.artifact_status().requirements
+    assert requirement.can_acquire_now and requirement.acquisition_blocker is None
+    assert requirement.required_actions == ()
+    monkeypatch.setenv("STANDARD_ASR_ALLOW_DOWNLOAD", "0")
+    engine = create_engine(model_dir=root, source_dir=tmp_path / "no-source")
+    (requirement,) = engine.artifact_status().requirements
+    assert requirement.acquisition_blocker == "downloads_disabled"
+    with pytest.raises(ArtifactAcquisitionError) as caught:
+        engine.acquire_artifacts()
+    assert caught.value.reason == "downloads_disabled"
 
 
 def test_complete_bundle_acquisition_is_noop(bundle: Path) -> None:
@@ -542,17 +565,25 @@ def draft_bundle(root: Path) -> Path:
     return root
 
 
-def test_draft_requirement_is_reported_and_actionable(bundle: Path, tmp_path: Path) -> None:
+def test_draft_requirement_is_reported_and_actionable(
+    bundle: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     engine = create_engine(model_dir=bundle, draft_dir=tmp_path / "draft")
     report = engine.artifact_status()
     assert report.readiness != "ready"
     draft = [r for r in report.requirements if r.artifact_id == "qwen3-asr-0.6b-gpu-draft"]
     assert len(draft) == 1 and draft[0].state == "missing"
+    monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: False)
+    draft = [
+        r
+        for r in engine.artifact_status().requirements
+        if r.artifact_id == "qwen3-asr-0.6b-gpu-draft"
+    ]
     message = draft[0].required_actions[0].message
     assert "qwen3-asr-ane build-draft" in message and str(tmp_path / "draft") in message
     with pytest.raises(ArtifactUnavailableError) as info:
         engine.transcribe((np.zeros(16000, dtype=np.float32), 16000), RuntimeParams())
-    assert "build-draft" in (info.value.hint or "")
+    assert "build-draft" in (info.value.hint or "") and "standard-asr pull" in info.value.hint
     draft_bundle(tmp_path / "draft")
     assert engine.artifact_status().readiness == "ready"
     (tmp_path / "draft/Qwen3-ASR-0.6B/model.safetensors").write_bytes(b"")
@@ -616,3 +647,92 @@ def test_missing_mlx_is_a_configuration_error(
         engine.transcribe((np.zeros(16000, dtype=np.float32), 16000), RuntimeParams())
     assert "gpu-draft" in (info.value.hint or "")
     assert fake_runtime.instances[-1].closed and engine._runtime is None
+
+
+def test_pull_runs_the_measured_recipe_in_a_work_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import std_qwen3asr_ane.conversion.draft as draft_build
+    from std_qwen3asr_ane import compiled
+    from std_qwen3asr_ane.conversion import build, compress
+
+    calls = []
+    source = tmp_path / "source"
+    target = tmp_path / "bundle"
+    draft = tmp_path / "draft"
+
+    def fake_download(destination, *, revision, model_id):
+        calls.append(("download", destination, revision, model_id))
+        destination.mkdir(parents=True)
+        (destination / "source.json").write_text(
+            json.dumps({"model_id": model_id, "revision": revision})
+        )
+
+    def fake_build(src, output, **recipe):
+        calls.append(("build", src, output, recipe))
+        output.mkdir(parents=True)
+
+    def fake_compress(src, output, **recipe):
+        calls.append(("compress", src, output, recipe))
+        output.mkdir(parents=True)
+
+    def fake_compile(src, output):
+        calls.append(("compile", src, output))
+        make_bundle(output)
+
+    def fake_draft(target_dir, src, output):
+        calls.append(("draft", target_dir, src, output))
+        draft_bundle(output)
+
+    monkeypatch.setattr(build, "download_source", fake_download)
+    monkeypatch.setattr(build, "build_bundle", fake_build)
+    monkeypatch.setattr(compress, "compress_bundle", fake_compress)
+    monkeypatch.setattr(compiled, "compile_bundle", fake_compile)
+    monkeypatch.setattr(draft_build, "build_draft_bundle", fake_draft)
+    monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: True)
+    engine = create_engine(model_dir=target, source_dir=source, draft_dir=draft)
+    assert engine.artifact_status().readiness == "unavailable"
+    events = []
+    report = engine.acquire_artifacts(progress=events.append)
+    assert report.readiness == "ready"
+    assert [c[0] for c in calls] == ["download", "build", "compress", "compile", "draft"]
+    assert calls[0][2] == "7278e1e70fe206f11671096ffdd38061171dd6e5"
+    assert calls[1][3] == {"cache_length": 1024, "token_batch_size": 16, "layers_per_partition": 14}
+    assert calls[2][3] == {"scheme": "palette", "bits": 8, "group_size": 32}
+    work = target.with_name(target.name + ".work")
+    assert calls[1][2] == work / "fp16" and calls[2][2] == work / "lut8" and calls[3][2] == target
+    assert calls[4][1] == target and calls[4][3] == draft
+    assert not work.exists() and target.is_dir() and draft.is_dir()
+    phases = [event.phase for event in events]
+    assert phases[0] == "resolving" and phases[-1] == "finalizing"
+    assert phases[1:-1] == ["transferring", "converting", "verifying", "converting"]
+    # A second pull has nothing to do; an existing target is never overwritten.
+    calls.clear()
+    assert engine.acquire_artifacts().readiness == "ready" and calls == []
+    shutil.rmtree(draft)
+    (draft / "stale").mkdir(parents=True)
+    with pytest.raises(ArtifactAcquisitionError) as caught:
+        engine.acquire_artifacts()
+    assert caught.value.reason == "action_required" and "move it away" in str(caught.value)
+
+
+def test_pull_failure_is_structured_and_keeps_no_partial_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from std_qwen3asr_ane.conversion import build
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "source.json").write_text("{}")
+
+    def failing_build(src, output, **recipe):
+        raise RuntimeError("conversion exploded")
+
+    monkeypatch.setattr(build, "build_bundle", failing_build)
+    monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: True)
+    engine = create_engine(model_dir=tmp_path / "bundle", source_dir=source)
+    with pytest.raises(ArtifactAcquisitionError) as caught:
+        engine.acquire_artifacts()
+    assert caught.value.reason == "failed" and "conversion exploded" in str(caught.value)
+    assert "qwen3-asr-ane build" in (caught.value.hint or "")
+    assert not (tmp_path / "bundle").exists()

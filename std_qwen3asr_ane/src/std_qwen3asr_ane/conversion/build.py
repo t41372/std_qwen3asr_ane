@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 SUPPORTED_CHECKPOINTS = {"Qwen/Qwen3-ASR-1.7B", "Qwen/Qwen3-ASR-0.6B"}
+# The 1.7B revision every measurement in research/ used.
+SOURCE_REVISION = "7278e1e70fe206f11671096ffdd38061171dd6e5"
 
 
 def build_bundle(

@@ -36,6 +36,14 @@ Requirements: Apple Silicon, macOS 15 or later, Python 3.12, [uv](https://docs.a
 export UV_CACHE_DIR="$PWD/.cache/uv"
 export HF_HOME="$PWD/.cache/huggingface"
 uv sync --project std_qwen3asr_ane --python 3.12 --group convert
+uv run --project std_qwen3asr_ane --group convert standard-asr pull std-qwen3asr-ane/1.7b
+```
+
+`standard-asr pull` is Standard ASR's artifact acquisition. For this plugin it downloads the pinned Qwen3-ASR 1.7B checkpoint (about 4.3 GB, kept at `artifacts/source/Qwen3-ASR-1.7B`), converts it to Core ML at FP16, palettizes the decoder and output layer to 8 bits, compiles the result to `artifacts/qwen3-asr-1.7b` and removes the intermediates. It reports progress per phase and takes about ten minutes; the first load afterwards takes about 35 seconds while macOS specializes the model for the device, later loads under 2 seconds. `standard-asr status std-qwen3asr-ane/1.7b` shows what is present and, when the conversion toolchain (the `convert` dependency group) is not installed, says so instead of attempting anything. Inference itself never downloads or converts.
+
+The same recipe as four explicit commands, for other settings or for keeping the intermediates:
+
+```sh
 uv run --project std_qwen3asr_ane --group convert qwen3-asr-ane download
 uv run --project std_qwen3asr_ane --group convert qwen3-asr-ane build \
   --token-batch-size 16 --layers-per-partition 14 --output artifacts/qwen3-asr-1.7b-fp16
@@ -45,12 +53,9 @@ uv run --project std_qwen3asr_ane qwen3-asr-ane compile \
   --source artifacts/qwen3-asr-1.7b-lut8 --output artifacts/qwen3-asr-1.7b
 ```
 
-- `download` fetches the pinned checkpoint (about 4.3 GB); everything after it is offline.
-- `build` converts to Core ML at FP16. `--token-batch-size 16` makes the decoder graph process 16 tokens per call; `--layers-per-partition 14` splits the 28 decoder layers into two files. The cache holds 1024 positions, which covers 30 seconds of audio.
-- `compress` palettizes the decoder and output-layer weights to 8 bits. The audio encoder stays FP16 (it is about 2% of transcription time). The command refuses to write a bundle whose weights were not actually compressed.
-- `compile` writes the form macOS loads directly. The first load takes about 35 seconds while the system specializes the model for the device; later loads take under 2 seconds.
-
-Only `download` and `build` need the `convert` dependency group (PyTorch). Inference does not.
+- `build`: `--token-batch-size 16` makes the decoder graph process 16 tokens per call; `--layers-per-partition 14` splits the 28 decoder layers into two files. The cache holds 1024 positions, which covers 30 seconds of audio.
+- `compress`: the audio encoder stays FP16 (about 2% of transcription time). The command refuses to write a bundle whose weights were not actually compressed.
+- Only `download`, `build` and `pull` need the `convert` group (PyTorch). Inference does not.
 
 ## Use
 
@@ -66,7 +71,7 @@ engine = discover_models().create("std-qwen3asr-ane/1.7b", model_dir="artifacts/
 print(engine.transcribe("recording.wav").text)
 ```
 
-If the bundle is missing, both entry points print the preparation steps above instead of a traceback. `--model-dir` or `STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR` selects another bundle.
+If the bundle is missing, both entry points name `standard-asr pull` and the manual equivalent instead of a traceback. `--model-dir` or `STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR` selects another bundle.
 
 Tests and the Standard ASR interface check:
 
@@ -86,6 +91,7 @@ The draft needs `mlx-audio`, which requires transformers 5, while the conversion
 ```sh
 # 1. Build the draft bundle (convert environment): downloads the pinned 0.6B
 #    checkpoint (1.8 GB) and builds the verify head for the target bundle.
+#    `standard-asr pull ... --set draft_dir=artifacts/qwen3-asr-1.7b-draft` does the same.
 uv run --project std_qwen3asr_ane --group convert qwen3-asr-ane build-draft \
   --target artifacts/qwen3-asr-1.7b --output artifacts/qwen3-asr-1.7b-draft
 

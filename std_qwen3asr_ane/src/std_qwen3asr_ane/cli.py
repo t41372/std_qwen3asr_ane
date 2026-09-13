@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+from .conversion.build import SOURCE_REVISION
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -15,7 +17,7 @@ def main(argv: list[str] | None = None) -> int:
     download.add_argument("--output", type=Path, default=Path("artifacts/source/Qwen3-ASR-1.7B"))
     download.add_argument(
         "--revision",
-        default="7278e1e70fe206f11671096ffdd38061171dd6e5",
+        default=SOURCE_REVISION,
         help="checkpoint revision; the default is the revision every measurement used",
     )
     build = commands.add_parser(

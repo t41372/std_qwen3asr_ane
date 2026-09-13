@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shlex
+import shutil
 from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING, ClassVar, Literal, Self
 
 from pydantic import Field
 from standard_asr.contract.exceptions import (
+    ArtifactAcquisitionError,
     ArtifactUnavailableError,
     ConfigError,
     TranscriptionError,
@@ -18,6 +21,7 @@ from standard_asr.engine import (
     ArtifactAction,
     ArtifactContext,
     ArtifactDeclaration,
+    ArtifactProgress,
     ArtifactRequirement,
     AudioFormat,
     BaseConfig,
@@ -42,7 +46,9 @@ from standard_asr.engine import (
     TranscriptionResult,
     TranscriptionSession,
 )
+from standard_asr.runtime.downloads import allow_downloads
 
+from .conversion.build import SOURCE_REVISION
 from .errors import ModelLimitError
 from .languages import LANGUAGE_NAMES, classify_model_language
 
@@ -53,6 +59,13 @@ if TYPE_CHECKING:
 
 ENGINE_ID = "std-qwen3asr-ane"
 MODEL_ID = "Qwen/Qwen3-ASR-1.7B"
+MODEL_KEY = f"{ENGINE_ID}/1.7b"
+BUNDLE_ARTIFACT_ID = "qwen3-asr-1.7b-coreml"
+DRAFT_ARTIFACT_ID = "qwen3-asr-0.6b-gpu-draft"
+# The recipe `standard-asr pull` builds: the measured default bundle.
+BUILD_RECIPE = {"cache_length": 1024, "token_batch_size": 16, "layers_per_partition": 14}
+COMPRESS_RECIPE = {"scheme": "palette", "bits": 8, "group_size": 32}
+CONVERSION_MODULES = ("torch", "transformers", "huggingface_hub", "safetensors")
 # The shipped bundles have a 1024-position decoder cache. Thirty seconds of audio
 # occupies 390 positions, the template about 20, the default generation budget
 # 256, and a streaming session also replays up to a transcript's worth of prefix
@@ -79,6 +92,13 @@ class Qwen3ASRConfig(LanguageConfigMixin, BaseConfig[Literal["std-qwen3asr-ane"]
     model_dir: Path = Field(
         default=Path("artifacts/qwen3-asr-1.7b"),
         description="Locally built model directory, relative to the current working directory.",
+    )
+    source_dir: Path = Field(
+        default=Path("artifacts/source/Qwen3-ASR-1.7B"),
+        description=(
+            "Where `standard-asr pull` keeps the pinned official checkpoint it converts "
+            "from; reused when present."
+        ),
     )
     max_new_tokens: int = Field(default=256, ge=1, le=4096)
     draft_dir: Path | None = Field(
@@ -142,7 +162,9 @@ class Qwen3ASREngine(EngineBase):
     declared_metadata: ClassVar[DeclaredEngineMetadata] = DeclaredEngineMetadata(
         artifacts=ArtifactDeclaration(
             applicable=True,
-            supports_explicit_acquisition=False,
+            # `standard-asr pull` downloads the pinned checkpoint and runs the
+            # conversion recipe below; inference itself never acquires anything.
+            supports_explicit_acquisition=True,
             may_acquire_during_inference=False,
         ),
         x_qwen3asr_streaming={
@@ -163,6 +185,9 @@ class Qwen3ASREngine(EngineBase):
         self._draft: DraftRuntime | None = None
         self._inference_lock = Lock()
 
+    def _pull_command(self) -> str:
+        return f"standard-asr pull {MODEL_KEY}"
+
     def _build_draft_command(self) -> str:
         draft = shlex.quote(str(self.config.draft_dir))
         target = shlex.quote(str(self.config.model_dir))
@@ -180,67 +205,169 @@ class Qwen3ASREngine(EngineBase):
             f"qwen3-asr-ane compile --source {lut8} --output {shlex.quote(str(target))}"
         )
 
+    def _acquisition_gate(self, state: str, manual: str) -> dict:
+        """Fields describing whether `standard-asr pull` can run for one requirement."""
+        if state == "ready":
+            return {"can_acquire_now": False, "acquisition_blocker": None, "required_actions": ()}
+        if state in ("incomplete", "corrupt"):
+            # Never delete a directory the plugin did not just create.
+            return {
+                "can_acquire_now": False,
+                "acquisition_blocker": "action_required",
+                "required_actions": (
+                    ArtifactAction(
+                        kind="provide_artifacts",
+                        message=(
+                            f"The directory is {state}; move it away, then run "
+                            f"{self._pull_command()} or rebuild manually: {manual}"
+                        ),
+                    ),
+                ),
+            }
+        if not _conversion_toolchain_available():
+            return {
+                "can_acquire_now": False,
+                "acquisition_blocker": "action_required",
+                "required_actions": (
+                    ArtifactAction(
+                        kind="install_external",
+                        message=(
+                            "Install the conversion toolchain (PyTorch, Transformers 4): "
+                            "uv sync --project std_qwen3asr_ane --group convert, then run "
+                            f"{self._pull_command()}; or build manually: {manual}"
+                        ),
+                    ),
+                ),
+            }
+        source = self.config.source_dir.expanduser().resolve()
+        if not (source / "source.json").is_file() and not allow_downloads():
+            return {
+                "can_acquire_now": False,
+                "acquisition_blocker": "downloads_disabled",
+                "required_actions": (),
+            }
+        return {"can_acquire_now": True, "acquisition_blocker": None, "required_actions": ()}
+
     def _artifact_requirements(
         self, context: ArtifactContext
     ) -> tuple[bool, tuple[ArtifactRequirement, ...], tuple[Diagnostic, ...]]:
         root = self.config.model_dir.expanduser().resolve()
         state, revision = _inspect_bundle(root)
-        ready = state == "ready"
         requirement = ArtifactRequirement(
-            artifact_id="qwen3-asr-1.7b-coreml",
+            artifact_id=BUNDLE_ARTIFACT_ID,
             label="Qwen3-ASR 1.7B local Core ML bundle",
             state=state,
             required_for_inference=True,
-            can_acquire_now=False,
             may_acquire_during_inference=False,
             source_is_mutable=False,
-            acquisition_blocker=None if ready else "action_required",
-            required_actions=()
-            if ready
-            else (
-                ArtifactAction(
-                    kind="provide_artifacts",
-                    message=f"Build the local model bundle: {self._build_command()}",
-                ),
-            ),
             location=root,
             artifact_version=revision,
+            **self._acquisition_gate(state, self._build_command()),
         )
         if self.config.draft_dir is None:
             return True, (requirement,), ()
         draft_root = self.config.draft_dir.expanduser().resolve()
         draft_state, draft_revision = _inspect_draft_bundle(draft_root)
-        draft_ready = draft_state == "ready"
         draft_requirement = ArtifactRequirement(
-            artifact_id="qwen3-asr-0.6b-gpu-draft",
+            artifact_id=DRAFT_ARTIFACT_ID,
             label="Qwen3-ASR 0.6B draft checkpoint and verify head",
             state=draft_state,
             required_for_inference=True,
-            can_acquire_now=False,
             may_acquire_during_inference=False,
             source_is_mutable=False,
-            acquisition_blocker=None if draft_ready else "action_required",
-            required_actions=()
-            if draft_ready
-            else (
-                ArtifactAction(
-                    kind="provide_artifacts",
-                    message=f"Build the draft bundle: {self._build_draft_command()}",
-                ),
-            ),
             location=draft_root,
             artifact_version=draft_revision,
+            **self._acquisition_gate(draft_state, self._build_draft_command()),
         )
         return True, (requirement, draft_requirement), ()
+
+    def _acquire_artifacts(
+        self,
+        context: ArtifactContext,
+        requirements: tuple[ArtifactRequirement, ...],
+        refresh: bool,
+        progress,
+    ) -> None:
+        """Download the pinned checkpoint and run the measured conversion recipe.
+
+        The bundle is built in a private work directory next to ``model_dir``
+        and only the compiled result lands at ``model_dir``; the draft bundle is
+        built after the target it binds to. Everything runs in this process and
+        needs the ``convert`` dependency group.
+        """
+        targets = {requirement.artifact_id for requirement in requirements}
+
+        def emit(phase: str, artifact_id: str) -> None:
+            if progress is not None:
+                progress(ArtifactProgress(phase=phase, artifact_id=artifact_id))
+
+        try:
+            if BUNDLE_ARTIFACT_ID in targets:
+                self._acquire_bundle(emit)
+            if DRAFT_ARTIFACT_ID in targets:
+                self._acquire_draft(emit)
+        except ArtifactAcquisitionError:
+            raise
+        except Exception as exc:
+            raise ArtifactAcquisitionError(
+                f"Building the local model bundle failed ({type(exc).__name__}: {exc}).",
+                reason="failed",
+                hint=f"The manual equivalent is: {self._build_command()}",
+            ) from exc
+
+    def _ensure_source(self, emit) -> Path:
+        from .conversion.build import download_source
+
+        source = self.config.source_dir.expanduser().resolve()
+        if not (source / "source.json").is_file():
+            emit("transferring", BUNDLE_ARTIFACT_ID)
+            download_source(source, revision=SOURCE_REVISION, model_id=MODEL_ID)
+        return source
+
+    def _acquire_bundle(self, emit) -> None:
+        from .compiled import compile_bundle
+        from .conversion.build import build_bundle
+        from .conversion.compress import compress_bundle
+
+        target = self.config.model_dir.expanduser().resolve()
+        if target.exists():
+            raise ArtifactAcquisitionError(
+                f"{target} already exists; move it away before pulling.",
+                reason="action_required",
+            )
+        source = self._ensure_source(emit)
+        work = target.with_name(target.name + ".work")
+        if work.exists():
+            shutil.rmtree(work)  # a previous interrupted pull; nothing else writes here
+        emit("converting", BUNDLE_ARTIFACT_ID)
+        build_bundle(source, work / "fp16", **BUILD_RECIPE)
+        compress_bundle(work / "fp16", work / "lut8", **COMPRESS_RECIPE)
+        emit("verifying", BUNDLE_ARTIFACT_ID)
+        compile_bundle(work / "lut8", target)
+        shutil.rmtree(work)
+
+    def _acquire_draft(self, emit) -> None:
+        from .conversion.draft import build_draft_bundle
+
+        draft = self.config.draft_dir.expanduser().resolve()
+        if draft.exists():
+            raise ArtifactAcquisitionError(
+                f"{draft} already exists; move it away before pulling.",
+                reason="action_required",
+            )
+        source = self._ensure_source(emit)
+        emit("converting", DRAFT_ARTIFACT_ID)
+        build_draft_bundle(self.config.model_dir.expanduser().resolve(), source, draft)
 
     def _ensure_model_loaded(self) -> CoreMLRuntime:
         """Load once while the caller holds the inference lock; never acquire weights."""
         if self._runtime is None:
             report = self.artifact_status()
             if report.readiness != "ready":
-                hint = self._build_command()
+                hint = f"{self._pull_command()} (manual equivalent: {self._build_command()}"
                 if self.config.draft_dir is not None:
                     hint = f"{hint} && {self._build_draft_command()}"
+                hint += ")"
                 raise ArtifactUnavailableError(
                     "The local Qwen3-ASR model bundle is unavailable.",
                     reason="action_required",
@@ -465,6 +592,11 @@ def _inspect_compiled_package(package: Path) -> str:
     if any(not path.is_file() or path.stat().st_size == 0 for path in required):
         return "incomplete"
     return "ready"
+
+
+def _conversion_toolchain_available() -> bool:
+    """Whether the convert dependency group is importable, without importing it."""
+    return all(importlib.util.find_spec(name) is not None for name in CONVERSION_MODULES)
 
 
 def _inspect_draft_bundle(root: Path) -> tuple[str, str | None]:
