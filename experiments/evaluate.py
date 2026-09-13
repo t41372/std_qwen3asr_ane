@@ -137,10 +137,15 @@ def backend_error(exc: Exception, *, redact: bool) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
+DTYPE_LABELS = {"float32": "fp32", "bfloat16": "bf16", "float16": "fp16"}
+
+
 def compute_label(args: argparse.Namespace) -> str:
     if args.backend == "standard":
         return "plugin_managed"
-    return args.compute_units if args.backend == "coreml" else "cpu_fp32"
+    if args.backend == "coreml":
+        return args.compute_units
+    return f"{args.device}_{DTYPE_LABELS[args.dtype]}"
 
 
 def make_backend(args: argparse.Namespace) -> Backend:
@@ -194,9 +199,9 @@ def make_backend(args: argparse.Namespace) -> Backend:
     torch.manual_seed(args.seed)
     model = Qwen3ASRModel.from_pretrained(
         str(args.model_dir.resolve()),
-        dtype=torch.float32,
-        device_map="cpu",
-        attn_implementation="eager",
+        dtype=getattr(torch, args.dtype),
+        device_map=args.device,
+        attn_implementation=args.attn_implementation,
         max_inference_batch_size=1,
         max_new_tokens=args.max_new_tokens,
         local_files_only=True,
@@ -209,6 +214,8 @@ def make_backend(args: argparse.Namespace) -> Backend:
         name = LANGUAGE_NAMES.get(language, language) if language else None
         with torch.inference_mode():
             result = model.transcribe(audio=(audio, 16000), language=name)[0]
+        if args.device == "mps":
+            torch.mps.synchronize()  # the timed window must include GPU completion
         return result.text, result.language, None
 
     return Backend(transcribe)
@@ -712,6 +719,9 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--max-new-tokens", type=int, default=256)
     result.add_argument("--language-mode", choices=("auto", "manifest"), default="auto")
     result.add_argument("--torch-threads", type=int, default=0)
+    result.add_argument("--device", choices=("cpu", "mps"), default="cpu")
+    result.add_argument("--dtype", choices=tuple(DTYPE_LABELS), default="float32")
+    result.add_argument("--attn-implementation", choices=("eager", "sdpa"), default="eager")
     result.add_argument("--seed", type=int, default=20260912)
     result.add_argument(
         "--compare", nargs=2, type=Path, metavar=("BASELINE_JSONL", "CANDIDATE_JSONL")

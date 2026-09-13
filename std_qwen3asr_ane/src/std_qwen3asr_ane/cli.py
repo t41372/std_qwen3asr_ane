@@ -22,6 +22,17 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--cache-length", type=int, choices=(512, 1024, 2048), default=1024)
     build.add_argument("--reuse-encoder", action="store_true")
     build.add_argument("--token-batch-size", type=int, choices=(1, 8, 16, 32), default=1)
+    compress = commands.add_parser(
+        "compress", help="Write a weight-compressed copy of an uncompiled bundle"
+    )
+    compress.add_argument("--source", type=Path, required=True)
+    compress.add_argument("--output", type=Path, required=True)
+    compress.add_argument("--scheme", choices=("palette", "linear"), default="palette")
+    compress.add_argument("--bits", type=int, choices=(4, 6, 8), default=8)
+    compress.add_argument("--group-size", type=int, default=32)
+    compress.add_argument(
+        "--roles", nargs="+", choices=("decoder", "lm_head"), default=["decoder", "lm_head"]
+    )
     compile_command = commands.add_parser(
         "compile", help="Prepare a separate host-compiled bundle for faster subsequent loads"
     )
@@ -51,6 +62,17 @@ def main(argv: list[str] | None = None) -> int:
             cache_length=args.cache_length,
             reuse_encoder=args.reuse_encoder,
             token_batch_size=args.token_batch_size,
+        )
+    elif args.command == "compress":
+        from .conversion.compress import compress_bundle
+
+        result = compress_bundle(
+            args.source,
+            args.output,
+            scheme=args.scheme,
+            bits=args.bits,
+            group_size=args.group_size,
+            roles=tuple(args.roles),
         )
     elif args.command == "compile":
         from .compiled import compile_bundle

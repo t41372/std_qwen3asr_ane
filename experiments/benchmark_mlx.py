@@ -31,6 +31,12 @@ WORKSPACE = Path(__file__).resolve().parents[1]
 REFERENCE_ENV = WORKSPACE / "experiments/mlx_reference"
 OFFICIAL_REVISION = "7278e1e70fe206f11671096ffdd38061171dd6e5"
 MLX_REVISION = "e1f6c266914abc5a46e8756e02580f834a6cf8a7"
+# mlx-community quantized conversions (decoder-only affine quantization, group 64).
+MLX_QUANTIZED = {
+    "q4": ("mlx-community/Qwen3-ASR-1.7B-4bit", "78a389c776a5483b2d0d4ea5494e11012e0d6159"),
+    "q8": ("mlx-community/Qwen3-ASR-1.7B-8bit", "a8379a2e2f9e313c9292cdf1af4055ab56d50d55"),
+}
+WEIGHT_DTYPES = ("bf16", "q4", "q8")
 
 
 def file_hash(path: Path) -> str:
@@ -51,8 +57,8 @@ def configure_local_caches() -> None:
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def provenance(model_dir: Path, model_repo: str, revision: str) -> dict:
-    """Fingerprint unchanged BF16 weights and the exact installed reference code."""
+def provenance(model_dir: Path, model_repo: str, revision: str, weights_dtype: str = "bf16") -> dict:
+    """Fingerprint the declared weights (BF16 or quantized) and the installed reference code."""
     source_record = model_dir / "source.json"
     if source_record.is_file():
         acquired = json.loads(source_record.read_text())
@@ -77,16 +83,24 @@ def provenance(model_dir: Path, model_repo: str, revision: str) -> dict:
         weights.append(
             {"path": path.name, "bytes": path.stat().st_size, "sha256": file_hash(path)}
         )
-    if not weights or set(dtypes) != {"BF16"}:
+    expected_dtypes = {"BF16"} if weights_dtype == "bf16" else {"BF16", "U32"}
+    if not weights or set(dtypes) != expected_dtypes:
         raise ValueError(
-            f"This baseline requires unquantized BF16 weights; found {dict(dtypes)}"
+            f"Weights for {weights_dtype} must have tensor dtypes {expected_dtypes}; found {dict(dtypes)}"
         )
     configs = {}
     for path in sorted(model_dir.glob("*.json")):
         configs[path.name] = {"sha256": file_hash(path)}
     config = json.loads((model_dir / "config.json").read_text())
-    if config.get("quantization") or config.get("quantization_config"):
+    quantization = config.get("quantization") or config.get("quantization_config")
+    if weights_dtype == "bf16" and quantization:
         raise ValueError("Quantized model configuration cannot be labeled BF16")
+    if weights_dtype != "bf16":
+        expected_bits = int(weights_dtype[1:])
+        if not quantization or int(quantization.get("bits", 0)) != expected_bits:
+            raise ValueError(f"Expected a {expected_bits}-bit quantization block in config.json")
+        # The audio encoder stays BF16 in these conversions; record that scope.
+        quantization = {**quantization, "scope": "text decoder and embeddings only"}
     versions, sources = {}, {}
     for name in (
         "mlx-audio",
@@ -114,7 +128,8 @@ def provenance(model_dir: Path, model_repo: str, revision: str) -> dict:
         "model_repo": model_repo,
         "source_revision": revision,
         "revision_evidence": "Recorded acquisition revision; local payload independently SHA256-hashed",
-        "weights_dtype": "bf16",
+        "weights_dtype": weights_dtype,
+        "quantization": quantization if weights_dtype != "bf16" else None,
         "weight_tensor_dtypes": dict(dtypes),
         "weight_files": weights,
         "metadata_files": configs,
@@ -214,7 +229,7 @@ def run(args: argparse.Namespace) -> int:
     args.model_dir = args.model_dir.resolve()
     if args.output.exists() or Path(str(args.output) + ".summary.json").exists():
         raise ValueError(f"Refusing to overwrite run: {args.output}")
-    metadata = provenance(args.model_dir, args.model_repo, args.model_revision)
+    metadata = provenance(args.model_dir, args.model_repo, args.model_revision, args.weights_dtype)
     if args.inspect_only:
         write_json(
             args.output,
@@ -262,7 +277,7 @@ def run(args: argparse.Namespace) -> int:
                     "backend": "mlx",
                     "model_dir": str(args.model_dir),
                     "compute_units": "mlx_gpu",
-                    "weights_dtype": "bf16",
+                    "weights_dtype": args.weights_dtype,
                     "max_new_tokens": args.max_new_tokens,
                     "normalizer": NORMALIZER,
                     "phase": "warmup" if repeat < 0 else "measured",
@@ -312,7 +327,7 @@ def run(args: argparse.Namespace) -> int:
         "repeats": args.repeats,
         "configuration": {
             "compute_units": "mlx_gpu",
-            "weights_dtype": "bf16",
+            "weights_dtype": args.weights_dtype,
             "max_new_tokens": args.max_new_tokens,
             "language_mode": args.language_mode,
             "seed": args.seed,
@@ -320,7 +335,7 @@ def run(args: argparse.Namespace) -> int:
             "batch_size": 1,
         },
         "environment": metadata["environment"],
-        "comparability": "MLX GPU with BF16 weights and its own kernels/frontend; not an interchangeable device setting for Core ML FP16/ANE. No energy measurement is inferred from latency.",
+        "comparability": f"MLX GPU with {args.weights_dtype} weights and its own kernels/frontend; not an interchangeable device setting for Core ML FP16/ANE. No energy measurement is inferred from latency.",
         **aggregate(results),
     }
     write_json(Path(str(args.output) + ".summary.json"), summary)
@@ -342,7 +357,14 @@ def main() -> int:
     parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--language-mode", choices=("auto", "manifest"), default="auto")
     parser.add_argument("--seed", type=int, default=20260912)
+    parser.add_argument("--weights-dtype", choices=WEIGHT_DTYPES, default="bf16")
     args = parser.parse_args()
+    if args.weights_dtype != "bf16":
+        repo, revision = MLX_QUANTIZED[args.weights_dtype]
+        if args.model_repo == "Qwen/Qwen3-ASR-1.7B":
+            args.model_repo, args.model_revision = repo, revision
+        if (args.model_repo, args.model_revision) != (repo, revision):
+            parser.error(f"{args.weights_dtype} requires {repo}@{revision}")
     if not args.inspect_only and args.manifest is None:
         parser.error("--manifest is required for inference")
     if args.warmups < 0 or args.repeats < 1 or args.max_new_tokens < 1:

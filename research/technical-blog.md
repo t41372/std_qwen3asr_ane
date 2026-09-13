@@ -225,3 +225,26 @@ Shared state的英文中位1.6903秒，copy控制1.7565秒，相差66.2ms；中�
 英文完整推理由2.0954秒降到1.8178秒（約13.3%），中文0.5100秒降到0.4333秒（約15.0%）。英文prefill由0.4193秒降至0.1415秒，中文0.1522秒降至0.0733秒；生成時間基本不變。這是可以歸因到prefill的核心改善，但還沒有勝過MLX，也不是廣泛品質或節能證明。
 
 原型額外完整載入prefill runtime，因此base載入1.612秒之外另需約0.394秒。沒有隱藏這項冷啟動取捨，也沒有將原型整合為預設插件。資料與來源hash在artifacts/evaluation/smoke/dualwidth-greedy.jsonl及dualwidth-greedy.summary.json，更新handoff供新workflow評估。
+
+## 2026-09-13 — 23：接手、預先登記門檻、分解 ANE 逐 token 成本的 floor
+
+新工作方式下接手。先確認起點：289 tests 通過、Standard ASR main 仍是 uv.lock 鎖定的 `b63bb73b`、M5 Max／macOS 27.0。以既有 profile 與孤立 Instruments trace 重新判讀瓶頸：兩段 smoke 的 623 筆 ANE Prediction 合計 2.311 秒，對應 predict 牆鐘約 2.53 秒，ANE 硬體忙碌約 91%。瓶頸是 ANE 每個 token 的成本本身（7 個 partition 各約 4.15 ms＋LM head 4.5 ms ≈ 33 ms／token），不是 Python。在任何新候選結果出現前，先把品質／latency／能耗／記憶體門檻與比較對象寫進 `research/preregistration-2026-09-13.md` 並提交。
+
+之前的 probe 顯示 LUT4 與 LUT8 幾乎同速，代表存在與權重 bytes 無關的 floor。用真實第 0–3 層建 T1 變體逐項移除工作（`experiments/probe_decoder_floor.py`，10 warmup／30 次中位數）：
+
+| 4 層 T1 變體 | 中位數 | 權重 bytes |
+|---|---:|---:|
+| FP16 baseline，cache 1024 | 3.83 ms | 403 MB |
+| 只有 MLP | 2.08 ms | 302 MB |
+| 只有 attention | 1.93 ms | 101 MB |
+| 不寫 KV cache | 3.05 ms | 369 MB |
+| cache 256／4096 | 3.16／7.37 ms | 403 MB |
+| LUT8 g32／LUT4 g16／LUT4 g32／LUT4 g64 | 2.78／2.73／2.71／2.73 ms | 203／101 MB |
+| linear int8 per-channel | 2.73 ms | 202 MB |
+| linear int4 per-block 32／64 | 7.51／7.52 ms | 113／107 MB |
+
+判讀：（1）MLP-only 的權重串流約 145 GB/s，是 FP16 權重的有效頻寬；（2）attention 與 cache 成本隨 cache 長度線性成長，約 0.22 ms／層／1024 位置，180 秒用的 4096 cache 會讓每層 attention 成本超過權重成本；（3）全 cache 的 mul/add 寫入約 0.14 ms／層；（4）所有可用的壓縮格式（LUT4／LUT8／int8）都收斂到同一個時間，代表 ANE 解壓是按權重元素數計費（約 120 G 元素／秒），位元數只影響記憶體與 DRAM 流量；（5）linear int4 per-block 慢一倍，不走快速路徑，排除。
+
+另外確認：以 `cache[..., pos:pos+1] = k` 追蹤出的 MIL `slice_update`（動態 begin）在本機 macOS 27 beta 用 CPU_ONLY 也載入失敗（execution plan error -14），與先前 enumerated shapes 的失敗碼相同；`index_copy_` 沒有 coremltools 轉換。動態部分寫入目前在此 host 不可用。
+
+決策：先把 palettization 做成套件功能（`qwen3-asr-ane compress`，decoder partitions 與 LM head，encoder 保持 FP16），建 LUT8 g32 與 LUT4 g16 兩個完整 bundle，用 selection set 依預先登記的門檻挑選；cache 長度與寫入方式的結構改善另行量測。三個靜態研究 subagent 回報：mlx-community 有 4-bit／8-bit（decoder-only）轉換可作同位元 baseline；官方 PyTorch 可在 MPS bf16 執行，`evaluate.py` 加入 `--device/--dtype`；協議審查指出 prompt 上限未誠實宣告、限制錯誤訊息被扁平化等待修。
