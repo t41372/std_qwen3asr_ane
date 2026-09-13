@@ -209,3 +209,11 @@ infrequent-reshape hint、將-inf mask改為-10000、提高LayerNorm epsilon及r
 使用者詢問進度及SenseVoice與目標的關係，表示正在整理更好的工作方式，允許先收束、寫handoff，之後使用乾淨上下文繼續。停止擴大研究，整理原始資料、預設引擎和未啟用的實驗邊界。
 
 收尾通過289個tests、修改檔案的Ruff、Standard ASR main CLI compliance及正式引擎的真實中文辨識。SenseVoice、oracle、quantization和speculative prototypes均未進入default plugin；預設model alias也沒有指向未驗證的新候選。工作狀態與重現命令寫入HANDOFF.md，原始速度／能耗／廣泛品質目標仍未完成，沒有再次標記完成。
+
+## 2026-09-12 — 21：補完已準備的完整模型 state-sharing 驗證
+
+自動目標續行後，範圍限制在收尾前已寫好、尚未跑完整模型的shared-state選項。沒有修改推理程式、沒有擴大SenseVoice研究。先核對乾淨的1a83e63工作樹，再用既有T64 prefill／T16 generation／0.6B ANE draft／T16 vocabulary head，跑share與copy兩個獨立程序，每個兩音訊、各一warmup和三次測量。所有16次完整推理均與原本serial 1.7B逐token一致，兩程序exit0、explicit close正常。
+
+Shared state的英文中位1.6903秒，copy控制1.7565秒，相差66.2ms；中文0.4528對0.5221秒，相差69.3ms。Copy本身62.7–64.4ms，而兩程序同時量到的serial target基準都約英文2.10秒、中文0.512秒。結果支持在這個host與這組相容models中避免state拷貝能省掉這部分開銷；不將兩個smoke推廣成所有shape、CoreML版本、廣泛品質或能耗證明，且完整流程仍慢於MLX。
+
+原始資料與帶hash摘要保存在artifacts/evaluation/smoke/shared-state-full-k7.jsonl、copied-state-full-k7-control.jsonl、shared-state-full-comparison.json，結果補入HANDOFF.md。沒有改預設引擎或產物。

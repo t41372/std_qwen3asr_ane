@@ -102,12 +102,25 @@ ANE 功率較低但更久，總能耗約 **2.19倍**。這是一次 A/B 的 SMC 
 | compact T16 vocabulary head | 每有效token約0.344 vs4.567ms；60個hidden逐token一致，有用但尚不是完整pipeline勝出 |
 | 0.6B ANE draft，K7，T16 batch head | EN約1.923秒，ZH0.520秒；仍慢於MLX |
 | 再加T64 prefill＋public state copy | EN約1.716秒，ZH0.512秒；copy本身約63–67ms |
-| 真實相容state直接分享小測試 | T16四層state送入T1，同explicit-copy對照的5個後續位置：output max_abs=0、每個KV array相同。**僅這台host的小範圍實驗，未整合正式插件，也未跑完整7-partition shared-state benchmark** |
+| 真實相容state直接分享 | 四層T16→T1的5個後續位置：output max_abs=0、每個KV array相同。後續補完7-partition T64→T16完整模型測試，詳見下段；仍未整合正式插件 |
 | ground-truth transcript oracle＋T64 target＋T16 head | EN0.400秒、ZH0.127秒。**排除了取得草稿的成本，是明確標示的理想下界，不是實際引擎性能、不可宣傳勝過MLX** |
 
 speculative greedy 邏輯使用 held target token：T16一次驗證最多15個draft tokens。只接受target同意的token；mismatch後以target correction覆寫位置；完整接受時補上draft尚未消耗的最後token。79個算法測試及兩個真實smoke的exact-token parity通過。`TranscriptDraft` 另用suffix anchors做有界resync，插入、刪除、重複、不相關和空草稿都不會改變target輸出。
 
 證據主要在 `artifacts/evaluation/smoke/*speculative*.jsonl`、`oracle-transcript-t64-k15.jsonl` 及 `artifacts/probes/*benchmark.json`。小模型 multifunction / enumerated-state 載入失敗也保留在 probes；不要把這些失敗誤推論成所有 Core ML state sharing 都不支援。
+
+### 收束後補完的既有實驗：完整 shared-state 對照
+
+自動目標續行時，只補完已準備好的 state-sharing 驗證，沒有繼續 SenseVoice 或改動推理程式。使用同一組既有T64 prefill、T16 generation、0.6B ANE draft及T16 vocabulary head；先跑share、再跑相同copy控制，各一輪warmup＋三次測量、兩音訊，**合計16次完整推理全部與serial 1.7B逐token一致**，兩程序exit0、明確close完成。
+
+| 完整流程中位数 | Shared state | Explicit copy | 減少 |
+|---|---:|---:|---:|
+| 英文 | 1.6903秒 | 1.7565秒 | 66.2ms（約3.8%） |
+| 中文 | 0.4528秒 | 0.5221秒 | 69.3ms（約13.3%） |
+
+Copy本身約62.7–64.4ms；兩輪同時量到的serial基準接近（EN約2.10秒、ZH約0.512秒）。這是兩段smoke、一次順序A/B的有界證據，**仍遠慢於MLX，沒有新的能耗或廣泛品質結論**。也不是對所有Core ML版本／shape／artifact宣告state互通。
+
+原始檔：`artifacts/evaluation/smoke/shared-state-full-k7.jsonl`、`copied-state-full-k7-control.jsonl`；含來源hash的摘要：`shared-state-full-comparison.json`。腳本是已存在的`experiments/benchmark_speculative.py`，只切換`--state-transfer share|copy`。這項已備妥工作現在已完成驗證，接續仍依使用者的新workflow決定下一步。
 
 ## SenseVoiceSmall 支線：現況與問題
 
