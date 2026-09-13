@@ -21,7 +21,13 @@ from power_v2.integrate import integrate
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--backend", choices=("coreml", "mlx", "official"), required=True)
+    parser.add_argument(
+        "--backend", choices=("coreml", "mlx", "official", "specdraft"), required=True
+    )
+    parser.add_argument("--draft-dir", type=Path, help="specdraft: MLX draft checkpoint")
+    parser.add_argument("--draft-bits", type=int, choices=(4, 8), default=None)
+    parser.add_argument("--verify-head", type=Path, help="specdraft: T16 compact head")
+    parser.add_argument("--lookahead", type=int, default=15)
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -46,6 +52,37 @@ def main():
 
         def transcribe(samples):
             return predict(samples, None, 256)["hypothesis"]
+    elif args.backend == "specdraft":
+        import coremltools as ct
+        from benchmark_speculative import DecoderCursor
+        from mlx_draft import MLXDraft
+        from std_qwen3asr_ane.runtime import CoreMLRuntime, PersistentInputModel
+        from std_qwen3asr_ane.speculative import greedy_speculative_decode
+
+        runtime = CoreMLRuntime(args.model_dir)
+        head = PersistentInputModel(
+            ct.models.MLModel(str(args.verify_head), compute_units=ct.ComputeUnit.CPU_AND_NE)
+        )
+        draft_model = MLXDraft(args.draft_dir, quantize_bits=args.draft_bits)
+
+        def close():
+            head.close()
+            runtime.close()
+
+        def transcribe(samples):
+            prompt = runtime.prepare_prompt(samples, language=None, max_new_tokens=256)
+            draft_model.prepare(samples, list(prompt.token_ids))
+            result = greedy_speculative_decode(
+                DecoderCursor(runtime, prompt, head),
+                draft_model,
+                prompt.hidden,
+                target_position=len(prompt.token_ids),
+                draft_position=len(prompt.token_ids),
+                eos_token_ids=frozenset(runtime.eos_token_ids),
+                max_new_tokens=256,
+                lookahead=args.lookahead,
+            )
+            return runtime.tokenizer.decode(list(result.token_ids), skip_special_tokens=True)
     elif args.backend == "official":
         import torch
         from qwen_asr import Qwen3ASRModel
@@ -83,6 +120,14 @@ def main():
         "backend": args.backend,
         "device": args.device if args.backend == "official" else None,
         "dtype": args.dtype if args.backend == "official" else None,
+        "draft": {
+            "dir": str(args.draft_dir),
+            "bits": args.draft_bits,
+            "lookahead": args.lookahead,
+            "verify_head": str(args.verify_head),
+        }
+        if args.backend == "specdraft"
+        else None,
         "model_dir": str(args.model_dir.resolve()),
         "load_seconds": load_seconds,
         "manifest_sha256": hashlib.sha256(args.manifest.read_bytes()).hexdigest(),
