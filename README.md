@@ -12,8 +12,8 @@ Measured on a MacBook Pro M5 Max (64 GB, macOS 27.0). Latency is the median of 5
 |---|---:|---:|---:|---:|---|
 | Neural Engine, FP16 (uncompressed) | 2.06 s | 0.50 s | 3.19 | 4.2 GB | same |
 | **Neural Engine, 8-bit (default)** | **1.43 s** | **0.35 s** | **2.34** | **2.6 GB** | same |
-| Neural Engine verify + GPU draft (optional) | 0.60 s | 0.20 s | 38% below default | 6.4 GB | identical tokens to default |
-| GPU, MLX 8-bit | 0.30 s | 0.11 s | pending | pending | same |
+| Neural Engine verify + GPU draft (optional) | 0.61 s | 0.20 s | 38% below default | 6.5 GB | identical tokens to default |
+| GPU, MLX 8-bit | 0.30 s | 0.11 s | pending | 2.5 GB | same |
 | GPU, MLX bf16 | 0.46 s | 0.14 s | 1.99 | 4.1 GB | same |
 | GPU, MLX 4-bit | 0.21 s | 0.09 s | 1.15 | 2.1 GB | Chinese +0.5 to +1.0 pp worse |
 | GPU, official PyTorch (MPS, bf16) | 0.78 s | 0.20 s | not measured | not measured | same |
