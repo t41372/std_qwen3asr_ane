@@ -22,6 +22,13 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--cache-length", type=int, choices=(512, 1024, 2048), default=1024)
     build.add_argument("--reuse-encoder", action="store_true")
     build.add_argument("--token-batch-size", type=int, choices=(1, 8, 16, 32), default=1)
+    build.add_argument(
+        "--layers-per-partition",
+        type=int,
+        choices=(4, 7, 14),
+        default=4,
+        help="decoder layers per Core ML model; 14 measured fastest, 28 fails to load on macOS 27",
+    )
     compress = commands.add_parser(
         "compress", help="Write a weight-compressed copy of an uncompiled bundle"
     )
@@ -67,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
             cache_length=args.cache_length,
             reuse_encoder=args.reuse_encoder,
             token_batch_size=args.token_batch_size,
+            layers_per_partition=args.layers_per_partition,
         )
     elif args.command == "compress":
         from .conversion.compress import compress_bundle, validate_settings

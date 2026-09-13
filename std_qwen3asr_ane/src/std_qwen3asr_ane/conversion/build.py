@@ -11,7 +11,13 @@ SUPPORTED_CHECKPOINTS = {"Qwen/Qwen3-ASR-1.7B", "Qwen/Qwen3-ASR-0.6B"}
 
 
 def build_bundle(
-    source: Path, output: Path, *, cache_length=1024, reuse_encoder=False, token_batch_size=1
+    source: Path,
+    output: Path,
+    *,
+    cache_length=1024,
+    reuse_encoder=False,
+    token_batch_size=1,
+    layers_per_partition=4,
 ):
     import numpy as np
     import torch
@@ -38,7 +44,11 @@ def build_bundle(
     else:
         encoder = build_encoder(source, output)
     decoder = build_decoder(
-        source, output, cache_length=cache_length, token_batch_size=token_batch_size
+        source,
+        output,
+        cache_length=cache_length,
+        token_batch_size=token_batch_size,
+        layers_per_partition=layers_per_partition,
     )
     tokenizer = AutoTokenizer.from_pretrained(source, local_files_only=True, fix_mistral_regex=True)
     tokenizer.backend_tokenizer.save(str(output / "tokenizer.json"))
@@ -76,6 +86,7 @@ def build_bundle(
         "activation": "stable_exp_silu",
         "encoder_activation": "unfused_erf_gelu",
         "tokenizer_fix_mistral_regex": True,
+        "layers_per_partition": layers_per_partition,
         **decoder,
     }
     temporary = output / "manifest.json.tmp"
