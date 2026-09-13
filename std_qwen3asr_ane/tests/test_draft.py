@@ -15,12 +15,13 @@ from test_runtime import bundle, fake_coreml  # noqa: F401 — shared toy runtim
 
 from std_qwen3asr_ane.draft import (
     DRAFT_BUNDLE_KIND,
+    DRAFT_REVISION,
     DraftDependencyError,
     MLXDraft,
     check_draft_target,
     load_draft_manifest,
 )
-from std_qwen3asr_ane.runtime import CoreMLRuntime, TargetCursor
+from std_qwen3asr_ane.runtime import CoreMLRuntime, TargetCursor, VerifyHead
 
 
 def draft_manifest(target: CoreMLRuntime, **overrides) -> dict:
@@ -30,7 +31,7 @@ def draft_manifest(target: CoreMLRuntime, **overrides) -> dict:
         "kind": DRAFT_BUNDLE_KIND,
         "draft": {
             "model_id": "Qwen/Qwen3-ASR-0.6B",
-            "revision": "b" * 40,
+            "revision": DRAFT_REVISION,
             "path": "Qwen3-ASR-0.6B",
         },
         "verify_head": {
@@ -151,3 +152,50 @@ def test_speculative_path_matches_serial(bundle: Path, fake_coreml) -> None:  # 
     assert result.timings["verifier_calls"] >= 1 and "draft_prefill_seconds" in result.timings
     with pytest.raises(ValueError, match="lookahead"):
         target.transcribe_speculative(audio, draft, language=None, max_new_tokens=8, lookahead=4)
+
+
+def test_verify_head_maps_chunk_winners_to_global_ids(bundle: Path, fake_coreml) -> None:  # noqa: F811
+    import sys
+
+    manifest = json.loads((bundle / "manifest.json").read_text())
+    manifest.update(source_revision="a" * 40, token_batch_size=4)
+    (bundle / "manifest.json").write_text(json.dumps(manifest))
+    target = CoreMLRuntime(bundle)
+    module = sys.modules["coremltools"]
+    real_model = module.models.MLModel
+
+    class Head:
+        def __init__(self, path, *, compute_units):
+            self.width = 4
+
+        def predict(self, data):
+            width = data["hidden_states"].shape[-1]
+            # Two chunks (the toy lm_head splits its 9-token vocabulary 4 + 5):
+            # column i wins in chunk i % 2 with local index i.
+            values = np.full((1, 2, width), -1.0, np.float32)
+            indices = np.zeros((1, 2, width), np.int32)
+            for column in range(width):
+                values[0, column % 2, column] = 1.0
+                indices[0, column % 2, column] = column
+            return {"max_values": values, "max_indices": indices}
+
+        def close(self, *, timeout=5):
+            pass
+
+    module.models.MLModel = Head
+    try:
+        head = VerifyHead(bundle / "verify_head.mlpackage", target, compute_units="cpu_and_ne")
+        assert head.chunk_size == 4 and head.width == 4
+        hidden = np.zeros((1, 8, 1, 3), np.float16)
+        assert head.choose_rows(hidden, 3) == [0, 4 + 1, 2]
+        with pytest.raises(ValueError, match="width"):
+            head.choose_rows(np.zeros((1, 8, 1, 5), np.float16), 5)
+        with pytest.raises(ValueError, match="chunk"):
+            VerifyHead(
+                bundle / "verify_head.mlpackage",
+                target,
+                compute_units="cpu_and_ne",
+                vocabulary_chunk=8192,
+            )
+    finally:
+        module.models.MLModel = real_model

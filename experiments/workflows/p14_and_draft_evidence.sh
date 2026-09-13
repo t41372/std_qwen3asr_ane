@@ -51,7 +51,7 @@ run_block spec-1 $DPY --backend specdraft --model-dir $P14 --draft-dir $DRAFTB -
 run_block spec-2 $DPY --backend specdraft --model-dir $P14 --draft-dir $DRAFTB --draft-bits 4 --lookahead 15
 run_block serial-2 $PY --backend coreml --model-dir $P14
 echo "--- sysmem spec"
-$DPY - <<PYEOF
+$DPY experiments/measure_system_memory.py --backend coreml --model-dir $P14 --draft-dir $DRAFTB --manifest $SMOKE --output artifacts/evaluation/candidates/memory/sysmem-specdraft-q4.json | cut -c1-400
 import json, subprocess, time, sys
 sys.path.insert(0, "experiments")
 from measure_system_memory import vm_stat, delta

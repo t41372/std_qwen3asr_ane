@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import resource
 import subprocess
@@ -17,6 +18,14 @@ from pathlib import Path
 
 from evaluate import audio_samples, manifest_rows
 from power_v2.integrate import integrate
+
+
+def _installed(name: str) -> bool:
+    try:
+        importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return False
+    return True
 
 
 def main():
@@ -122,6 +131,19 @@ def main():
         if args.backend == "specdraft"
         else None,
         "model_dir": str(args.model_dir.resolve()),
+        "interpreter": {"executable": sys.executable, "version": sys.version},
+        "versions": {
+            name: importlib.metadata.version(name)
+            for name in (
+                "coremltools",
+                "numpy",
+                "mlx",
+                "mlx-audio",
+                "torch",
+                "std-qwen3asr-ane",
+            )
+            if _installed(name)
+        },
         "load_seconds": load_seconds,
         "manifest_sha256": hashlib.sha256(args.manifest.read_bytes()).hexdigest(),
         "repeats": args.repeats,

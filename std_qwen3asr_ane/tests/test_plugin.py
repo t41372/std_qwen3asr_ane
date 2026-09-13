@@ -94,6 +94,7 @@ def fake_runtime(monkeypatch: pytest.MonkeyPatch):
 
         def __init__(self, model_dir):
             self.model_dir = model_dir
+            self.token_batch_size = 16
             self.calls = []
             self.active = 0
             self.max_active = 0

@@ -89,7 +89,7 @@ class Qwen3ASRConfig(LanguageConfigMixin, BaseConfig[Literal["std-qwen3asr-ane"]
             "them on the Neural Engine; output is unchanged. Needs the gpu-draft extra."
         ),
     )
-    draft_lookahead: int = Field(default=15, ge=0, le=15)
+    draft_lookahead: int = Field(default=15, ge=1, le=15)
     draft_bits: Literal[4, 8] | None = Field(
         default=4, description="In-memory quantization of the draft decoder; None keeps bf16."
     )
@@ -251,10 +251,15 @@ class Qwen3ASREngine(EngineBase):
 
             runtime = CoreMLRuntime(self.config.model_dir.expanduser().resolve())
             if self.config.draft_dir is not None:
+                # A configured draft is part of the engine: prepare() and streaming
+                # sessions load it too, even though only batch transcription uses it.
                 try:
                     self._draft = self._load_draft(runtime)
-                except BaseException:
-                    runtime.close()
+                except BaseException as error:
+                    try:
+                        runtime.close()
+                    except Exception as cleanup:  # noqa: BLE001 — keep the original error
+                        error.add_note(f"runtime close after draft failure: {cleanup!r}")
                     raise
             self._runtime = runtime
         return self._runtime
@@ -262,6 +267,12 @@ class Qwen3ASREngine(EngineBase):
     def _load_draft(self, runtime: CoreMLRuntime) -> DraftRuntime:
         from .draft import DraftDependencyError, DraftRuntime
 
+        if self.config.draft_lookahead >= runtime.token_batch_size:
+            raise ConfigError(
+                f"draft_lookahead={self.config.draft_lookahead} does not fit the bundle's "
+                f"{runtime.token_batch_size}-token graph (held token plus proposals).",
+                hint="Lower draft_lookahead or build the bundle with --token-batch-size 16.",
+            )
         try:
             return DraftRuntime(
                 self.config.draft_dir.expanduser().resolve(),
@@ -287,12 +298,14 @@ class Qwen3ASREngine(EngineBase):
         retry cleanup. Do not treat an exception as successful model disposal.
         """
         with self._inference_lock:
-            if self._draft is not None:
-                self._draft.close(timeout=timeout)
-                self._draft = None
-            if self._runtime is not None:
-                self._runtime.close(timeout=timeout)
-                self._runtime = None
+            try:
+                if self._draft is not None:
+                    self._draft.close(timeout=timeout)
+                    self._draft = None
+            finally:
+                if self._runtime is not None:
+                    self._runtime.close(timeout=timeout)
+                    self._runtime = None
 
     def __enter__(self) -> Self:
         self.prepare()

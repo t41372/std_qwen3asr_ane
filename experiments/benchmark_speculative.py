@@ -152,11 +152,11 @@ def main():
                         )
                         if target_prompt.token_ids != draft_prompt.token_ids:
                             raise ValueError("Draft and target prompt IDs differ")
-                        draft_decoder = TargetCursor(draft, draft_prompt)
+                        draft_decoder = TargetCursor(draft, draft_prompt.states)
                         draft_position = len(draft_prompt.token_ids)
                     draft_prepared = perf_counter()
                     result = greedy_speculative_decode(
-                        TargetCursor(target, target_prompt, batch_head),
+                        TargetCursor(target, target_prompt.states, batch_head),
                         draft_decoder,
                         target_prompt.hidden,
                         target_position=len(target_prompt.token_ids),

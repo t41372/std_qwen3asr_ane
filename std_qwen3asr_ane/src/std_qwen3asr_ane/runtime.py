@@ -664,7 +664,14 @@ class VerifyHead:
     to check chunk size and count; ``check_draft_target`` covers the weights.
     """
 
-    def __init__(self, path: Path, target: CoreMLRuntime, *, compute_units: str) -> None:
+    def __init__(
+        self,
+        path: Path,
+        target: CoreMLRuntime,
+        *,
+        compute_units: str,
+        vocabulary_chunk: int | None = None,
+    ) -> None:
         import coremltools as ct
 
         unit = (
@@ -690,6 +697,8 @@ class VerifyHead:
         ):
             raise ValueError("Verify head chunk count or token width differs from the bundle head")
         self.chunk_size = sizes.pop()
+        if vocabulary_chunk is not None and vocabulary_chunk != self.chunk_size:
+            raise ValueError("Verify head vocabulary chunk differs from the bundle head")
 
     def choose_rows(self, hidden: np.ndarray, count: int) -> list[int]:
         if count > self.width:

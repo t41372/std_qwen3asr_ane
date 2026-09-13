@@ -18,10 +18,12 @@ from pathlib import Path
 from time import perf_counter
 
 from ..bundle import clone, digest
-from ..draft import DRAFT_BUNDLE_KIND, DRAFT_MODEL_ID, DRAFT_REVISION
+from ..draft import DRAFT_BUNDLE_KIND, DRAFT_MODEL_ID, DRAFT_REVISION, weight_digests
 
 
-def build_compact_head(source: Path, output: Path, *, token_batch_size: int) -> dict:
+def build_compact_head(
+    source: Path, output: Path, *, token_batch_size: int, residual_scale: float = 1.0
+) -> dict:
     """Trace a per-chunk (max, argmax) head from the target's source weights."""
     import coremltools as ct
     import numpy as np
@@ -43,7 +45,7 @@ def build_compact_head(source: Path, output: Path, *, token_batch_size: int) -> 
     torch.set_num_threads(4)
     config = json.loads((source / "config.json").read_text())["thinker_config"]["text_config"]
     weights = SourceWeights(source)
-    module = CompactHead(config).eval()
+    module = CompactHead(config, residual_scale=residual_scale).eval()
     module.norm.weight.data.copy_(weights.get("thinker.model.norm.weight"))
     embedding = weights.get("thinker.model.embed_tokens.weight")
     offset = 0
@@ -94,6 +96,12 @@ def build_draft_bundle(
     if width < 2:
         raise ValueError("The target must use a token batch size above 1 to verify proposals")
     compression = manifest.get("weight_compression")
+    # The head must mirror lm_head exactly: compressed only if lm_head was.
+    if compression is not None and "lm_head" not in compression.get("roles", []):
+        compression = None
+    lm_head = target / manifest["files"]["lm_head"]
+    if lm_head.suffix != ".mlmodelc":
+        raise ValueError("The target must be a compiled bundle (qwen3-asr-ane compile)")
     output.mkdir(parents=True)
     draft_path = output / "Qwen3-ASR-0.6B"
     if draft_source is not None:
@@ -105,7 +113,12 @@ def build_draft_bundle(
         download_source(draft_path, revision=DRAFT_REVISION, model_id=DRAFT_MODEL_ID)
     started = perf_counter()
     fp16 = output / "verify_head_fp16.mlpackage"
-    head = build_compact_head(source, fp16, token_batch_size=width)
+    head = build_compact_head(
+        source,
+        fp16,
+        token_batch_size=width,
+        residual_scale=float(manifest.get("residual_scale", 1.0)),
+    )
     if compression is None:
         package = fp16
         counts = None
@@ -119,6 +132,11 @@ def build_draft_bundle(
     # Only the compiled head is loaded; drop the intermediate packages (about 0.9 GB).
     for intermediate in {fp16, package}:
         shutil.rmtree(intermediate)
+    digests = weight_digests(compiled)
+    if digests != weight_digests(lm_head):
+        raise RuntimeError(
+            "The verify head weights do not match the target lm_head weights; refusing the bundle"
+        )
     tokenizer = target / manifest["files"]["tokenizer"]
     record = {
         "schema_version": 1,
@@ -135,7 +153,7 @@ def build_draft_bundle(
             else {key: compression[key] for key in ("scheme", "bits", "group_size")},
             "compressed_weight_counts": counts,
             "weight_bytes": weight_bytes(compiled),
-            "weight_sha256": [digest(path) for path in sorted(compiled.rglob("weight.bin"))],
+            "weight_sha256": digests,
             "build_seconds": perf_counter() - started,
         },
         "target": {

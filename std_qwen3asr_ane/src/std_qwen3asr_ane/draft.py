@@ -15,13 +15,15 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from .audio import MIN_SAMPLES
+from .bundle import digest
+
 if TYPE_CHECKING:
     from .runtime import CoreMLRuntime
 
 DRAFT_MODEL_ID = "Qwen/Qwen3-ASR-0.6B"
 DRAFT_REVISION = "5eb144179a02acc5e5ba31e748d22b0cf3e303b0"
 DRAFT_BUNDLE_KIND = "qwen3-asr-ane-draft"
-MIN_SAMPLES = 8000  # the Core ML runtime pads very short clips to 0.5 s; mirror it
 MLX_QUANTIZATION_GROUP = 64
 
 
@@ -40,13 +42,21 @@ def load_draft_manifest(root: Path) -> dict:
     return manifest
 
 
-def check_draft_target(manifest: dict, target: CoreMLRuntime) -> None:
+def weight_digests(package: Path) -> list[str]:
+    return [digest(path) for path in sorted(package.rglob("weight.bin"))]
+
+
+def check_draft_target(manifest: dict, target: CoreMLRuntime, root: Path | None = None) -> None:
     """Refuse a verify head built for a different target bundle.
 
-    The compact head must reproduce the target's own vocabulary projection: same
-    source weights, same compression, same token width. Tokenizer identity is
-    checked so draft and target agree on token ids.
+    The compact head must reproduce the target's own vocabulary projection. The
+    manifest binds the target's identity and settings; when ``root`` is given the
+    head's weight payload must also be byte-identical to the target ``lm_head``
+    weights, which covers every compression detail the manifest does not name.
     """
+    draft = manifest["draft"]
+    if draft.get("model_id") != DRAFT_MODEL_ID or draft.get("revision") != DRAFT_REVISION:
+        raise ValueError(f"Draft checkpoint must be {DRAFT_MODEL_ID}@{DRAFT_REVISION}")
     expected = manifest["target"]
     compression = target.manifest.get("weight_compression") or {}
     actual = {
@@ -63,6 +73,13 @@ def check_draft_target(manifest: dict, target: CoreMLRuntime) -> None:
             raise ValueError(
                 f"Draft bundle was built for a different target ({key}: "
                 f"{expected.get(key)!r} != {value!r})"
+            )
+    if root is not None:
+        head = (root / manifest["verify_head"]["path"]).resolve()
+        lm_head = target._path(target.manifest["files"]["lm_head"])
+        if weight_digests(head) != weight_digests(lm_head) or not weight_digests(head):
+            raise ValueError(
+                "Verify head weights differ from the target lm_head weights (weight.bin sha256)"
             )
 
 
@@ -179,15 +196,29 @@ class DraftRuntime:
 
         self.root = Path(root).expanduser().resolve()
         self.manifest = load_draft_manifest(self.root)
-        check_draft_target(self.manifest, target)
         head_path = (self.root / self.manifest["verify_head"]["path"]).resolve()
-        if not head_path.is_relative_to(self.root):
-            raise ValueError("Verify head path escapes the draft bundle")
         draft_path = (self.root / self.manifest["draft"]["path"]).resolve()
-        if not draft_path.is_relative_to(self.root):
-            raise ValueError("Draft checkpoint path escapes the draft bundle")
-        self.head = VerifyHead(head_path, target, compute_units=target.compute_units)
-        self.model = MLXDraft(draft_path, quantize_bits=quantize_bits)
+        for path in (head_path, draft_path):
+            if not path.is_relative_to(self.root) or path == self.root:
+                raise ValueError("Draft bundle paths must stay inside the bundle")
+        check_draft_target(self.manifest, target, self.root)
+        try:
+            import mlx.core  # noqa: F401 — fail before any Core ML model is loaded
+        except ImportError as error:
+            raise DraftDependencyError(
+                "The GPU draft path needs MLX; install the package with the gpu-draft extra"
+            ) from error
+        self.head = VerifyHead(
+            head_path,
+            target,
+            compute_units=target.compute_units,
+            vocabulary_chunk=int(self.manifest["verify_head"]["vocabulary_chunk"]),
+        )
+        try:
+            self.model = MLXDraft(draft_path, quantize_bits=quantize_bits)
+        except BaseException:
+            self.head.close()
+            raise
         self.quantize_bits = quantize_bits
 
     def close(self, *, timeout: float = 5.0) -> None:
