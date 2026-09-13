@@ -197,9 +197,14 @@ def main():
         toc = ET.parse(f"{prefix}-toc.xml").getroot()
         available = {table.get("schema") for table in toc.findall(".//table")}
         for schema in SCHEMAS:
-            if schema not in available:
+            # Xcode 26 names the same Neural Engine interval table (identical
+            # columns) with an "-internal" suffix; export it under the stable name.
+            source_schema = schema
+            if schema not in available and f"{schema}-internal" in available:
+                source_schema = f"{schema}-internal"
+            if source_schema not in available:
                 raise RuntimeError(f"Required table unavailable: {schema}")
-            query = f'/trace-toc/run[@number="1"]/data/table[@schema="{schema}"]'
+            query = f'/trace-toc/run[@number="1"]/data/table[@schema="{source_schema}"]'
             if run(
                 [
                     "export",

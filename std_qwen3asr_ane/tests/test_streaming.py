@@ -288,6 +288,44 @@ def test_bundle_limit_smaller_than_session_limit_is_structured(engine):
     assert_compliant(events, engine)
 
 
+def test_bundle_capacity_errors_are_structured_not_caller_blamed(engine):
+    from std_qwen3asr_ane.errors import ModelLimitError
+
+    def fail(*args, **kwargs):
+        raise ModelLimitError("Decoder KV cache exhausted before an end-of-sequence token")
+
+    engine._runtime.transcribe = fail
+    events = asyncio.run(
+        recorded(
+            engine.start_transcription(audio_format=FORMAT), [np.zeros(8000, dtype="<f4").tobytes()]
+        )
+    )
+    assert events[-1].type == "error" and events[-1].code == "bundle_capacity_exceeded"
+    assert "KV cache" in events[-1].extra["message"]
+    assert events[-1].extra["received_audio_seconds"] == 0.5
+    assert engine._runtime.contexts[0].reset_count == 1
+    assert_compliant(events, engine)
+
+
+def test_unmapped_model_language_is_disclosed_in_events(engine):
+    original = engine._runtime.transcribe
+
+    def transcribe(*args, **kwargs):
+        result = original(*args, **kwargs)
+        return SimpleNamespace(text=result.text, language="Klingon", raw_text=result.raw_text)
+
+    engine._runtime.transcribe = transcribe
+    events = asyncio.run(
+        recorded(
+            engine.start_transcription(audio_format=FORMAT), [np.zeros(8000, dtype="<f4").tobytes()]
+        )
+    )
+    texted = [event for event in events if event.type in ("partial", "closed")]
+    assert texted and all(event.detected_language is None for event in texted)
+    assert all(event.extra["unmapped_model_language"] == "Klingon" for event in texted)
+    assert_compliant(events, engine)
+
+
 def test_default_wire_format_and_native_error_projection(engine):
     def fail(*args, **kwargs):
         raise RuntimeError("native decode failed")

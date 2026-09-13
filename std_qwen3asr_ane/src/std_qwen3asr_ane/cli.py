@@ -29,7 +29,12 @@ def main(argv: list[str] | None = None) -> int:
     compress.add_argument("--output", type=Path, required=True)
     compress.add_argument("--scheme", choices=("palette", "linear"), default="palette")
     compress.add_argument("--bits", type=int, choices=(4, 6, 8), default=8)
-    compress.add_argument("--group-size", type=int, default=32)
+    compress.add_argument(
+        "--group-size",
+        type=int,
+        default=32,
+        help="palette: output channels sharing one lookup table; linear: input channels per scale",
+    )
     compress.add_argument(
         "--roles", nargs="+", choices=("decoder", "lm_head"), default=["decoder", "lm_head"]
     )
@@ -64,8 +69,12 @@ def main(argv: list[str] | None = None) -> int:
             token_batch_size=args.token_batch_size,
         )
     elif args.command == "compress":
-        from .conversion.compress import compress_bundle
+        from .conversion.compress import compress_bundle, validate_settings
 
+        try:
+            validate_settings(args.scheme, args.bits, args.group_size)
+        except ValueError as error:
+            parser.error(str(error))
         result = compress_bundle(
             args.source,
             args.output,

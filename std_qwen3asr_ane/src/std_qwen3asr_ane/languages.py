@@ -49,3 +49,20 @@ def normalize_model_language(value: str | None) -> str | None:
     if normalized in LANGUAGE_NAMES:
         return normalized
     return _NAME_TO_CODE.get(normalized)
+
+
+def classify_model_language(
+    model_language: str | None, requested: str | None
+) -> tuple[str | None, str | None]:
+    """Return ``(detected_bcp47, unmapped_name)`` for a model language line.
+
+    A forced language reports no detection. In ``auto`` mode a name outside the
+    published list yields ``(None, name)`` so callers can disclose it rather
+    than silently dropping the model's answer.
+    """
+    if requested is not None:
+        return None, None
+    detected = normalize_model_language(model_language)
+    if detected is not None or not (model_language or "").strip():
+        return detected, None
+    return None, model_language.strip()

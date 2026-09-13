@@ -21,7 +21,8 @@ from standard_asr.engine import (
 )
 
 from .audio import SAMPLE_RATE
-from .languages import normalize_model_language
+from .errors import ModelLimitError
+from .languages import classify_model_language
 from .runtime import rollback_prefix
 
 if TYPE_CHECKING:
@@ -146,15 +147,21 @@ class Qwen3ASRSession(TranscriptionSession):
         self._last_raw = result.raw_text
         self._processed_samples = len(samples)
         self._decode_count += 1
+        detected, extra = self._language_fields(result.language)
         return TranscriptionEvent.partial(
             "utterance-0",
             result.text,
             stable_until=0,
-            detected_language=normalize_model_language(result.language)
-            if self.params.language == "auto"
-            else None,
-            extra={"audio_prefix_seconds": self._processed_samples / SAMPLE_RATE},
+            detected_language=detected,
+            extra={"audio_prefix_seconds": self._processed_samples / SAMPLE_RATE, **extra},
         )
+
+    def _language_fields(self, model_language: str | None) -> tuple[str | None, dict]:
+        """Map the model's language line; disclose names outside the published list."""
+        requested = None if self.params.language == "auto" else self.params.language
+        detected, unmapped = classify_model_language(model_language, requested)
+        extra = {} if unmapped is None else {"unmapped_model_language": unmapped}
+        return detected, extra
 
     async def _input_samples(self) -> AsyncIterator[np.ndarray]:
         if self.prepared_audio is not None:
@@ -206,13 +213,12 @@ class Qwen3ASRSession(TranscriptionSession):
             if self._received_samples > self._processed_samples:
                 yield await self._decode(accumulated[: self._received_samples])
             if self._last_result is not None:
+                detected, extra = self._language_fields(self._last_result.language)
                 yield TranscriptionEvent.closed(
                     "utterance-0",
                     self._last_result.text,
-                    extra={"audio_prefix_seconds": self._processed_samples / SAMPLE_RATE},
-                    detected_language=normalize_model_language(self._last_result.language)
-                    if self.params.language == "auto"
-                    else None,
+                    extra={"audio_prefix_seconds": self._processed_samples / SAMPLE_RATE, **extra},
+                    detected_language=detected,
                 )
             # The base emits done and reduces the recorded events.
         except _Cancelled:
@@ -232,6 +238,16 @@ class Qwen3ASRSession(TranscriptionSession):
                         if exc.source == "configured_session_limit"
                         else "Audio exceeds the loaded bundle's declared duration; a larger-context bundle is required."
                     ),
+                },
+            )
+        except ModelLimitError as exc:
+            # A fixed capacity of the loaded bundle, not a fault in the caller's audio.
+            yield TranscriptionEvent.make_error(
+                "bundle_capacity_exceeded",
+                extra={
+                    "message": str(exc),
+                    "received_audio_seconds": self._received_samples / SAMPLE_RATE,
+                    "processed_audio_seconds": self._processed_samples / SAMPLE_RATE,
                 },
             )
         except ValueError as exc:

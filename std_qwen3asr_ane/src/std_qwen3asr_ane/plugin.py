@@ -40,7 +40,7 @@ from standard_asr.engine import (
 )
 
 from .errors import ModelLimitError
-from .languages import LANGUAGE_NAMES, normalize_model_language
+from .languages import LANGUAGE_NAMES, classify_model_language
 
 if TYPE_CHECKING:
     from .runtime import CoreMLRuntime
@@ -48,11 +48,13 @@ if TYPE_CHECKING:
 
 ENGINE_ID = "std-qwen3asr-ane"
 MODEL_ID = "Qwen/Qwen3-ASR-1.7B"
-# The smallest shipped bundle has a 1024-position decoder cache. Thirty seconds
-# of audio occupies 390 positions and the template about 20; with the default
-# 256-token generation budget about 350 prompt tokens remain. The standard layer
-# enforces this bound with a conservative token estimate, so declare headroom.
-PROMPT_MAX_TOKENS = 256
+# The shipped bundles have a 1024-position decoder cache. Thirty seconds of audio
+# occupies 390 positions, the template about 20, the default generation budget
+# 256, and a streaming session also replays up to a transcript's worth of prefix
+# text; roughly 250 positions remain in the worst case. The standard layer
+# enforces this bound with a word-based estimate that can under-count BPE tokens
+# of URLs and digit runs several times over, so declare well below the limit.
+PROMPT_MAX_TOKENS = 128
 _REQUIRED_ROLES = {
     "frontend",
     "encoder",
@@ -264,10 +266,8 @@ def detected_language(
     a name outside its published list; the result then carries ``None`` plus a
     diagnostic instead of silently dropping the model's answer.
     """
-    if requested is not None:
-        return None, []
-    detected = normalize_model_language(model_language)
-    if detected is not None or not (model_language or "").strip():
+    detected, unmapped = classify_model_language(model_language, requested)
+    if unmapped is None:
         return detected, []
     return None, [
         Diagnostic(
@@ -275,7 +275,7 @@ def detected_language(
             code="detected_language_unmapped",
             message="The model reported a language name outside its published language list.",
             param="language",
-            provided=model_language,
+            provided=unmapped,
             effective=None,
         )
     ]

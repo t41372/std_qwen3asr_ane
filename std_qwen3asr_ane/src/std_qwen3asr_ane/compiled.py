@@ -8,22 +8,14 @@ explicit preparation step; runtime prediction never downloads model artifacts.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import platform
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 
-
-def digest(path: Path) -> str:
-    result = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            result.update(chunk)
-    return result.hexdigest()
+from .bundle import clone, digest, validate_bundle_paths
 
 
 def compile_bundle(source: Path, output: Path) -> dict:
@@ -34,18 +26,13 @@ def compile_bundle(source: Path, output: Path) -> dict:
         raise FileExistsError("Use a new directory to preserve previous artifacts")
     manifest = json.loads((source / "manifest.json").read_text())
     paths = set(manifest["files"].values()) | set(manifest["decoder_partitions"])
-    for relative in paths:
-        path = (source / relative).resolve()
-        if not path.is_relative_to(source) or path == source or not path.exists():
-            raise ValueError(f"Invalid source artifact: {relative}")
+    validate_bundle_paths(source, paths)
     output.mkdir(parents=True)
     mapping, records = {}, []
     for relative in sorted(paths):
         path = source / relative
         if path.suffix != ".mlpackage":
-            destination = output / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            subprocess.run(["/bin/cp", "-c", str(path), str(destination)], check=True)
+            clone(path, output / relative)
             mapping[relative] = relative
             continue
         compiled = str(Path(relative).with_suffix(".mlmodelc"))
