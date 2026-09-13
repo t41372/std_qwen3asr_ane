@@ -20,11 +20,13 @@ from power_v2.integrate import integrate
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--backend", choices=("coreml", "mlx"), required=True)
+    parser.add_argument("--backend", choices=("coreml", "mlx", "official"), required=True)
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repeats", type=int, default=60)
+    parser.add_argument("--device", choices=("cpu", "mps"), default="cpu")
+    parser.add_argument("--dtype", choices=("float32", "bfloat16", "float16"), default="float32")
     args = parser.parse_args()
     if args.repeats < 1 or args.output.exists():
         parser.error("Require positive repeats and a fresh output directory")
@@ -43,6 +45,28 @@ def main():
 
         def transcribe(samples):
             return predict(samples, None, 256)["hypothesis"]
+    elif args.backend == "official":
+        import torch
+        from qwen_asr import Qwen3ASRModel
+
+        torch.manual_seed(20260912)
+        model = Qwen3ASRModel.from_pretrained(
+            str(args.model_dir.resolve()),
+            dtype=getattr(torch, args.dtype),
+            device_map=args.device,
+            attn_implementation="sdpa" if args.device == "mps" else "eager",
+            max_inference_batch_size=1,
+            max_new_tokens=256,
+            local_files_only=True,
+        )
+        model.model.eval()
+
+        def transcribe(samples):
+            with torch.inference_mode():
+                text = model.transcribe(audio=(samples, 16000), language=None)[0].text
+            if args.device == "mps":
+                torch.mps.synchronize()
+            return text
     else:
         from std_qwen3asr_ane.runtime import CoreMLRuntime
 
@@ -56,6 +80,8 @@ def main():
     collector = None
     report = {
         "backend": args.backend,
+        "device": args.device if args.backend == "official" else None,
+        "dtype": args.dtype if args.backend == "official" else None,
         "model_dir": str(args.model_dir.resolve()),
         "load_seconds": load_seconds,
         "manifest_sha256": hashlib.sha256(args.manifest.read_bytes()).hexdigest(),

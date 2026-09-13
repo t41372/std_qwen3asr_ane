@@ -14,6 +14,17 @@ uv run qwen3-asr-ane transcribe recording.wav
 
 Commands resolve `artifacts/` relative to the working directory. Use `--source`, `--output`, and `--model-dir` when running from another directory. Initial compilation uses macOS-managed caches and can take longer than warm model loading. Conversion needs the `convert` dependency group; runtime does not require PyTorch.
 
+Compress the decoder and vocabulary head weights before compiling. The audio
+graphs stay FP16; activations, KV caches and the verified activation expressions
+are unchanged. On the Apple Neural Engine every fast compressed format costs the
+same time per weight element, so the bit width only changes memory and DRAM
+traffic; measured latency and quality for each width are in the workspace's
+research notes, and a compressed bundle starts as `unvalidated`:
+
+```sh
+uv run qwen3-asr-ane compress --source artifacts/qwen3-asr-1.7b --output artifacts/qwen3-asr-1.7b-lut8 --scheme palette --bits 8 --group-size 32
+```
+
 Prepare stable compiled paths once to reduce loading cost on later process launches:
 
 ```sh

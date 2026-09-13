@@ -248,3 +248,25 @@ Shared state的英文中位1.6903秒，copy控制1.7565秒，相差66.2ms；中�
 另外確認：以 `cache[..., pos:pos+1] = k` 追蹤出的 MIL `slice_update`（動態 begin）在本機 macOS 27 beta 用 CPU_ONLY 也載入失敗（execution plan error -14），與先前 enumerated shapes 的失敗碼相同；`index_copy_` 沒有 coremltools 轉換。動態部分寫入目前在此 host 不可用。
 
 決策：先把 palettization 做成套件功能（`qwen3-asr-ane compress`，decoder partitions 與 LM head，encoder 保持 FP16），建 LUT8 g32 與 LUT4 g16 兩個完整 bundle，用 selection set 依預先登記的門檻挑選；cache 長度與寫入方式的結構改善另行量測。三個靜態研究 subagent 回報：mlx-community 有 4-bit／8-bit（decoder-only）轉換可作同位元 baseline；官方 PyTorch 可在 MPS bf16 執行，`evaluate.py` 加入 `--device/--dtype`；協議審查指出 prompt 上限未誠實宣告、限制錯誤訊息被扁平化等待修。
+
+## 2026-09-13 — 24：完整壓縮 bundle 的 selection-set 結果與候選決定
+
+以 `qwen3-asr-ane compress` 從 `qwen3-asr-1.7b-final` 產生兩個完整 bundle 並 compile：LUT8 g32（decoder 7×403→203 MB，head 622→314 MB）與 LUT4 g16（decoder 7×101 MB，head 157 MB）。MLComputePlan：壓縮後的 partition 1030 個有成本算子全部 preferred ANE，head 51 個亦全部 ANE，沒有把 LUT 解壓推回 CPU。
+
+同一 process 內的 smoke warm latency（各 1 warmup、5 次，中位數）：
+
+| bundle | 英文 15.05 s | 中文 4.20 s | 首次載入 |
+|---|---:|---:|---:|
+| FP16（起點） | 2.060 s | 0.502 s | 1.86 s（已快取） |
+| LUT8 g32 | 1.502 s（−27%） | 0.368 s（−27%） | 34.1 s（首次特化） |
+| LUT4 g16 | 1.543 s | 0.365 s | 34.2 s |
+
+Selection set（100 EN LibriSpeech + 100 ZH FLEURS，warmups 0、repeats 1，與既有 FP16 結果配對）：
+
+| 候選 | EN WER | ZH CER | Δ vs FP16（pp，95% CI） | corpus RTF |
+|---|---:|---:|---|---:|
+| FP16（既有） | 42/2094 = 2.006% | 232/3663 = 6.333% | — | 0.135 |
+| LUT8 g32 | 42/2094 = 2.006% | 231/3663 = 6.306% | EN 0.000 [0.000, 0.000]；ZH −0.027 [−0.086, 0.000] | 0.097 |
+| LUT4 g16 | 49/2094 = 2.340% | 259/3663 = 7.071% | EN +0.334 [−0.146, +0.826]；ZH +0.737 [−0.077, +1.554] | 0.096 |
+
+LUT8 的英文輸出與 FP16 逐字完全相同，中文只差一個字元；對官方 FP32 仍是 −0.239／−0.437 pp。LUT4 g16 雖然速度相同，但兩語的點估計都超過預先登記的門檻（EN ≤ +0.25、ZH ≤ +0.40），依規則淘汰，不因為記憶體較小而放寬。**候選確定為 LUT8 g32**，接著只對它跑一次 held-out gate、ABBA 能耗、記憶體、Instruments trace、串流與 compliance。速度改善來自 ANE 按元素解壓的快速路徑，與位元數無關，因此 4-bit 只有記憶體優勢；若之後要用 4-bit，需要更好的量化方法（例如逐群更小、或校準式），不是換 group size 就能解決。
