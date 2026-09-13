@@ -274,3 +274,26 @@ Selection set（100 EN LibriSpeech + 100 ZH FLEURS，warmups 0、repeats 1，與
 | LUT4 g16 | 49/2094 = 2.340% | 259/3663 = 7.071% | EN +0.334 [−0.146, +0.826]；ZH +0.737 [−0.077, +1.554] | 0.096 |
 
 LUT8 的英文 normalized 錯誤數與 FP16 逐句相同（Δ=0、CI [0, 0] 是配對錯誤數相同的結果，不代表位元相同）：原始字串有 7/100 英文、7/100 中文不同，例如一個專名替換與句界移動，中文淨錯誤數少 1 個字元；對官方 FP32 仍是 −0.239／−0.437 pp。另要說明：品質 baseline 是 `qwen3-asr-1.7b-precise`（9/12 的既有結果，tokenizer 與 final 不同但 `tokenizer-equivalence.json` 證明無 context 的 batch input IDs 全部相同），latency baseline 是由 `final` 編譯的 `-compiled`，也是 LUT8 的直接父產物；corpus RTF 的 FP16 0.135 來自 9/12 的 precise run，同日的 compiled FP16 smoke RTF 為 0.133。LUT4 g16 雖然速度相同，但兩語的點估計都超過預先登記的門檻（EN ≤ +0.25、ZH ≤ +0.40），依規則淘汰，不因為記憶體較小而放寬。**候選確定為 LUT8 g32**，接著只對它跑一次 held-out gate、ABBA 能耗、記憶體、Instruments trace、串流與 compliance。速度改善來自 ANE 按元素解壓的快速路徑，與位元數無關，因此 4-bit 只有記憶體優勢；若之後要用 4-bit，需要更好的量化方法（例如逐群更小、或校準式），不是換 group size 就能解決。
+
+## 2026-09-13 — 25：LUT8 g32 的最終 gate：held-out、能耗、記憶體、ANE trace、串流與審查修正
+
+Held-out（各語 101–200 列，只跑一次）：LUT8 EN WER 32/2382 = 1.343%（FP16 33 = 1.385%；Δ −0.042 pp，CI [−0.136, 0.000]），ZH CER 239/3737 = 6.396%（FP16 246 = 6.583%；Δ −0.187 pp，CI [−0.590, 0.000]）；對官方 FP32 為 −0.084／−0.134 pp，CI 都跨零。200 筆全部完成、無 token 上限錯誤。原始字串有 1 EN、6 ZH 與 FP16 不同。預先登記的品質門檻全部通過。Corpus RTF 0.099（FP16 held-out 為 0.135）。
+
+整機 SMC `PSTR` 能耗（ABBA 先導組，AC 供電、電池 80% 未充電，各 backend 兩個獨立 process block；ANE 40 輪、MLX 100 輪，因此各 block 的音訊秒數不相等，這點違反預先登記的「等工作量」，等工作量的重跑記在第 26 節）：
+
+| block | 音訊秒 | 牆鐘 | 平均 W | J／音訊秒（邊界 ±2 s 範圍） |
+|---|---:|---:|---:|---|
+| ANE FP16 #1／#2 | 770 | 102.4／102.7 s | 23.8／24.5 | 3.163／3.269（3.11–3.32） |
+| ANE LUT8 #1／#2 | 770 | 74.8／74.9 s | 23.4／24.7 | 2.275／2.401（2.22–2.45） |
+| MLX bf16 #1／#2 | 1926 | 58.1／57.8 s | 69.9／73.9 | 2.108／2.216（2.03–2.26） |
+| MLX 4-bit #1／#2 | 1926 | 30.6／30.6 s | 83.6／83.2 | 1.331／1.324（1.23–1.39） |
+
+兩個 LUT8 block 都低於兩個 FP16 block（−27%／−28%），符合門檻；LUT8 的整機 J／音訊秒與 MLX bf16 相差約 +8%，仍高於 MLX 4-bit。ANE 的平均功率只有 GPU 路徑的三分之一，但耗時較長；整機數字包含閒置底功率，above-idle 的比較要等同場次的閒置量測（第 26 節）。前一輪 handoff 的 37.9 W／5.09 J 是在充電時量的，不能與本輪直接比較。
+
+記憶體（`/usr/bin/time -l`，載入 + 兩段 smoke 一次）：ANE FP16 peak footprint 663 MB、ANE LUT8 661 MB、MLX bf16 5.81 GB、MLX 4-bit 3.32 GB、官方 MPS bf16 6.61 GB。ANE process 的 footprint 幾乎不隨權重大小變動，代表 ANE 端的權重配置不在 process 統計內；磁碟上 LUT8 compiled bundle 2.8 GB（FP16 4.4 GB）。系統層級的 wired memory 差異另行量測。
+
+Instruments 孤立 trace（Xcode 26 的表名為 `ane-hw-intervals-internal`，欄位與舊版相同，`trace_ane.py` 已接受別名）：兩段 smoke 共 623 筆 ANE Prediction，與 FP16 trace 相同數量；7 個 decoder partition 各 77 次共 1.477 s、LM head 60 次 0.121 s、encoder 3 次 0.016 s、frontend 21 次 0.015 s，ANE 硬體時間合計 1.628 s，佔轉錄牆鐘 1.902 s 的 86%；目標 PID 的 GPU 硬體列為 0。每次 partition 預測 2.74 ms（FP16 為 4.1 ms）。
+
+串流：15 秒英文即時餵入，7 個 partial、closed final 在 15.63 s，event／result compliance 通過，closed 文字與 batch 相同；0.1／0.5／5／29.99 秒靜音全回傳空字串，explicit close 18 ms。`verify_plugin_runtime` 與 `standard-asr compliance run`（以環境變數指向 LUT8 bundle）exit 0。
+
+獨立審查（唯讀）發現並已修正：（1）`compress` 可能在 group size 不整除通道數時靜默保留 FP16 權重而 manifest 仍宣稱壓縮——現在逐個 conv 驗證權重來源為 `constexpr_lut_to_dense`／blockwise 解量化，否則拒絕；（2）串流把 `ModelLimitError` 當成 `invalid_audio_or_context`——改為 `bundle_capacity_exceeded` 結構化錯誤；（3）未映射語言名只有 batch 有揭露——串流的 partial／closed 也在 `extra` 揭露；（4）`--group-size` 在兩種 scheme 語意不同——manifest 記錄 granularity 與軸；（5）壓縮 provenance 補上 coremltools／numpy 版本與逐檔 hash；CLI 拒絕 `linear` 6-bit；prompt 預算由 256 降到 128 並說明串流 prefix 的最壞情況。沒有採用 Lloyd 提前終止，因為會改變已出貨 LUT 的位元可重現性。Benchmark 審查的 LUT4 placement 混淆與英文「逐字相同」錯誤已在第 24 節更正；LUT8 全部 graph 的 placement、同日 FP16 corpus RTF 與等工作量能耗排在第 26 節補做。
