@@ -26,6 +26,7 @@ from .audio import (
     convolution_masks,
     log_mel_spectrogram,
 )
+from .errors import ModelLimitError
 from .languages import LANGUAGE_NAMES, normalize_model_language
 from .streaming_context import DecoderPrefixContext
 
@@ -394,7 +395,7 @@ class CoreMLRuntime:
         if not 1 <= valid_tokens <= self.token_batch_size:
             raise ValueError("Decoder input exceeds the graph's token batch size")
         if position < 0 or position + valid_tokens > self.cache_length:
-            raise RuntimeError("Decoder KV cache exhausted before an end-of-sequence token")
+            raise ModelLimitError("Decoder KV cache exhausted before an end-of-sequence token")
         # Inactive rows reuse the final valid position so RoPE indexing remains
         # in bounds even for the final partial block at the end of the cache.
         row_positions = position + np.minimum(np.arange(self.token_batch_size), valid_tokens - 1)
@@ -477,7 +478,9 @@ class CoreMLRuntime:
         if samples.ndim != 1 or not samples.size or not np.isfinite(samples).all():
             raise ValueError("Expected nonempty, finite, mono 16 kHz audio")
         if samples.size > int(self.max_audio_seconds * SAMPLE_RATE):
-            raise ValueError(f"Audio exceeds this bundle's {self.max_audio_seconds:g}-second limit")
+            raise ModelLimitError(
+                f"Audio exceeds this bundle's {self.max_audio_seconds:g}-second limit"
+            )
         if type(max_new_tokens) is not int or max_new_tokens < 1:
             raise ValueError("max_new_tokens must be a positive integer")
         if language is not None and language not in LANGUAGE_NAMES:
@@ -494,7 +497,9 @@ class CoreMLRuntime:
             prefix_text=prefix_text,
         )
         if len(prompt) + max_new_tokens - 1 > self.cache_length:
-            raise ValueError("Prompt and requested generation budget exceed the decoder KV cache")
+            raise ModelLimitError(
+                "Prompt and requested generation budget exceed the decoder KV cache"
+            )
         prompt_done = perf_counter()
         audio = self._encode_audio(features) / self.residual_scale
         encoder_done = perf_counter()
@@ -566,7 +571,7 @@ class CoreMLRuntime:
                         self._embedding(token), len(prepared.token_ids) + index, states
                     )
             else:
-                raise RuntimeError(
+                raise ModelLimitError(
                     "Generation reached max_new_tokens before EOS; refusing a truncated transcript"
                 )
         except Exception:

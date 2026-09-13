@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from tokenizers import Tokenizer, models, pre_tokenizers
 
+from std_qwen3asr_ane.errors import ModelLimitError
 from std_qwen3asr_ane.runtime import (
     DEFAULT_PROMPT,
     CoreMLRuntime,
@@ -207,7 +208,7 @@ def test_encoder_independent_windows_and_partial_chunk(bundle: Path, fake_coreml
 def test_no_silent_truncation(bundle: Path, fake_coreml) -> None:
     runtime = CoreMLRuntime(bundle)
     runtime.lm_head.tokens[:] = [1, 1]
-    with pytest.raises(RuntimeError, match="before EOS"):
+    with pytest.raises(ModelLimitError, match="before EOS"):
         runtime.transcribe(np.zeros(8000), language=None, max_new_tokens=2)
     with pytest.raises(ValueError, match="KV cache"):
         runtime.transcribe(np.zeros(8000), language=None, max_new_tokens=1024)
@@ -352,7 +353,7 @@ def test_generation_failure_resets_streaming_reuse_metadata(bundle: Path, fake_c
     context = runtime.new_decoder_context()
     runtime.transcribe(np.zeros(8000), language=None, max_new_tokens=3, decoder_context=context)
     runtime.lm_head.tokens[:] = [1]
-    with pytest.raises(RuntimeError, match="before EOS"):
+    with pytest.raises(ModelLimitError, match="before EOS"):
         runtime.transcribe(np.zeros(8000), language=None, max_new_tokens=1, decoder_context=context)
     assert context._prompt is None
     previous_calls = len(runtime.decoders[0].calls)
@@ -445,7 +446,7 @@ def test_partial_block_updates_only_valid_positions_at_cache_boundary(
         inputs = decoder.calls[0][0]
         assert np.isfinite(inputs["attention_mask"]).all()
         np.testing.assert_array_equal(inputs["update_mask"][..., 7:, :], 0)
-    with pytest.raises(RuntimeError, match="KV cache"):
+    with pytest.raises(ModelLimitError, match="KV cache"):
         runtime._decode_step(hidden, 1018, states)
     with pytest.raises(ValueError, match="token batch size"):
         runtime._decode_step(np.zeros((1, 8, 1, 17)), 0, states)

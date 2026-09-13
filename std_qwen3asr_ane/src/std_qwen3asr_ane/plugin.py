@@ -31,6 +31,7 @@ from standard_asr.engine import (
     LanguageConfigMixin,
     PreparedAudio,
     PromptCap,
+    PromptConstraints,
     RuntimeParams,
     StreamingCapabilities,
     StreamingGuidanceCaps,
@@ -38,6 +39,7 @@ from standard_asr.engine import (
     TranscriptionSession,
 )
 
+from .errors import ModelLimitError
 from .languages import LANGUAGE_NAMES, normalize_model_language
 
 if TYPE_CHECKING:
@@ -46,6 +48,11 @@ if TYPE_CHECKING:
 
 ENGINE_ID = "std-qwen3asr-ane"
 MODEL_ID = "Qwen/Qwen3-ASR-1.7B"
+# The smallest shipped bundle has a 1024-position decoder cache. Thirty seconds
+# of audio occupies 390 positions and the template about 20; with the default
+# 256-token generation budget about 350 prompt tokens remain. The standard layer
+# enforces this bound with a conservative token estimate, so declare headroom.
+PROMPT_MAX_TOKENS = 256
 _REQUIRED_ROLES = {
     "frontend",
     "encoder",
@@ -94,13 +101,21 @@ class Qwen3ASREngine(EngineBase):
     declared_capabilities: ClassVar[DeclaredCapabilities] = DeclaredCapabilities(
         batch=BatchCapabilities(
             language=LanguageCaps(runtime_override=FlagCap(supported=True)),
-            guidance=GuidanceCaps(prompt=PromptCap(supported=True)),
+            guidance=GuidanceCaps(
+                prompt=PromptCap(
+                    supported=True, constraints=PromptConstraints(max_tokens=PROMPT_MAX_TOKENS)
+                )
+            ),
         ),
         streaming_input=FlagCap(supported=True),
         streaming_output=FlagCap(supported=True),
         streaming=StreamingCapabilities(
             language=LanguageCaps(runtime_override=FlagCap(supported=True)),
-            guidance=StreamingGuidanceCaps(prompt=PromptCap(supported=True)),
+            guidance=StreamingGuidanceCaps(
+                prompt=PromptCap(
+                    supported=True, constraints=PromptConstraints(max_tokens=PROMPT_MAX_TOKENS)
+                )
+            ),
             emits_partials=FlagCap(supported=True),
             finality_level=FinalityCap(mode="closed"),
         ),
@@ -212,15 +227,19 @@ class Qwen3ASREngine(EngineBase):
                     max_new_tokens=self.config.max_new_tokens,
                     context=params.prompt or "",
                 )
+            detected, diagnostics = detected_language(result.language, language)
             return TranscriptionResult(
                 text=result.text,
-                detected_language=normalize_model_language(result.language)
-                if language is None
-                else None,
+                detected_language=detected,
                 duration=len(prepared.array) / prepared.sample_rate,
+                diagnostics=diagnostics,
             )
         except (ArtifactUnavailableError, TranscriptionError):
             raise
+        except ModelLimitError as exc:
+            raise TranscriptionError(
+                f"Request exceeds the loaded bundle's capacity: {exc}"
+            ) from exc
         except Exception as exc:
             raise TranscriptionError("Qwen3-ASR Core ML inference failed.") from exc
 
@@ -234,6 +253,32 @@ class Qwen3ASREngine(EngineBase):
         from .streaming import Qwen3ASRSession
 
         return Qwen3ASRSession(self, gated_params, audio_format, prepared_audio)
+
+
+def detected_language(
+    model_language: str | None, requested: str | None
+) -> tuple[str | None, list[Diagnostic]]:
+    """Map the model's language line to BCP-47, disclosing names we cannot map.
+
+    A forced language reports no detection. In ``auto`` mode the model may emit
+    a name outside its published list; the result then carries ``None`` plus a
+    diagnostic instead of silently dropping the model's answer.
+    """
+    if requested is not None:
+        return None, []
+    detected = normalize_model_language(model_language)
+    if detected is not None or not (model_language or "").strip():
+        return detected, []
+    return None, [
+        Diagnostic(
+            level="info",
+            code="detected_language_unmapped",
+            message="The model reported a language name outside its published language list.",
+            param="language",
+            provided=model_language,
+            effective=None,
+        )
+    ]
 
 
 def _inspect_package(package: Path) -> str:

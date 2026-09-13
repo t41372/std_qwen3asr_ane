@@ -30,8 +30,15 @@ from standard_asr.contract.exceptions import (
 )
 from standard_asr.engine import DIARIZE, ArtifactContext, AudioFormat, RuntimeParams
 
+from std_qwen3asr_ane.errors import ModelLimitError
 from std_qwen3asr_ane.languages import LANGUAGE_NAMES, normalize_model_language
-from std_qwen3asr_ane.plugin import MODEL_ID, Qwen3ASREngine, create_engine
+from std_qwen3asr_ane.plugin import (
+    MODEL_ID,
+    PROMPT_MAX_TOKENS,
+    Qwen3ASREngine,
+    create_engine,
+    detected_language,
+)
 
 
 @pytest.fixture
@@ -386,6 +393,53 @@ def test_native_inference_errors_have_portable_type(
     with pytest.raises(TranscriptionError) as caught:
         create_engine(model_dir=bundle).transcribe((np.zeros(1600, dtype=np.float32), 16000))
     assert caught.value.__cause__ is native
+    assert "capacity" not in str(caught.value)
+
+
+def test_bundle_capacity_errors_name_their_limit(bundle: Path, fake_runtime, monkeypatch) -> None:
+    limit = ModelLimitError("Audio exceeds this bundle's 30-second limit")
+
+    def fail(*args, **kwargs):
+        raise limit
+
+    monkeypatch.setattr(fake_runtime, "transcribe", fail)
+    with pytest.raises(TranscriptionError, match="30-second limit") as caught:
+        create_engine(model_dir=bundle).transcribe((np.zeros(1600, dtype=np.float32), 16000))
+    assert caught.value.__cause__ is limit
+
+
+def test_prompt_budget_is_declared_and_gated(bundle: Path, fake_runtime) -> None:
+    engine = create_engine(model_dir=bundle)
+    for scope in (engine.declared_capabilities.batch, engine.declared_capabilities.streaming):
+        assert scope.guidance.prompt.constraints.max_tokens == PROMPT_MAX_TOKENS
+    words = " ".join(f"w{index}" for index in range(PROMPT_MAX_TOKENS + 50))
+    audio = (np.zeros(1600, dtype=np.float32), 16000)
+    with pytest.raises(UnsupportedFeatureError):
+        create_engine(model_dir=bundle, strict=True).transcribe(audio, RuntimeParams(prompt=words))
+    lenient = create_engine(model_dir=bundle, strict=False)
+    result = lenient.transcribe(audio, RuntimeParams(prompt=words))
+    assert any(diagnostic.code == "prompt_truncated" for diagnostic in result.diagnostics)
+    (instance,) = fake_runtime.instances
+    assert instance.calls, "best-effort mode still transcribes with a truncated prompt"
+
+
+def test_unmapped_detected_language_is_disclosed(bundle: Path, fake_runtime, monkeypatch) -> None:
+    assert detected_language("English", None) == ("en", [])
+    assert detected_language("English", "en") == (None, [])
+    assert detected_language(None, None) == (None, [])
+    detected, diagnostics = detected_language("Klingon", None)
+    assert detected is None and [d.code for d in diagnostics] == ["detected_language_unmapped"]
+    assert diagnostics[0].provided == "Klingon"
+
+    def transcribe(self, samples, *, language, max_new_tokens, context=""):
+        return SimpleNamespace(text="hi", language="Klingon")
+
+    monkeypatch.setattr(fake_runtime, "transcribe", transcribe)
+    result = create_engine(model_dir=bundle).transcribe((np.zeros(1600, dtype=np.float32), 16000))
+    assert result.detected_language is None
+    assert [d.code for d in result.diagnostics] == ["detected_language_unmapped"]
+    report = check_transcription_result(result, capabilities=Qwen3ASREngine.declared_capabilities)
+    assert report.passed, report.issues
 
 
 def test_close_waits_for_active_inference_and_can_reopen(bundle: Path, fake_runtime):
