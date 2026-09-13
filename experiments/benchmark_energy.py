@@ -24,16 +24,21 @@ def main():
     parser.add_argument(
         "--backend", choices=("coreml", "mlx", "official", "specdraft"), required=True
     )
-    parser.add_argument("--draft-dir", type=Path, help="specdraft: MLX draft checkpoint")
-    parser.add_argument("--draft-bits", type=int, choices=(4, 8), default=None)
-    parser.add_argument("--verify-head", type=Path, help="specdraft: T16 compact head")
+    parser.add_argument(
+        "--draft-dir",
+        type=Path,
+        help="specdraft: draft bundle from qwen3-asr-ane build-draft",
+    )
+    parser.add_argument("--draft-bits", type=int, choices=(4, 8), default=4)
     parser.add_argument("--lookahead", type=int, default=15)
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repeats", type=int, default=60)
     parser.add_argument("--device", choices=("cpu", "mps"), default="cpu")
-    parser.add_argument("--dtype", choices=("float32", "bfloat16", "float16"), default="float32")
+    parser.add_argument(
+        "--dtype", choices=("float32", "bfloat16", "float16"), default="float32"
+    )
     args = parser.parse_args()
     if args.repeats < 1 or args.output.exists():
         parser.error("Require positive repeats and a fresh output directory")
@@ -53,41 +58,24 @@ def main():
         def transcribe(samples):
             return predict(samples, None, 256)["hypothesis"]
     elif args.backend == "specdraft":
-        import coremltools as ct
-        from benchmark_speculative import DecoderCursor
-        from mlx_draft import MLXDraft
-        from std_qwen3asr_ane.runtime import (
-            CoreMLRuntime,
-            PersistentInputModel,
-            parse_output,
-        )
-        from std_qwen3asr_ane.speculative import greedy_speculative_decode
+        from std_qwen3asr_ane.draft import DraftRuntime
+        from std_qwen3asr_ane.runtime import CoreMLRuntime
 
         runtime = CoreMLRuntime(args.model_dir)
-        head = PersistentInputModel(
-            ct.models.MLModel(str(args.verify_head), compute_units=ct.ComputeUnit.CPU_AND_NE)
-        )
-        draft_model = MLXDraft(args.draft_dir, quantize_bits=args.draft_bits)
+        draft = DraftRuntime(args.draft_dir, runtime, quantize_bits=args.draft_bits)
 
         def close():
-            head.close()
+            draft.close()
             runtime.close()
 
         def transcribe(samples):
-            prompt = runtime.prepare_prompt(samples, language=None, max_new_tokens=256)
-            draft_model.prepare(samples, list(prompt.token_ids))
-            result = greedy_speculative_decode(
-                DecoderCursor(runtime, prompt, head),
-                draft_model,
-                prompt.hidden,
-                target_position=len(prompt.token_ids),
-                draft_position=len(prompt.token_ids),
-                eos_token_ids=frozenset(runtime.eos_token_ids),
+            return runtime.transcribe_speculative(
+                samples,
+                draft,
+                language=None,
                 max_new_tokens=256,
                 lookahead=args.lookahead,
-            )
-            decoded = runtime.tokenizer.decode(list(result.token_ids), skip_special_tokens=True)
-            return parse_output(decoded, None)[0]
+            ).text
     elif args.backend == "official":
         import torch
         from qwen_asr import Qwen3ASRModel
@@ -129,7 +117,7 @@ def main():
             "dir": str(args.draft_dir),
             "bits": args.draft_bits,
             "lookahead": args.lookahead,
-            "verify_head": str(args.verify_head),
+            "manifest": draft.manifest if args.backend == "specdraft" else None,
         }
         if args.backend == "specdraft"
         else None,

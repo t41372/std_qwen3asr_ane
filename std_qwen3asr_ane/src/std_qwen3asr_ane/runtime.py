@@ -26,8 +26,10 @@ from .audio import (
     convolution_masks,
     log_mel_spectrogram,
 )
+from .bundle import digest
 from .errors import ModelLimitError
 from .languages import LANGUAGE_NAMES, normalize_model_language
+from .speculative import greedy_speculative_decode
 from .streaming_context import DecoderPrefixContext
 
 # Last-resort owners during interpreter teardown, when starting cleanup threads
@@ -263,6 +265,7 @@ class CoreMLRuntime:
             raise ValueError("Embedding table must have shape [vocabulary, hidden size]")
         self.mel_filters = np.load(self._path(files["mel_filters"]), allow_pickle=False)
         self.tokenizer = Tokenizer.from_file(str(self._path(files["tokenizer"])))
+        self.tokenizer_sha256 = digest(self._path(files["tokenizer"]))
         self.audio_token_id = self.tokenizer.token_to_id("<|audio_pad|>")
         if self.audio_token_id is None:
             raise ValueError("Tokenizer has no audio placeholder token")
@@ -538,6 +541,63 @@ class CoreMLRuntime:
             },
         )
 
+    def transcribe_speculative(
+        self,
+        samples: np.ndarray,
+        draft,
+        *,
+        language: str | None,
+        max_new_tokens: int,
+        context: str = "",
+        lookahead: int = 15,
+    ) -> RuntimeResult:
+        """Transcribe with ``draft.model`` proposing tokens and this runtime verifying them.
+
+        Every emitted token is this model's greedy choice; the draft only shortens
+        the path. ``draft`` is a ``DraftRuntime`` (or anything with ``model`` and
+        ``head`` attributes of the same shape). Batch only: streaming keeps the
+        serial path.
+        """
+        if not 0 <= lookahead < self.token_batch_size:
+            raise ValueError("lookahead must fit the held token plus proposals in one block")
+        started = perf_counter()
+        prepared = self.prepare_prompt(
+            samples, language=language, max_new_tokens=max_new_tokens, context=context
+        )
+        draft_timings = draft.model.prepare(samples, list(prepared.token_ids))
+        generation_started = perf_counter()
+        result = greedy_speculative_decode(
+            TargetCursor(self, prepared.states, draft.head),
+            draft.model,
+            prepared.hidden,
+            target_position=len(prepared.token_ids),
+            draft_position=len(prepared.token_ids),
+            eos_token_ids=frozenset(self.eos_token_ids),
+            max_new_tokens=max_new_tokens,
+            lookahead=lookahead,
+        )
+        generation_done = perf_counter()
+        raw_text = self.tokenizer.decode(list(result.token_ids), skip_special_tokens=True)
+        text, detected = parse_output(raw_text, language)
+        finished = perf_counter()
+        return RuntimeResult(
+            text=text,
+            language=detected,
+            raw_text=raw_text,
+            token_ids=result.token_ids,
+            audio_tokens=prepared.audio_tokens,
+            timings={
+                **prepared.timings,
+                **draft_timings,
+                "generation_seconds": generation_done - generation_started,
+                "total_seconds": finished - started,
+                "proposed_tokens": result.proposed_tokens,
+                "accepted_tokens": result.accepted_tokens,
+                "verifier_calls": result.verifier_calls,
+                "draft_calls": result.draft_calls,
+            },
+        )
+
     def transcribe(
         self,
         samples: np.ndarray,
@@ -594,3 +654,78 @@ class CoreMLRuntime:
                 "total_seconds": finished - started,
             },
         )
+
+
+class VerifyHead:
+    """A token-batch vocabulary head returning each chunk's (max, argmax).
+
+    It must reproduce the target bundle's ``lm_head`` chunking exactly, or the
+    global token id would be wrong. Both heads are probed once with a zero state
+    to check chunk size and count; ``check_draft_target`` covers the weights.
+    """
+
+    def __init__(self, path: Path, target: CoreMLRuntime, *, compute_units: str) -> None:
+        import coremltools as ct
+
+        unit = (
+            ct.ComputeUnit.CPU_AND_NE if compute_units == "cpu_and_ne" else ct.ComputeUnit.CPU_ONLY
+        )
+        model_type = ct.models.CompiledMLModel if path.suffix == ".mlmodelc" else ct.models.MLModel
+        self.model = PersistentInputModel(model_type(str(path), compute_units=unit))
+        self.width = target.token_batch_size
+        hidden_size = target.embeddings.shape[1]
+        probe = target.lm_head.predict(
+            {"hidden_states": np.zeros((1, hidden_size, 1, 1), np.float16)}
+        )
+        keys = sorted(probe, key=lambda name: int(name.removeprefix("logits_")))
+        sizes = {int(np.asarray(probe[key]).size) for key in keys[:-1]}
+        if len(sizes) != 1:
+            raise ValueError("Bundle LM head chunks are not uniform")
+        compact = self.model.predict(
+            {"hidden_states": np.zeros((1, hidden_size, 1, self.width), np.float32)}
+        )
+        if (
+            compact["max_values"].shape[1] != len(keys)
+            or compact["max_values"].shape[-1] != self.width
+        ):
+            raise ValueError("Verify head chunk count or token width differs from the bundle head")
+        self.chunk_size = sizes.pop()
+
+    def choose_rows(self, hidden: np.ndarray, count: int) -> list[int]:
+        if count > self.width:
+            raise ValueError("Verifier block exceeds the vocabulary head width")
+        padded = np.zeros((*hidden.shape[:-1], self.width), np.float32)
+        padded[..., :count] = hidden
+        output = self.model.predict({"hidden_states": padded})
+        values, indices = output["max_values"][0], output["max_indices"][0]
+        if not np.isfinite(values).all():
+            raise RuntimeError("Verify head produced non-finite logits")
+        chunks = np.argmax(values, axis=0)
+        return [
+            int(chunks[index] * self.chunk_size + indices[chunks[index], index])
+            for index in range(count)
+        ]
+
+    def close(self, *, timeout: float = 5.0) -> None:
+        self.model.close(timeout=timeout)
+
+
+class TargetCursor:
+    """``TokenDecoder`` view of a prepared prompt: block decode plus greedy choice."""
+
+    def __init__(self, runtime: CoreMLRuntime, states, head: VerifyHead | None = None) -> None:
+        self.runtime = runtime
+        self.states = states
+        self.head = head
+
+    def step(self, tokens, position):
+        embeddings = np.concatenate([self.runtime._embedding(token) for token in tokens], axis=-1)
+        hidden = self.runtime._decode_step(embeddings, position, self.states, all_rows=True)
+        if self.head is not None:
+            return self.head.choose_rows(hidden, len(tokens))
+        return [hidden[..., index : index + 1] for index in range(len(tokens))]
+
+    def choose(self, hidden):
+        if isinstance(hidden, int):
+            return hidden
+        return self.runtime._next_token(hidden)

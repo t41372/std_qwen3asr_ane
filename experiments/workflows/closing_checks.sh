@@ -6,12 +6,12 @@ export UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface" HF_HUB_OF
 PY=std_qwen3asr_ane/.venv/bin/python
 DPY=experiments/mlx_draft/.venv/bin/python
 P14=artifacts/qwen3-asr-1.7b-p14-lut8-g32-compiled
-HEAD=artifacts/probes/lm-head-compact-t16-lut8-g32.mlpackage
+DRAFTB=artifacts/qwen3-asr-1.7b-draft   # from: qwen3-asr-ane build-draft
 SMOKE=artifacts/evaluation/smoke/manifest.jsonl
 while ! grep -q ALL_P14_DRAFT_DONE artifacts/probes/floor/p14_draft_chain.log; do sleep 30; done
 sleep 20
 echo "=== speculative trace $(date +%H:%M:%S) ==="
-$PY experiments/trace_ane.py record --prefix artifacts/telemetry/specdraft-q4-k15-isolated --developer-dir /Applications/Xcode.app/Contents/Developer --seconds 90 -- $PWD/$DPY $PWD/experiments/benchmark_mlx_draft.py --target $PWD/$P14 --draft-dir $PWD/artifacts/source/Qwen3-ASR-0.6B --draft-bits 4 --verify-head $PWD/$HEAD --manifest $PWD/$SMOKE --output $PWD/artifacts/telemetry/specdraft-q4-k15-isolated-workload.jsonl --lookahead 15 --repeats 1 > artifacts/telemetry/specdraft-record.log 2>&1
+$PY experiments/trace_ane.py record --prefix artifacts/telemetry/specdraft-q4-k15-isolated --developer-dir /Applications/Xcode.app/Contents/Developer --seconds 90 -- $PWD/$DPY $PWD/experiments/benchmark_mlx_draft.py --target $PWD/$P14 --draft-bundle $PWD/$DRAFTB --draft-bits 4 --manifest $PWD/$SMOKE --output $PWD/artifacts/telemetry/specdraft-q4-k15-isolated-workload.jsonl --lookahead 15 --repeats 1 > artifacts/telemetry/specdraft-record.log 2>&1
 grep -E '"ane_prediction_rows"|"gpu_hardware_rows_target_pid"|"target_pid"|"trace_duration_seconds"|Error' artifacts/telemetry/specdraft-record.log | head -6
 echo "=== rebuild p14 through the CLI path $(date +%H:%M:%S) ==="
 $PY -m std_qwen3asr_ane.cli build --source artifacts/source/Qwen3-ASR-1.7B --output artifacts/qwen3-asr-1.7b-cli-p14 --cache-length 1024 --token-batch-size 16 --layers-per-partition 14 > artifacts/cli-p14-build.log 2>&1; echo "build exit $?"

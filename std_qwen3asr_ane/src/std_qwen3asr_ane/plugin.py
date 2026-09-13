@@ -9,7 +9,11 @@ from threading import Lock
 from typing import TYPE_CHECKING, ClassVar, Literal, Self
 
 from pydantic import Field
-from standard_asr.contract.exceptions import ArtifactUnavailableError, TranscriptionError
+from standard_asr.contract.exceptions import (
+    ArtifactUnavailableError,
+    ConfigError,
+    TranscriptionError,
+)
 from standard_asr.engine import (
     ArtifactAction,
     ArtifactContext,
@@ -43,6 +47,7 @@ from .errors import ModelLimitError
 from .languages import LANGUAGE_NAMES, classify_model_language
 
 if TYPE_CHECKING:
+    from .draft import DraftRuntime
     from .runtime import CoreMLRuntime
 
 
@@ -76,6 +81,18 @@ class Qwen3ASRConfig(LanguageConfigMixin, BaseConfig[Literal["std-qwen3asr-ane"]
         description="Locally built model directory, relative to the current working directory.",
     )
     max_new_tokens: int = Field(default=256, ge=1, le=4096)
+    draft_dir: Path | None = Field(
+        default=None,
+        description=(
+            "Optional draft bundle from `qwen3-asr-ane build-draft`. When set, batch "
+            "transcription proposes tokens with Qwen3-ASR 0.6B on the GPU and verifies "
+            "them on the Neural Engine; output is unchanged. Needs the gpu-draft extra."
+        ),
+    )
+    draft_lookahead: int = Field(default=15, ge=0, le=15)
+    draft_bits: Literal[4, 8] | None = Field(
+        default=4, description="In-memory quantization of the draft decoder; None keeps bf16."
+    )
     stream_chunk_seconds: float = Field(default=2.0, ge=0.1, le=30.0)
     stream_unfixed_chunks: int = Field(default=2, ge=0)
     stream_unfixed_tokens: int = Field(default=5, ge=0)
@@ -143,7 +160,13 @@ class Qwen3ASREngine(EngineBase):
         # Construction must remain free of filesystem, device and network access.
         self.config = Qwen3ASRConfig.from_env(ENGINE_ID, **kwargs)
         self._runtime: CoreMLRuntime | None = None
+        self._draft: DraftRuntime | None = None
         self._inference_lock = Lock()
+
+    def _build_draft_command(self) -> str:
+        draft = shlex.quote(str(self.config.draft_dir))
+        target = shlex.quote(str(self.config.model_dir))
+        return f"qwen3-asr-ane build-draft --target {target} --output {draft}"
 
     def _build_command(self) -> str:
         """The documented preparation sequence ending at the configured bundle path."""
@@ -183,23 +206,74 @@ class Qwen3ASREngine(EngineBase):
             location=root,
             artifact_version=revision,
         )
-        return True, (requirement,), ()
+        if self.config.draft_dir is None:
+            return True, (requirement,), ()
+        draft_root = self.config.draft_dir.expanduser().resolve()
+        draft_state, draft_revision = _inspect_draft_bundle(draft_root)
+        draft_ready = draft_state == "ready"
+        draft_requirement = ArtifactRequirement(
+            artifact_id="qwen3-asr-0.6b-gpu-draft",
+            label="Qwen3-ASR 0.6B draft checkpoint and verify head",
+            state=draft_state,
+            required_for_inference=True,
+            can_acquire_now=False,
+            may_acquire_during_inference=False,
+            source_is_mutable=False,
+            acquisition_blocker=None if draft_ready else "action_required",
+            required_actions=()
+            if draft_ready
+            else (
+                ArtifactAction(
+                    kind="provide_artifacts",
+                    message=f"Build the draft bundle: {self._build_draft_command()}",
+                ),
+            ),
+            location=draft_root,
+            artifact_version=draft_revision,
+        )
+        return True, (requirement, draft_requirement), ()
 
     def _ensure_model_loaded(self) -> CoreMLRuntime:
         """Load once while the caller holds the inference lock; never acquire weights."""
         if self._runtime is None:
             report = self.artifact_status()
             if report.readiness != "ready":
+                hint = self._build_command()
+                if self.config.draft_dir is not None:
+                    hint = f"{hint} && {self._build_draft_command()}"
                 raise ArtifactUnavailableError(
                     "The local Qwen3-ASR model bundle is unavailable.",
                     reason="action_required",
                     report=report,
-                    hint=self._build_command(),
+                    hint=hint,
                 )
             from .runtime import CoreMLRuntime
 
-            self._runtime = CoreMLRuntime(self.config.model_dir.expanduser().resolve())
+            runtime = CoreMLRuntime(self.config.model_dir.expanduser().resolve())
+            if self.config.draft_dir is not None:
+                try:
+                    self._draft = self._load_draft(runtime)
+                except BaseException:
+                    runtime.close()
+                    raise
+            self._runtime = runtime
         return self._runtime
+
+    def _load_draft(self, runtime: CoreMLRuntime) -> DraftRuntime:
+        from .draft import DraftDependencyError, DraftRuntime
+
+        try:
+            return DraftRuntime(
+                self.config.draft_dir.expanduser().resolve(),
+                runtime,
+                quantize_bits=self.config.draft_bits,
+            )
+        except DraftDependencyError as exc:
+            raise ConfigError(
+                "draft_dir is set but MLX is not installed in this environment.",
+                hint="Install the plugin with its gpu-draft extra (uv sync --extra gpu-draft) "
+                "in an environment without the convert group, or unset draft_dir.",
+            ) from exc
 
     def prepare(self) -> None:
         """Load the local runtime once without acquiring persistent artifacts."""
@@ -213,6 +287,9 @@ class Qwen3ASREngine(EngineBase):
         retry cleanup. Do not treat an exception as successful model disposal.
         """
         with self._inference_lock:
+            if self._draft is not None:
+                self._draft.close(timeout=timeout)
+                self._draft = None
             if self._runtime is not None:
                 self._runtime.close(timeout=timeout)
                 self._runtime = None
@@ -232,12 +309,22 @@ class Qwen3ASREngine(EngineBase):
             # Core ML stateful decoding and first-time loading share one critical section.
             with self._inference_lock:
                 runtime = self._ensure_model_loaded()
-                result = runtime.transcribe(
-                    prepared.array,
-                    language=language,
-                    max_new_tokens=self.config.max_new_tokens,
-                    context=params.prompt or "",
-                )
+                if self._draft is not None:
+                    result = runtime.transcribe_speculative(
+                        prepared.array,
+                        self._draft,
+                        language=language,
+                        max_new_tokens=self.config.max_new_tokens,
+                        context=params.prompt or "",
+                        lookahead=self.config.draft_lookahead,
+                    )
+                else:
+                    result = runtime.transcribe(
+                        prepared.array,
+                        language=language,
+                        max_new_tokens=self.config.max_new_tokens,
+                        context=params.prompt or "",
+                    )
             detected, diagnostics = detected_language(result.language, language)
             return TranscriptionResult(
                 text=result.text,
@@ -245,7 +332,7 @@ class Qwen3ASREngine(EngineBase):
                 duration=len(prepared.array) / prepared.sample_rate,
                 diagnostics=diagnostics,
             )
-        except (ArtifactUnavailableError, TranscriptionError):
+        except (ArtifactUnavailableError, ConfigError, TranscriptionError):
             raise
         except ModelLimitError as exc:
             raise TranscriptionError(
@@ -365,6 +452,49 @@ def _inspect_compiled_package(package: Path) -> str:
     if any(not path.is_file() or path.stat().st_size == 0 for path in required):
         return "incomplete"
     return "ready"
+
+
+def _inspect_draft_bundle(root: Path) -> tuple[str, str | None]:
+    """Check the draft bundle's layout without importing MLX or loading models."""
+    manifest_path = root / "manifest.json"
+    if not manifest_path.is_file():
+        return "missing", None
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except (json.JSONDecodeError, UnicodeError):
+        return "corrupt", None
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schema_version") != 1
+        or manifest.get("kind") != "qwen3-asr-ane-draft"
+        or not isinstance(manifest.get("draft"), dict)
+        or not isinstance(manifest.get("verify_head"), dict)
+    ):
+        return "corrupt", None
+    revision = manifest["draft"].get("revision")
+    if not isinstance(revision, str) or not revision.strip():
+        return "corrupt", None
+    for relative in (manifest["draft"].get("path"), manifest["verify_head"].get("path")):
+        if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
+            return "corrupt", revision
+        payload = (root / relative).resolve()
+        if not payload.is_relative_to(root) or payload == root:
+            return "corrupt", revision
+    head = (root / manifest["verify_head"]["path"]).resolve()
+    if head.suffix == ".mlmodelc":
+        state = _inspect_compiled_package(head)
+    elif head.suffix == ".mlpackage":
+        state = _inspect_package(head)
+    else:
+        return "corrupt", revision
+    if state != "ready":
+        return state, revision
+    checkpoint = (root / manifest["draft"]["path"]).resolve()
+    for name in ("config.json", "model.safetensors"):
+        path = checkpoint / name
+        if not path.is_file() or path.stat().st_size == 0:
+            return "incomplete", revision
+    return "ready", revision
 
 
 def _inspect_bundle(root: Path) -> tuple[str, str | None]:

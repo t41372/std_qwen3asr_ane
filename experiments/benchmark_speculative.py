@@ -8,76 +8,9 @@ from time import perf_counter
 
 import numpy as np
 from evaluate import audio_samples, manifest_rows
-from std_qwen3asr_ane.runtime import CoreMLRuntime
+from std_qwen3asr_ane.runtime import CoreMLRuntime, TargetCursor, VerifyHead
 from std_qwen3asr_ane.speculative import greedy_speculative_decode
 from std_qwen3asr_ane.transcript_draft import TranscriptDraft
-
-
-class DecoderCursor:
-    def __init__(self, runtime, prepared, batch_head=None):
-        self.runtime = runtime
-        self.states = prepared.states
-        self.batch_head = batch_head
-        self.head_width = (
-            batch_head.get_spec().description.input[0].type.multiArrayType.shape[-1]
-            if batch_head
-            else None
-        )
-        if batch_head is not None:
-            # The compact head returns one (max, index) pair per vocabulary
-            # chunk; the chunk size must be the bundle head's, or the ids would
-            # be wrong. Compiled models expose no spec, so probe both heads once
-            # per runtime with a zero state (outside any measured repeat).
-            cached = getattr(runtime, "_vocabulary_chunks", None)
-            if cached is None:
-                width_hidden = runtime.embeddings.shape[1]
-                probe = runtime.lm_head.predict(
-                    {"hidden_states": np.zeros((1, width_hidden, 1, 1), np.float16)}
-                )
-                keys = sorted(probe, key=lambda name: int(name.removeprefix("logits_")))
-                sizes = {int(np.asarray(probe[key]).size) for key in keys[:-1]}
-                if len(sizes) != 1:
-                    raise ValueError("Bundle LM head chunks are not uniform")
-                compact = batch_head.predict(
-                    {
-                        "hidden_states": np.zeros(
-                            (1, width_hidden, 1, self.head_width), np.float32
-                        )
-                    }
-                )
-                if compact["max_values"].shape[1] != len(keys):
-                    raise ValueError(
-                        "Compact head chunk count differs from the bundle head"
-                    )
-                cached = runtime._vocabulary_chunks = (sizes.pop(), len(keys))
-            self.chunk_size = cached[0]
-
-    def step(self, tokens, position):
-        embeddings = np.concatenate(
-            [self.runtime._embedding(token) for token in tokens], axis=-1
-        )
-        hidden = self.runtime._decode_step(
-            embeddings, position, self.states, all_rows=True
-        )
-        if self.batch_head is not None:
-            width = self.head_width
-            if len(tokens) > width:
-                raise ValueError("Verifier block exceeds the vocabulary head width")
-            padded = np.zeros((*hidden.shape[:-1], width), np.float32)
-            padded[..., : len(tokens)] = hidden
-            output = self.batch_head.predict({"hidden_states": padded})
-            values, indices = output["max_values"][0], output["max_indices"][0]
-            chunks = np.argmax(values, axis=0)
-            return [
-                int(chunks[index] * self.chunk_size + indices[chunks[index], index])
-                for index in range(len(tokens))
-            ]
-        return [hidden[..., index : index + 1] for index in range(len(tokens))]
-
-    def choose(self, hidden):
-        if isinstance(hidden, int):
-            return hidden
-        return self.runtime._next_token(hidden)
 
 
 def validate_state_transfer(source, destination):
@@ -175,13 +108,8 @@ def main():
             prefill_target = CoreMLRuntime(args.prefill_target)
             validate_state_transfer(prefill_target, target)
         if args.verify_head:
-            import coremltools as ct
-            from std_qwen3asr_ane.runtime import PersistentInputModel
-
-            batch_head = PersistentInputModel(
-                ct.models.MLModel(
-                    str(args.verify_head), compute_units=ct.ComputeUnit.CPU_AND_NE
-                )
+            batch_head = VerifyHead(
+                args.verify_head, target, compute_units="cpu_and_ne"
             )
         load_seconds = perf_counter() - started
         if draft is not None and (
@@ -224,11 +152,11 @@ def main():
                         )
                         if target_prompt.token_ids != draft_prompt.token_ids:
                             raise ValueError("Draft and target prompt IDs differ")
-                        draft_decoder = DecoderCursor(draft, draft_prompt)
+                        draft_decoder = TargetCursor(draft, draft_prompt)
                         draft_position = len(draft_prompt.token_ids)
                     draft_prepared = perf_counter()
                     result = greedy_speculative_decode(
-                        DecoderCursor(target, target_prompt, batch_head),
+                        TargetCursor(target, target_prompt, batch_head),
                         draft_decoder,
                         target_prompt.hidden,
                         target_position=len(target_prompt.token_ids),

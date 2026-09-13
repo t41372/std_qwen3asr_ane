@@ -49,6 +49,13 @@ def main() -> None:
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--draft-dir",
+        type=Path,
+        default=None,
+        help="coreml: GPU-draft bundle (speculative path)",
+    )
+    parser.add_argument("--draft-bits", type=int, choices=(4, 8), default=4)
     args = parser.parse_args()
     inputs = [
         audio_samples(Path(row["audio_path"]))[0]
@@ -61,16 +68,31 @@ def main() -> None:
     report = {
         "backend": args.backend,
         "model_dir": str(args.model_dir),
+        "draft_dir": None if args.draft_dir is None else str(args.draft_dir),
         "idle_drift_mib": delta(before, idle_start),
     }
     if args.backend == "coreml":
         from std_qwen3asr_ane.runtime import CoreMLRuntime
 
         runtime = CoreMLRuntime(args.model_dir)
-        transcribe = lambda s: (
-            runtime.transcribe(s, language=None, max_new_tokens=256).text
-        )
-        close = runtime.close
+        if args.draft_dir is not None:
+            from std_qwen3asr_ane.draft import DraftRuntime
+
+            draft = DraftRuntime(args.draft_dir, runtime, quantize_bits=args.draft_bits)
+            transcribe = lambda s: (
+                runtime.transcribe_speculative(
+                    s, draft, language=None, max_new_tokens=256, lookahead=15
+                ).text
+            )
+
+            def close():
+                draft.close()
+                runtime.close()
+        else:
+            transcribe = lambda s: (
+                runtime.transcribe(s, language=None, max_new_tokens=256).text
+            )
+            close = runtime.close
     else:
         from benchmark_mlx import configure_local_caches, load_backend
 

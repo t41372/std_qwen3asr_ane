@@ -8,8 +8,7 @@ OUT=artifacts/evaluation/candidates
 SMOKE=artifacts/evaluation/smoke/manifest.jsonl
 SEL=artifacts/evaluation/silu-validation/selection-200.jsonl
 P14=artifacts/qwen3-asr-1.7b-p14-lut8-g32-compiled
-HEAD=artifacts/probes/lm-head-compact-t16-lut8-g32.mlpackage
-DRAFT=artifacts/source/Qwen3-ASR-0.6B
+DRAFTB=artifacts/qwen3-asr-1.7b-draft   # from: qwen3-asr-ane build-draft
 echo "=== p14 placement $(date +%H:%M:%S) ==="
 mkdir -p artifacts/validation/p14-lut8-g32-placement
 for g in frontend encoder decoder_00 decoder_14 lm_head; do
@@ -32,7 +31,7 @@ $PY experiments/bind_trace_evidence.py --prefix artifacts/telemetry/p14-lut8-g32
 $PY experiments/bind_trace_evidence.py --prefix artifacts/telemetry/lut8-g32-isolated --bundle artifacts/qwen3-asr-1.7b-lut8-g32-compiled --placement-dir artifacts/validation/lut8-g32-placement --output artifacts/telemetry/lut8-g32-attribution-bound.json 2>&1 | grep -E "ane_active_share|candidate_prediction|unattributed|target_pid"
 sleep 30
 echo "=== speculative selection parity (q4, k15) $(date +%H:%M:%S) ==="
-$DPY experiments/benchmark_mlx_draft.py --target $P14 --draft-dir $DRAFT --draft-bits 4 --verify-head $HEAD --manifest $SEL --output $OUT/specdraft-q4-k15-selection.jsonl --lookahead 15 --repeats 1 > $OUT/specdraft-q4-k15-selection.log 2>&1
+$DPY experiments/benchmark_mlx_draft.py --target $P14 --draft-bundle $DRAFTB --draft-bits 4 --manifest $SEL --output $OUT/specdraft-q4-k15-selection.jsonl --lookahead 15 --repeats 1 > $OUT/specdraft-q4-k15-selection.log 2>&1
 $PY - <<PYEOF
 import json, statistics
 rows=[json.loads(l) for l in open("$OUT/specdraft-q4-k15-selection.jsonl")]
@@ -48,8 +47,8 @@ run_block() { local name=$1 python=$2; shift 2; echo "--- $name $(date +%H:%M:%S
 import json; d=json.load(open('artifacts/power-v6/$name/summary.json')); p=d['power']
 print(json.dumps({'name':'$name','duration_s':round(p['duration_s'],2),'mean_w':round(p['mean_w_estimate'],2),'j_per_audio_s':round(d.get('gross_j_per_audio_second',0),3),'cpu':d.get('process_cpu'),'error':d.get('error')}))"; sleep 20; }
 run_block serial-1 $PY --backend coreml --model-dir $P14
-run_block spec-1 $DPY --backend specdraft --model-dir $P14 --draft-dir $DRAFT --draft-bits 4 --verify-head $HEAD --lookahead 15
-run_block spec-2 $DPY --backend specdraft --model-dir $P14 --draft-dir $DRAFT --draft-bits 4 --verify-head $HEAD --lookahead 15
+run_block spec-1 $DPY --backend specdraft --model-dir $P14 --draft-dir $DRAFTB --draft-bits 4 --lookahead 15
+run_block spec-2 $DPY --backend specdraft --model-dir $P14 --draft-dir $DRAFTB --draft-bits 4 --lookahead 15
 run_block serial-2 $PY --backend coreml --model-dir $P14
 echo "--- sysmem spec"
 $DPY - <<PYEOF

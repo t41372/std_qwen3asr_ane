@@ -144,7 +144,7 @@ def compute_label(args: argparse.Namespace) -> str:
     if args.backend == "standard":
         return "plugin_managed"
     if args.backend == "coreml":
-        return args.compute_units
+        return args.compute_units + ("+gpu_draft" if getattr(args, "draft_dir", None) else "")
     return f"{args.device}_{DTYPE_LABELS[args.dtype]}"
 
 
@@ -178,16 +178,37 @@ def make_backend(args: argparse.Namespace) -> Backend:
         runtime = CoreMLRuntime(
             args.model_dir.resolve(), compute_units=args.compute_units
         )
+        draft = None
+        if getattr(args, "draft_dir", None):
+            from std_qwen3asr_ane.draft import DraftRuntime
+
+            draft = DraftRuntime(
+                args.draft_dir.resolve(), runtime, quantize_bits=args.draft_bits
+            )
 
         def transcribe(
             audio: np.ndarray, language: str | None
         ) -> tuple[str, str | None, Any]:
-            result = runtime.transcribe(
-                audio, language=language, max_new_tokens=args.max_new_tokens
-            )
+            if draft is not None:
+                result = runtime.transcribe_speculative(
+                    audio,
+                    draft,
+                    language=language,
+                    max_new_tokens=args.max_new_tokens,
+                    lookahead=args.draft_lookahead,
+                )
+            else:
+                result = runtime.transcribe(
+                    audio, language=language, max_new_tokens=args.max_new_tokens
+                )
             return result.text, result.language, getattr(result, "timings", None)
 
-        return Backend(transcribe, close=runtime.close)
+        def close():
+            if draft is not None:
+                draft.close()
+            runtime.close()
+
+        return Backend(transcribe, close=close)
 
     # Optional baseline imports are lazy. No MLX package is installed or imported.
     import torch
@@ -703,6 +724,14 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--backend", choices=("coreml", "official", "standard"))
     result.add_argument("--manifest", type=Path)
     result.add_argument("--model-dir", type=Path)
+    result.add_argument(
+        "--draft-dir",
+        type=Path,
+        default=None,
+        help="coreml: GPU-draft bundle for speculative decoding",
+    )
+    result.add_argument("--draft-lookahead", type=int, default=15)
+    result.add_argument("--draft-bits", type=int, choices=(4, 8), default=4)
     result.add_argument("--model-key", help="Installed Standard ASR entry-point key.")
     result.add_argument(
         "--engine-config",
@@ -721,7 +750,9 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--torch-threads", type=int, default=0)
     result.add_argument("--device", choices=("cpu", "mps"), default="cpu")
     result.add_argument("--dtype", choices=tuple(DTYPE_LABELS), default="float32")
-    result.add_argument("--attn-implementation", choices=("eager", "sdpa"), default="eager")
+    result.add_argument(
+        "--attn-implementation", choices=("eager", "sdpa"), default="eager"
+    )
     result.add_argument("--seed", type=int, default=20260912)
     result.add_argument(
         "--compare", nargs=2, type=Path, metavar=("BASELINE_JSONL", "CANDIDATE_JSONL")

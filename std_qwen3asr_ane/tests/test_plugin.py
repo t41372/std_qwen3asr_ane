@@ -510,3 +510,108 @@ def test_context_manager_closes_when_body_raises(bundle: Path, fake_runtime):
         raise ValueError("body failed")
     assert engine._runtime is None
     assert fake_runtime.instances[0].closed
+
+
+def draft_bundle(root: Path) -> Path:
+    """A complete draft-bundle layout, intentionally not usable models."""
+    root.mkdir()
+    head = root / "verify_head.mlmodelc"
+    (head / "weights").mkdir(parents=True)
+    for name in ("coremldata.bin", "model.mil", "weights/weight.bin"):
+        (head / name).write_bytes(b"x")
+    checkpoint = root / "Qwen3-ASR-0.6B"
+    checkpoint.mkdir()
+    (checkpoint / "config.json").write_text("{}")
+    (checkpoint / "model.safetensors").write_bytes(b"x")
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "qwen3-asr-ane-draft",
+                "draft": {
+                    "model_id": "Qwen/Qwen3-ASR-0.6B",
+                    "revision": "b" * 40,
+                    "path": "Qwen3-ASR-0.6B",
+                },
+                "verify_head": {"path": "verify_head.mlmodelc", "token_batch_size": 16},
+                "target": {},
+            }
+        )
+    )
+    return root
+
+
+def test_draft_requirement_is_reported_and_actionable(bundle: Path, tmp_path: Path) -> None:
+    engine = create_engine(model_dir=bundle, draft_dir=tmp_path / "draft")
+    report = engine.artifact_status()
+    assert report.readiness != "ready"
+    draft = [r for r in report.requirements if r.artifact_id == "qwen3-asr-0.6b-gpu-draft"]
+    assert len(draft) == 1 and draft[0].state == "missing"
+    message = draft[0].required_actions[0].message
+    assert "qwen3-asr-ane build-draft" in message and str(tmp_path / "draft") in message
+    with pytest.raises(ArtifactUnavailableError) as info:
+        engine.transcribe((np.zeros(16000, dtype=np.float32), 16000), RuntimeParams())
+    assert "build-draft" in (info.value.hint or "")
+    draft_bundle(tmp_path / "draft")
+    assert engine.artifact_status().readiness == "ready"
+    (tmp_path / "draft/Qwen3-ASR-0.6B/model.safetensors").write_bytes(b"")
+    assert [r.state for r in engine.artifact_status().requirements][1] == "incomplete"
+    engine_without = create_engine(model_dir=bundle)
+    assert len(engine_without.artifact_status().requirements) == 1
+
+
+def test_draft_path_verifies_on_the_runtime(
+    bundle: Path, tmp_path: Path, fake_runtime, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    draft_bundle(tmp_path / "draft")
+    loaded = []
+
+    class Draft:
+        def __init__(self, root, runtime, *, quantize_bits):
+            loaded.append((root, runtime, quantize_bits))
+            self.closed = False
+
+        def close(self, *, timeout=5):
+            self.closed = True
+
+    module = ModuleType("std_qwen3asr_ane.draft")
+    module.DraftRuntime = Draft
+    module.DraftDependencyError = type("DraftDependencyError", (ImportError,), {})
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+
+    def transcribe_speculative(
+        self, samples, draft, *, language, max_new_tokens, context, lookahead
+    ):
+        self.calls.append(("speculative", draft, lookahead, max_new_tokens))
+        return SimpleNamespace(text="fast", language="English")
+
+    fake_runtime.transcribe_speculative = transcribe_speculative
+    engine = create_engine(model_dir=bundle, draft_dir=tmp_path / "draft", draft_lookahead=7)
+    result = engine.transcribe((np.zeros(16000, dtype=np.float32), 16000), RuntimeParams())
+    assert result.text == "fast"
+    runtime = fake_runtime.instances[-1]
+    assert runtime.calls[-1][0] == "speculative" and runtime.calls[-1][2] == 7
+    assert loaded[0][0] == (tmp_path / "draft").resolve() and loaded[0][2] == 4
+    engine.close()
+    assert runtime.closed and loaded and engine._draft is None
+
+
+def test_missing_mlx_is_a_configuration_error(
+    bundle: Path, tmp_path: Path, fake_runtime, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from standard_asr.contract.exceptions import ConfigError
+
+    draft_bundle(tmp_path / "draft")
+    module = ModuleType("std_qwen3asr_ane.draft")
+    module.DraftDependencyError = type("DraftDependencyError", (ImportError,), {})
+
+    def fail(root, runtime, *, quantize_bits):
+        raise module.DraftDependencyError("no mlx")
+
+    module.DraftRuntime = fail
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    engine = create_engine(model_dir=bundle, draft_dir=tmp_path / "draft")
+    with pytest.raises(ConfigError) as info:
+        engine.transcribe((np.zeros(16000, dtype=np.float32), 16000), RuntimeParams())
+    assert "gpu-draft" in (info.value.hint or "")
+    assert fake_runtime.instances[-1].closed and engine._runtime is None

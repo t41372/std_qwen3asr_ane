@@ -5,10 +5,10 @@ export UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface" HF_HUB_OF
 PY=std_qwen3asr_ane/.venv/bin/python
 DPY=experiments/mlx_draft/.venv/bin/python
 P14=artifacts/qwen3-asr-1.7b-p14-lut8-g32-compiled
-HEAD=artifacts/probes/lm-head-compact-t16-lut8-g32.mlpackage
+DRAFTB=artifacts/qwen3-asr-1.7b-draft   # from: qwen3-asr-ane build-draft
 SMOKE=artifacts/evaluation/smoke/manifest.jsonl
 echo "=== speculative-only trace $(date +%H:%M:%S) ==="
-$PY experiments/trace_ane.py record --prefix artifacts/telemetry/specdraft-only-q4-k15 --developer-dir /Applications/Xcode.app/Contents/Developer --seconds 90 -- $PWD/$DPY $PWD/experiments/benchmark_mlx_draft.py --target $PWD/$P14 --draft-dir $PWD/artifacts/source/Qwen3-ASR-0.6B --draft-bits 4 --verify-head $PWD/$HEAD --manifest $PWD/$SMOKE --output $PWD/artifacts/telemetry/specdraft-only-q4-k15-workload.jsonl --lookahead 15 --repeats 1 --skip-serial > artifacts/telemetry/specdraft-only-record.log 2>&1
+$PY experiments/trace_ane.py record --prefix artifacts/telemetry/specdraft-only-q4-k15 --developer-dir /Applications/Xcode.app/Contents/Developer --seconds 90 -- $PWD/$DPY $PWD/experiments/benchmark_mlx_draft.py --target $PWD/$P14 --draft-bundle $PWD/$DRAFTB --draft-bits 4 --manifest $PWD/$SMOKE --output $PWD/artifacts/telemetry/specdraft-only-q4-k15-workload.jsonl --lookahead 15 --repeats 1 --skip-serial > artifacts/telemetry/specdraft-only-record.log 2>&1
 echo "record exit $?"
 grep -E '"target_pid"|"target_exit_status"|"ane_prediction_rows"|"gpu_hardware_rows_target_pid"|"ane_prediction_interval_union_ns"|"gpu_target_pid_interval_union_ns"|Traceback|Error' artifacts/telemetry/specdraft-only-record.log | head -8
 sleep 15

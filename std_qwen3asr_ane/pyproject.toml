@@ -14,6 +14,11 @@ dependencies = [
   "scipy>=1.15",
 ]
 
+[project.optional-dependencies]
+# Exact speculative decoding with a 0.6B draft on the GPU. mlx-audio needs
+# transformers 5, which the convert group cannot use; install one or the other.
+gpu-draft = ["mlx-audio[stt]==0.5.3"]
+
 [project.entry-points."standard_asr.models"]
 "std-qwen3asr-ane/1.7b" = "std_qwen3asr_ane.plugin:Qwen3ASREngine"
 
@@ -22,14 +27,15 @@ qwen3-asr-ane = "std_qwen3asr_ane.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8.4", "ruff>=0.12"]
+eval = ["jiwer>=4.0"]
 convert = ["torch>=2.7", "safetensors>=0.5", "huggingface-hub>=0.34", "transformers>=4.57,<5", "qwen-asr>=0.0.6", "jiwer>=4.0"]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[tool.uv]
+conflicts = [[{ extra = "gpu-draft" }, { group = "convert" }]]
 
-[tool.hatch.metadata]
-allow-direct-references = true
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

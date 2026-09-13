@@ -54,6 +54,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     compile_command.add_argument("--source", type=Path, required=True)
     compile_command.add_argument("--output", type=Path, required=True)
+    build_draft = commands.add_parser(
+        "build-draft",
+        help="Build the optional GPU-draft bundle (0.6B checkpoint + verify head) for a target bundle",
+    )
+    build_draft.add_argument("--target", type=Path, default=Path("artifacts/qwen3-asr-1.7b"))
+    build_draft.add_argument("--source", type=Path, default=Path("artifacts/source/Qwen3-ASR-1.7B"))
+    build_draft.add_argument(
+        "--draft-source",
+        type=Path,
+        default=None,
+        help="An already downloaded Qwen3-ASR-0.6B checkpoint; downloaded when omitted",
+    )
+    build_draft.add_argument("--output", type=Path, default=Path("artifacts/qwen3-asr-1.7b-draft"))
     inspect = commands.add_parser("inspect", help="Report anticipated compute placement")
     inspect.add_argument("model", type=Path)
     inspect.add_argument(
@@ -67,6 +80,9 @@ def main(argv: list[str] | None = None) -> int:
     transcribe.add_argument("--model-dir", type=Path, default=Path("artifacts/qwen3-asr-1.7b"))
     transcribe.add_argument("--language", default="auto")
     transcribe.add_argument("--max-new-tokens", type=int, default=256)
+    transcribe.add_argument(
+        "--draft-dir", type=Path, default=None, help="Use the GPU-draft bundle at this path"
+    )
     args = parser.parse_args(argv)
     if args.command == "download":
         from .conversion.build import download_source
@@ -98,6 +114,12 @@ def main(argv: list[str] | None = None) -> int:
             group_size=args.group_size,
             roles=tuple(args.roles),
         )
+    elif args.command == "build-draft":
+        from .conversion.draft import build_draft_bundle
+
+        result = build_draft_bundle(
+            args.target, args.source, args.output, draft_source=args.draft_source
+        )
     elif args.command == "compile":
         from .compiled import compile_bundle
 
@@ -112,7 +134,11 @@ def main(argv: list[str] | None = None) -> int:
 
         from .plugin import Qwen3ASREngine
 
-        engine = Qwen3ASREngine(model_dir=args.model_dir, max_new_tokens=args.max_new_tokens)
+        engine = Qwen3ASREngine(
+            model_dir=args.model_dir,
+            max_new_tokens=args.max_new_tokens,
+            draft_dir=args.draft_dir,
+        )
         try:
             result = engine.transcribe(
                 args.audio, RuntimeParams(language=args.language)
