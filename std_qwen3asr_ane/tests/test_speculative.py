@@ -2,6 +2,7 @@
 
 import pytest
 
+from std_qwen3asr_ane.errors import ModelLimitError
 from std_qwen3asr_ane.speculative import greedy_speculative_decode
 
 
@@ -84,7 +85,7 @@ def test_eos_and_exact_budget_boundary(eos_at):
     )
     assert result.token_ids == serial(Decoder(eos_at=eos_at), eos_at + 1)
     if eos_at:
-        with pytest.raises(RuntimeError, match="max_new_tokens"):
+        with pytest.raises(ModelLimitError, match="max_new_tokens"):
             greedy_speculative_decode(
                 Decoder(eos_at=eos_at),
                 Decoder(eos_at=eos_at),

@@ -8,6 +8,7 @@ from time import perf_counter
 import coremltools as ct
 import numpy as np
 from evaluate import audio_samples
+from std_qwen3asr_ane.bundle import digest
 from std_qwen3asr_ane.runtime import CoreMLRuntime, PersistentInputModel
 
 
@@ -28,8 +29,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--bundle", type=Path, default=Path("artifacts/qwen3-asr-1.7b-compiled")
+    )
     args = parser.parse_args()
-    runtime = CoreMLRuntime(Path("artifacts/qwen3-asr-1.7b-compiled"))
+    runtime = CoreMLRuntime(args.bundle)
     recorder = RecordingHead(runtime.lm_head)
     runtime.lm_head = recorder
     compact = None
@@ -46,6 +50,7 @@ def main():
         width = compact.get_spec().description.input[0].type.multiArrayType.shape[-1]
         elapsed, mismatches = {"original": [], "compact": []}, []
         expected_tokens = []
+        chunk_size = None
         for hidden in recorder.hidden:
             data = {"hidden_states": hidden}
             start = perf_counter()
@@ -55,6 +60,7 @@ def main():
                 [original[f"logits_{i}"].reshape(-1) for i in range(len(original))]
             )
             expected_tokens.append(int(np.argmax(logits)))
+            chunk_size = original["logits_0"].size
         for offset in range(0, len(recorder.hidden), width):
             block = recorder.hidden[offset : offset + width]
             padded = np.zeros((1, runtime.embeddings.shape[1], 1, width), np.float32)
@@ -66,13 +72,22 @@ def main():
             indices = selected["max_indices"].reshape(1, -1, width)
             for row in range(len(block)):
                 chunk = int(np.argmax(values[0, :, row]))
-                actual = chunk * 8192 + int(indices[0, chunk, row])
+                actual = chunk * chunk_size + int(indices[0, chunk, row])
                 expected = expected_tokens[offset + row]
                 if actual != expected:
                     mismatches.append(
                         {"index": offset + row, "expected": expected, "actual": actual}
                     )
         report = {
+            "bundle": str(args.bundle),
+            "bundle_manifest_sha256": digest(args.bundle / "manifest.json"),
+            "compact_head": str(args.model),
+            "compact_head_sha256": {
+                str(child.relative_to(args.model)): digest(child)
+                for child in sorted(args.model.rglob("*"))
+                if child.is_file()
+            },
+            "vocabulary_chunk": chunk_size,
             "states": len(recorder.hidden),
             "token_batch_size": width,
             "mismatches": mismatches,

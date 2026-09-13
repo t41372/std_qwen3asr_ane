@@ -11,6 +11,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from .errors import ModelLimitError
+
 
 class TokenDecoder(Protocol):
     def step(self, tokens: Sequence[int], position: int) -> Sequence[Any]:
@@ -70,7 +72,7 @@ def greedy_speculative_decode(
         start = len(emitted)
         emitted.append(held)
         if len(emitted) >= max_new_tokens:
-            raise RuntimeError("Generation reached max_new_tokens before EOS")
+            raise ModelLimitError("Generation reached max_new_tokens before EOS")
         # Reserve one next-token choice for EOS, exactly as serial decoding does.
         count = min(lookahead, max_new_tokens - len(emitted) - 1)
         proposals: list[int] = []

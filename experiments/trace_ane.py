@@ -75,6 +75,16 @@ def summarize(prefix):
             unknown_gpu_process += 1
         elif resolve_gpu(pid_node).text == target_pid:
             target_gpu.append(row)
+    gpu_intervals = []
+    for row in target_gpu:
+        start = int(row["start"].text)
+        gpu_intervals.append((start, start + int(row["duration"].text)))
+    prediction_intervals = [
+        interval
+        for label, intervals in grouped.items()
+        if label.endswith(" Prediction")
+        for interval in intervals
+    ]
     labels = [
         {
             "label": label,
@@ -105,6 +115,11 @@ def summarize(prefix):
         "gpu_hardware_rows_all_processes": len(gpu_rows),
         "gpu_hardware_rows_target_pid": len(target_gpu),
         "gpu_rows_unknown_process": unknown_gpu_process,
+        "ane_prediction_interval_union_ns": union_duration(prediction_intervals),
+        "gpu_target_pid_interval_union_ns": union_duration(gpu_intervals),
+        "gpu_target_pid_duration_sum_ns": sum(
+            end - start for start, end in gpu_intervals
+        ),
         "limitations": [
             "ANE hardware schema has no PID: attribute by compiled model label and workload timing.",
             "Other processes may use ANE/GPU; background labels and events remain in raw evidence.",

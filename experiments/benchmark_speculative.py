@@ -23,6 +23,34 @@ class DecoderCursor:
             if batch_head
             else None
         )
+        if batch_head is not None:
+            # The compact head returns one (max, index) pair per vocabulary
+            # chunk; the chunk size must be the bundle head's, or the ids would
+            # be wrong. Compiled models expose no spec, so probe both heads once
+            # per runtime with a zero state (outside any measured repeat).
+            cached = getattr(runtime, "_vocabulary_chunks", None)
+            if cached is None:
+                width_hidden = runtime.embeddings.shape[1]
+                probe = runtime.lm_head.predict(
+                    {"hidden_states": np.zeros((1, width_hidden, 1, 1), np.float16)}
+                )
+                keys = sorted(probe, key=lambda name: int(name.removeprefix("logits_")))
+                sizes = {int(np.asarray(probe[key]).size) for key in keys[:-1]}
+                if len(sizes) != 1:
+                    raise ValueError("Bundle LM head chunks are not uniform")
+                compact = batch_head.predict(
+                    {
+                        "hidden_states": np.zeros(
+                            (1, width_hidden, 1, self.head_width), np.float32
+                        )
+                    }
+                )
+                if compact["max_values"].shape[1] != len(keys):
+                    raise ValueError(
+                        "Compact head chunk count differs from the bundle head"
+                    )
+                cached = runtime._vocabulary_chunks = (sizes.pop(), len(keys))
+            self.chunk_size = cached[0]
 
     def step(self, tokens, position):
         embeddings = np.concatenate(
@@ -41,7 +69,7 @@ class DecoderCursor:
             values, indices = output["max_values"][0], output["max_indices"][0]
             chunks = np.argmax(values, axis=0)
             return [
-                int(chunks[index] * 8192 + indices[chunks[index], index])
+                int(chunks[index] * self.chunk_size + indices[chunks[index], index])
                 for index in range(len(tokens))
             ]
         return [hidden[..., index : index + 1] for index in range(len(tokens))]

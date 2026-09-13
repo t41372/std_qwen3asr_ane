@@ -56,7 +56,11 @@ def main():
         import coremltools as ct
         from benchmark_speculative import DecoderCursor
         from mlx_draft import MLXDraft
-        from std_qwen3asr_ane.runtime import CoreMLRuntime, PersistentInputModel
+        from std_qwen3asr_ane.runtime import (
+            CoreMLRuntime,
+            PersistentInputModel,
+            parse_output,
+        )
         from std_qwen3asr_ane.speculative import greedy_speculative_decode
 
         runtime = CoreMLRuntime(args.model_dir)
@@ -82,7 +86,8 @@ def main():
                 max_new_tokens=256,
                 lookahead=args.lookahead,
             )
-            return runtime.tokenizer.decode(list(result.token_ids), skip_special_tokens=True)
+            decoded = runtime.tokenizer.decode(list(result.token_ids), skip_special_tokens=True)
+            return parse_output(decoded, None)[0]
     elif args.backend == "official":
         import torch
         from qwen_asr import Qwen3ASRModel
