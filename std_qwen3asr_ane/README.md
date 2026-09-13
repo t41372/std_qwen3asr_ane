@@ -51,6 +51,10 @@ Streaming (recognize while audio is still arriving) is supported: revisable part
 
 Not supported: word timestamps, speaker diarization, long-form rollover, restricting candidate languages, and automatic model download during inference. If generation hits the token budget the plugin raises an error rather than returning a truncated transcript.
 
+## Optional GPU draft
+
+With a draft bundle from `qwen3-asr-ane build-draft` and the `gpu-draft` extra installed (`uv sync --extra gpu-draft`; it cannot share an environment with the `convert` group because of conflicting transformers versions), setting `draft_dir` makes batch transcription propose tokens with Qwen3-ASR 0.6B on the GPU and verify them on the Neural Engine. Output is identical to the serial path; batch transcription runs about twice as fast; streaming is unchanged. `draft_lookahead` (default 15, the maximum for a 16-token graph) and `draft_bits` (default 4, in-memory quantization of the draft decoder) tune it. The verify head is checked against the target bundle at load time.
+
 ## What this package does and does not claim
 
 Every freshly built bundle is marked `unvalidated`. Requesting the Neural Engine does not prove the model runs there. The workspace's research notes hold the actual evidence: Instruments traces showing Neural Engine activity, numerical comparisons against the original model, and quality evaluation on fixed test sets. Those results apply to the specific bundles they name. This package itself promises no quality equivalence or energy savings.

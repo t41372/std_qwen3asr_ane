@@ -41,3 +41,18 @@ work on the machine; each waits for nothing and writes into `artifacts/`.
 
 `<bundle-name>` is the suffix of `artifacts/qwen3-asr-1.7b-<bundle-name>`;
 the scripts use the `-compiled` sibling produced by `qwen3-asr-ane compile`.
+
+Added 2026-09-13 (afternoon), after review of the comparison set:
+
+8. `quality_matrix.sh`: every GPU reference (MLX bf16 / 8-bit / 4-bit, official
+   PyTorch on MPS) on the selection and held-out sets, paired against the
+   official CPU FP32 model, the FP16 ANE bundle and the 8-bit ANE bundle.
+9. `draft_plugin_parity.sh`: the packaged draft path through the Standard ASR
+   engine (`draft_dir` set) on both 200-sentence sets; hypotheses must equal
+   the serial default bundle's. Needs the `.venv-draft` environment (see the
+   root README) and the draft bundle from `qwen3-asr-ane build-draft`.
+10. `energy_matrix.sh [repeats]`: one-session equal-work energy for every path
+    in the results table (FP16, 8-bit 7-file, 8-bit 2-file, MLX bf16/8-bit/4-bit,
+    packaged draft), forward then reversed order, with a 30 s idle sample.
+11. `memory_matrix.sh`: wired and process memory for MLX 8-bit and the packaged
+    draft path.

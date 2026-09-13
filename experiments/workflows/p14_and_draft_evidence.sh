@@ -3,7 +3,7 @@
 cd "$(dirname "$0")/../.."
 export UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface" HF_HUB_OFFLINE=1
 PY=std_qwen3asr_ane/.venv/bin/python
-DPY=experiments/mlx_draft/.venv/bin/python
+DPY=std_qwen3asr_ane/.venv-draft/bin/python
 OUT=artifacts/evaluation/candidates
 SMOKE=artifacts/evaluation/smoke/manifest.jsonl
 SEL=artifacts/evaluation/silu-validation/selection-200.jsonl

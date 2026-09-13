@@ -77,13 +77,45 @@ uv run --project std_qwen3asr_ane standard-asr compliance run std-qwen3asr-ane/1
 
 The compliance command checks the plugin's interface; it does not load a model.
 
+## Optional: GPU draft (exact speculative decoding)
+
+Batch transcription can run about twice as fast with no change in output. Qwen3-ASR 0.6B runs on the GPU through MLX and proposes up to 15 tokens; the 1.7B model on the Neural Engine verifies them in one call through a compact copy of its output layer and keeps only the prefix it would have produced itself. Every emitted token is the 1.7B model's own greedy choice, so the transcript is identical to the serial path (checked sentence for sentence on 400 evaluation sentences through this code path). Streaming keeps the serial path.
+
+The draft needs `mlx-audio`, which requires transformers 5, while the conversion tools require transformers 4. The two therefore live in separate environments: build with the `convert` group, run with the `gpu-draft` extra. `uv` refuses to install both into one environment.
+
+```sh
+# 1. Build the draft bundle (convert environment): downloads the pinned 0.6B
+#    checkpoint (1.8 GB) and builds the verify head for the target bundle.
+uv run --project std_qwen3asr_ane --group convert qwen3-asr-ane build-draft \
+  --target artifacts/qwen3-asr-1.7b --output artifacts/qwen3-asr-1.7b-draft
+
+# 2. A second environment with MLX (the default .venv keeps the convert group).
+export UV_PROJECT_ENVIRONMENT="$PWD/std_qwen3asr_ane/.venv-draft"
+uv sync --project std_qwen3asr_ane --python 3.12 --extra gpu-draft
+
+# 3. Transcribe with the draft on.
+std_qwen3asr_ane/.venv-draft/bin/qwen3-asr-ane transcribe recording.wav \
+  --draft-dir artifacts/qwen3-asr-1.7b-draft
+```
+
+```python
+engine = discover_models().create(
+    "std-qwen3asr-ane/1.7b",
+    model_dir="artifacts/qwen3-asr-1.7b",
+    draft_dir="artifacts/qwen3-asr-1.7b-draft",   # draft_lookahead=15, draft_bits=4 by default
+)
+```
+
+The verify head is bound to the target bundle it was built for (source revision, compression settings, token width, tokenizer); a mismatch is refused at load. Cost: about 4 GB more wired memory, a busy GPU, and a higher average power draw (the total energy per utterance is still lower because it finishes sooner). With `draft_dir` set but MLX not installed, the engine raises a configuration error naming the extra.
+
 ## Reproducing the measurements
 
 `experiments/` holds the measurement tools and `experiments/workflows/` the scripts that run them in the order the results file reports. Models and results live under `artifacts/`, which is not versioned; `research/evaluation-plan.md` explains how to prepare the corpora.
 
 - `evaluate.py`: quality on fixed corpora with one text normalizer and paired bootstrap comparisons; official FP32, MPS and Core ML backends.
 - `benchmark_mlx.py` with `experiments/mlx_reference/`: the MLX-Audio references in their own environment.
-- `benchmark_energy.py` with `power_v2/`: equal-work whole-machine energy, alternating run order, separate processes.
+- `benchmark_energy.py` with `power_v2/`: equal-work whole-machine energy, alternating run order, separate processes; `workflows/energy_matrix.sh` runs every path in one session.
+- `benchmark_mlx_draft.py`: the draft path next to the serial path, requiring token-identical output; `workflows/draft_plugin_parity.sh` does the same through the Standard ASR engine on 400 sentences.
 - `trace_ane.py` and `bind_trace_evidence.py`: Instruments Neural Engine and GPU intervals per model, bound by hash to the bundle, the placement report and the workload.
 - `measure_system_memory.py`: wired memory before and after load and inference.
 - `probe_decoder_floor.py`: the per-step cost decomposition that motivated 8-bit palettization and fewer decoder files.
