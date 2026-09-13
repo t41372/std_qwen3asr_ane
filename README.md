@@ -1,59 +1,36 @@
-# Qwen3-ASR 1.7B 跑在 Apple Neural Engine 上
+# Qwen3-ASR 1.7B on the Apple Neural Engine
 
-讀者設定：會用 Python 和 macOS、聽過語音辨識，但完全不認識這個專案。專有名詞第一次出現時會解釋，完整說明在 [名詞解釋](research/glossary.md)。
+A [Standard ASR](https://github.com/standard-voice/standard_asr) plugin that runs the Qwen3-ASR 1.7B speech recognition model on the Neural Engine of Apple Silicon Macs. Standard ASR is a common interface for speech recognition engines (protocol 0.2); this plugin registers as `std-qwen3asr-ane/1.7b`.
 
-## 這是什麼
+The model is converted to Core ML, Apple's model runtime, with the GPU excluded. The audio encoder, all 28 decoder layers and the output layer run on the Neural Engine. Tokenization, audio feature extraction and the decoding loop run on the CPU. Placement is measured, not assumed: an Instruments trace of the shipped bundle shows the Neural Engine busy for 90% of transcription time and no GPU activity for the process.
 
-Qwen3-ASR 1.7B 是阿里巴巴開源的語音辨識模型，17 億參數。它分兩部分：編碼器把聲音變成特徵，解碼器根據特徵一個字一個字產生文字。解碼器有 28 層，辨識的時間大部分花在這裡。這個專案把整個模型轉成 Core ML 格式，讓它跑在 Mac 晶片裡的 Neural Engine 上。
+## Results
 
-- Core ML 是 Apple 的模型執行框架。模型要先轉成它的格式，才能交給 macOS 排到硬體上跑。
-- Neural Engine 是 Apple 晶片裡專門跑 AI 模型的單元，和 CPU、GPU 是三個不同的東西。特點是很省電，但記憶體頻寬比 GPU 小，所以跑大模型不一定比 GPU 快。
+Measured on a MacBook Pro M5 Max (64 GB, macOS 27.0). Latency is the median of 5 warm runs on two official test recordings (English 15 s, Chinese 4 s). Energy is the whole-machine power estimate from the Mac's power controller (`PSTR`), integrated over equal work and divided by seconds of audio; it is not a wall meter. Memory is the system-wide wired memory added by loading the model and transcribing. Quality is paired word error rate (English, LibriSpeech) and character error rate (Chinese, FLEURS) on 200 held-out sentences; "same" means no measurable difference from the official FP32 model. Methods, limits and raw numbers are in [research/results-2026-09-13.md](research/results-2026-09-13.md) (Chinese); terms are in [research/glossary.md](research/glossary.md).
 
-成品是一個 Python 套件 `std_qwen3asr_ane/`。它是 [Standard ASR](https://github.com/standard-voice/standard_asr) 的外掛。Standard ASR 是一套語音辨識引擎的共同介面規範（目前 0.2 版），任何引擎只要照它的介面做，就能用同一組指令和 Python API 呼叫。這個外掛的模型名稱是 `std-qwen3asr-ane/1.7b`。
-
-這個專案是接手前一輪（2026-09-12，另一個 AI 助理）的成果繼續做的。前一輪做到「未壓縮版能在 Neural Engine 上跑」，本輪從那裡開始。
-
-## 現在的狀態
-
-可以裝、可以用。限制在這一節最後。
-
-- 預設模型是 8-bit 壓縮版，跑在 Neural Engine 上。用 Instruments（Xcode 附的效能分析工具，能錄下每個硬體單元什麼時候在忙）錄下來，辨識期間 Neural Engine 有 90% 的時間在忙，GPU 完全沒動。
-- 品質和原版一樣。在 200 句從未拿來調參的英文加中文測試上，錯誤率和未壓縮版、和官方 PyTorch 版都量不出差別。
-- 比接手時的未壓縮版快 30%，耗電少 27%，常駐記憶體少 1.6 GB。
-- 這台 Mac 的 GPU 還是比較快。MLX（Apple 自己的 GPU 機器學習框架）快 2.5 到 7 倍，官方 PyTorch 程式碼走 GPU 也快 1.8 倍。Neural Engine 的好處是平均功率只有 GPU 路線的三分之一、Python 程序的記憶體很小、GPU 可以留給別的事。
-- 另外做了一個「推測解碼」實驗，混用 Neural Engine 和 GPU：小模型（0.6B）在 GPU 上先猜接下來 15 個字，大模型（1.7B）在 Neural Engine 上一次驗證，只保留猜對的部分。因為每個字最後都經過大模型認可，結果和大模型自己逐字算完全一樣，只是快。實測快 2 倍、耗電少 38%。它沒有放進正式套件，原因有三：
-  - 要多載一個模型，常駐記憶體從 2.6 GB 變 6.4 GB。
-  - GPU 不再空閒。
-  - 它用的 `mlx-audio` 套件要 transformers 5，本套件的轉換工具要 transformers 4，裝不進同一個環境。
-- 300 個測試全部通過。
-
-不支援：逐字時間戳、說話者分離、限定候選語言（例如「只在中文和日文裡選」）、超過 30 秒的長音訊自動接續。這些請求會在辨識開始前被拒絕，或是忽略那個選項照常辨識。所有量測只在一台 M5 Max 上做過。
-
-## 主要數字
-
-測試錄音是 Qwen 官方的兩段：英文 15 秒、中文 4 秒。速度是熱機後 5 次的中位數。品質欄的「配對比較」是指同一句話讓兩個版本各辨識一次再比錯誤率。bf16 和 fp16 都是未壓縮的 16 位元浮點數格式。MPS 是 PyTorch 的 Apple GPU 後端。耗電是 Mac 電源管理晶片回報的整機功率，換算成每秒音訊耗多少焦耳；它不是插座上的電表，也分不出哪個零件耗了多少。詳細方法和限制在 [量測結果](research/results-2026-09-13.md)。
-
-| 方案 | 英文 15 秒 | 中文 4 秒 | 每秒音訊耗電 | 常駐記憶體 | 品質 |
+| Path | EN 15 s | ZH 4 s | J per audio second | Wired memory | Quality vs official |
 |---|---:|---:|---:|---:|---|
-| Neural Engine，未壓縮（接手時的起點） | 2.06 s | 0.50 s | 3.19 J | 4.2 GB | 比較基準 |
-| **Neural Engine，8-bit 壓縮（預設）** | **1.43 s** | **0.35 s** | **2.34 J** | **2.6 GB** | 與基準量不出差別 |
-| Neural Engine 驗證 + GPU 猜字（實驗） | 0.60 s | 0.20 s | 比預設少 38% | 6.4 GB | 與預設逐字相同 |
-| GPU，MLX 4-bit | 0.21 s | 0.09 s | 1.15 J | 2.1 GB | 沒有做配對比較 |
-| GPU，MLX bf16 | 0.46 s | 0.14 s | 1.99 J | 4.1 GB | 沒有做配對比較 |
-| 官方 PyTorch，GPU（MPS 後端，bf16） | 0.78 s | 0.20 s | 沒有量 | 沒有量 | 沒有做配對比較 |
-| 官方 PyTorch，CPU | 2.74 s | 0.80 s | 沒有量 | 沒有量 | 品質參照，其他版本都和它比 |
+| Neural Engine, FP16 (uncompressed) | 2.06 s | 0.50 s | 3.19 | 4.2 GB | same |
+| **Neural Engine, 8-bit (default)** | **1.43 s** | **0.35 s** | **2.34** | **2.6 GB** | same |
+| Neural Engine verify + GPU draft (optional) | 0.60 s | 0.20 s | 38% below default | 6.4 GB | identical tokens to default |
+| GPU, MLX 8-bit | 0.30 s | 0.11 s | pending | pending | pending |
+| GPU, MLX bf16 | 0.46 s | 0.14 s | 1.99 | 4.1 GB | pending |
+| GPU, MLX 4-bit | 0.21 s | 0.09 s | 1.15 | 2.1 GB | pending |
+| GPU, official PyTorch (MPS, bf16) | 0.78 s | 0.20 s | not measured | not measured | pending |
+| CPU, official PyTorch (FP32) | 2.74 s | 0.80 s | not measured | not measured | reference |
 
-三個備註：
+What the numbers say:
 
-- 耗電每個方案量兩次，表上是平均。不同場次量的數字不能直接相除，所以實驗版只寫「少 38%」，那是和預設版在同一場次量的結果。
-- 預設版的速度是現在這個版本量的。耗電是用「解碼器切 7 個檔案」的版本量的；現在預設把解碼器切成 2 個檔案，權重相同、輸出逐字相同，另一場次量到的耗電差 1 到 4%。「切幾個檔案」的意思見下面的安裝說明。
-- 實驗版的速度是這兩段錄音的數字。200 句的平均是 2.0 到 2.25 倍。
+- On this machine every GPU path is faster than the Neural Engine path. The Neural Engine draws about a third of the GPU paths' average power, adds little to the Python process's memory, and leaves the GPU idle.
+- Relative to the FP16 Neural Engine bundle, the 8-bit bundle's gains come from weight compression (27% faster, 27% less energy) and from splitting the decoder into 2 Core ML files instead of 7 (about 5%). Serial decoding on the Neural Engine is bound by per-element weight decompression; nothing else moved these numbers.
+- The optional draft path doubles speed without changing output: a 0.6B model on the GPU proposes 15 tokens, the 1.7B model on the Neural Engine verifies them in one call and keeps only the prefix it would have produced itself. Every emitted token is the 1.7B model's own choice. Cost: a second model in memory and a busy GPU.
+- 8-bit compression: the ANE bundle uses palettized weights (a lookup table per 32 output channels) for the decoder and output layer; the MLX 8-bit reference uses affine quantization of the decoder only (group 64). Same bit width, different scheme.
 
-## 怎麼裝
+Not supported: word timestamps, speaker diarization, restricting candidate languages, and audio longer than 30 seconds per utterance. Streaming (partial results while audio arrives) is supported through the serial path.
 
-需要 Apple Silicon Mac、macOS 15 以上、Python 3.12、[uv](https://docs.astral.sh/uv/)（Python 套件管理工具）。所有量測在 M5 Max、64 GB、macOS 27.0 上做的，其他機器沒驗證過。
+## Install
 
-從這個目錄執行。四個步驟：下載原始模型、轉成 Core ML、壓縮成 8-bit、編譯成可直接載入的格式。
+Requirements: Apple Silicon, macOS 15 or later, Python 3.12, [uv](https://docs.astral.sh/uv/). Run every command from the repository root; model files are resolved at `artifacts/` relative to the current directory.
 
 ```sh
 export UV_CACHE_DIR="$PWD/.cache/uv"
@@ -68,12 +45,14 @@ uv run --project std_qwen3asr_ane qwen3-asr-ane compile \
   --source artifacts/qwen3-asr-1.7b-lut8 --output artifacts/qwen3-asr-1.7b
 ```
 
-- `download` 抓約 4.3 GB，之後全部離線。
-- `build` 的兩個參數：`--token-batch-size 16` 是解碼器一次處理 16 個 token（token 是模型處理文字的最小單位，大約一個中文字或半個英文詞）；`--layers-per-partition 14` 是把解碼器的 28 層切成 2 個 Core ML 檔案、每個 14 層。切的檔案越少，每產生一個字要呼叫系統的次數越少。之前的版本切成 7 個檔案、每個 4 層。
-- `compress` 把解碼器的權重從 16 位元壓成 8 位元。
-- `compile` 之後第一次載入約 35 秒（系統在做裝置最佳化），之後每次不到 2 秒。
+- `download` fetches the pinned checkpoint (about 4.3 GB); everything after it is offline.
+- `build` converts to Core ML at FP16. `--token-batch-size 16` makes the decoder graph process 16 tokens per call; `--layers-per-partition 14` splits the 28 decoder layers into two files. The cache holds 1024 positions, which covers 30 seconds of audio.
+- `compress` palettizes the decoder and output-layer weights to 8 bits. The audio encoder stays FP16 (it is about 2% of transcription time). The command refuses to write a bundle whose weights were not actually compressed.
+- `compile` writes the form macOS loads directly. The first load takes about 35 seconds while the system specializes the model for the device; later loads take under 2 seconds.
 
-用法：
+Only `download` and `build` need the `convert` dependency group (PyTorch). Inference does not.
+
+## Use
 
 ```sh
 uv run --project std_qwen3asr_ane qwen3-asr-ane transcribe recording.wav
@@ -87,32 +66,30 @@ engine = discover_models().create("std-qwen3asr-ane/1.7b", model_dir="artifacts/
 print(engine.transcribe("recording.wav").text)
 ```
 
-跑測試和介面檢查：
+If the bundle is missing, both entry points print the preparation steps above instead of a traceback. `--model-dir` or `STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR` selects another bundle.
+
+Tests and the Standard ASR interface check:
 
 ```sh
 uv run --project std_qwen3asr_ane --group convert pytest std_qwen3asr_ane/tests -q
 uv run --project std_qwen3asr_ane standard-asr compliance run std-qwen3asr-ane/1.7b
 ```
 
-測試共 300 個，全部通過。沒下載原始模型時有 2 個會跳過。第二個指令是 Standard ASR 附的介面檢查，確認這個外掛的介面符合規範；它不載入模型。
+The compliance command checks the plugin's interface; it does not load a model.
 
-串流（邊錄邊辨識）也支援：先給暫定結果、錄完給定稿，可以取消、可以指定語言、可以給最多 128 個 token 的上下文提示。詳見 [research/standard-asr-features.md](research/standard-asr-features.md)。
+## Reproducing the measurements
 
-## 文件地圖
+`experiments/` holds the measurement tools and `experiments/workflows/` the scripts that run them in the order the results file reports. Models and results live under `artifacts/`, which is not versioned; `research/evaluation-plan.md` explains how to prepare the corpora.
 
-- [量測結果](research/results-2026-09-13.md)：所有數字、量法、限制。
-- [驗收門檻](research/preregistration-2026-09-13.md)：在看到結果之前就寫死的通過標準。
-- [實驗紀錄](research/technical-blog.md)：按時間順序的完整過程，包括失敗的路線。
-- [交接](HANDOFF.md)：接下來可以做什麼、怎麼重跑。
-- [名詞解釋](research/glossary.md)。
+- `evaluate.py`: quality on fixed corpora with one text normalizer and paired bootstrap comparisons; official FP32, MPS and Core ML backends.
+- `benchmark_mlx.py` with `experiments/mlx_reference/`: the MLX-Audio references in their own environment.
+- `benchmark_energy.py` with `power_v2/`: equal-work whole-machine energy, alternating run order, separate processes.
+- `trace_ane.py` and `bind_trace_evidence.py`: Instruments Neural Engine and GPU intervals per model, bound by hash to the bundle, the placement report and the workload.
+- `measure_system_memory.py`: wired memory before and after load and inference.
+- `probe_decoder_floor.py`: the per-step cost decomposition that motivated 8-bit palettization and fewer decoder files.
 
-## 重跑量測
+Documents: [results](research/results-2026-09-13.md), [pre-registered acceptance gates](research/preregistration-2026-09-13.md) (written before any candidate result existed), [chronological log](research/technical-blog.md) including failed routes, [glossary](research/glossary.md). All in Chinese.
 
-`experiments/` 底下是量測工具，`experiments/workflows/` 是把它們串起來的腳本。模型檔和量測結果放在 `artifacts/`，不進版本控制。
+## License
 
-- `evaluate.py`：品質評估。固定語料、統一的文字正規化、同一句話讓兩個版本各辨識一次再比（配對比較）。
-- `benchmark_energy.py` 加 `power_v2/`：等工作量的整機耗電。
-- `trace_ane.py` 加 `bind_trace_evidence.py`：用 Instruments 錄 Neural Engine 和 GPU 的工作時段，並把證據和模型檔的 hash 綁在一起。
-- `benchmark_mlx.py`：GPU 對照組（MLX-Audio），獨立環境。
-- `benchmark_mlx_draft.py` 加 `mlx_draft/`：推測解碼實驗，獨立環境。
-- `probe_decoder_floor.py`：拆解解碼器每一步的時間花在哪裡。這個分析決定了用 8-bit 壓縮和減少檔案數。
+Apache-2.0. Qwen3-ASR weights are distributed by Alibaba under their own license.

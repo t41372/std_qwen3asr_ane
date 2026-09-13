@@ -14,7 +14,7 @@
 - ABBA：量耗電時 A、B、B、A 交替跑，避免順序偏差。PSTR：整機功率估計，不是插座電表。
 - MLComputePlan：編譯器打算把運算放哪個裝置。Instruments trace：實際錄到的 Neural Engine 和 GPU 工作時段。
 
-第 1 到 22 節是前一輪（2026-09-12）的紀錄，第 23 節起是接手後的工作。
+第 1 到 22 節是 2026-09-12 的紀錄，第 23 節起是 2026-09-13 的工作。
 
 ## 2026-09-12 — 01：建立工作區與查證起點
 
@@ -240,9 +240,9 @@ Shared state的英文中位1.6903秒，copy控制1.7565秒，相差66.2ms；中�
 
 原型額外完整載入prefill runtime，因此base載入1.612秒之外另需約0.394秒。沒有隱藏這項冷啟動取捨，也沒有將原型整合為預設插件。資料與來源hash在artifacts/evaluation/smoke/dualwidth-greedy.jsonl及dualwidth-greedy.summary.json，更新handoff供新workflow評估。
 
-## 2026-09-13 — 23：接手、預先登記門檻、分解 ANE 逐 token 成本的 floor
+## 2026-09-13 — 23：預先登記門檻、分解 ANE 逐 token 成本的 floor
 
-新工作方式下接手。先確認起點：289 tests 通過、Standard ASR main 仍是 uv.lock 鎖定的 `b63bb73b`、M5 Max／macOS 27.0。以既有 profile 與孤立 Instruments trace 重新判讀瓶頸：兩段 smoke 的 623 筆 ANE Prediction 合計 2.311 秒，對應 predict 牆鐘約 2.53 秒，ANE 硬體忙碌約 91%。瓶頸主要是 ANE 每個 token 的成本本身（7 個 partition 各約 4.15 ms＋LM head 4.5 ms ≈ 33 ms／token）；predict 之外與之內的 host 開銷約 9%，之後 ANE 變快時這個比例會相對上升。在任何新候選結果出現前，先把品質／latency／能耗／記憶體門檻與比較對象寫進 `research/preregistration-2026-09-13.md` 並提交。
+先確認起點：289 tests 通過、Standard ASR main 仍是 uv.lock 鎖定的 `b63bb73b`、M5 Max／macOS 27.0。以既有 profile 與孤立 Instruments trace 重新判讀瓶頸：兩段 smoke 的 623 筆 ANE Prediction 合計 2.311 秒，對應 predict 牆鐘約 2.53 秒，ANE 硬體忙碌約 91%。瓶頸主要是 ANE 每個 token 的成本本身（7 個 partition 各約 4.15 ms＋LM head 4.5 ms ≈ 33 ms／token）；predict 之外與之內的 host 開銷約 9%，之後 ANE 變快時這個比例會相對上升。在任何新候選結果出現前，先把品質／latency／能耗／記憶體門檻與比較對象寫進 `research/preregistration-2026-09-13.md` 並提交。
 
 之前的 probe 顯示 LUT4 與 LUT8 幾乎同速，代表存在與權重 bytes 無關的 floor。用真實第 0–3 層建 T1 變體逐項移除工作（`experiments/probe_decoder_floor.py`，10 warmup／30 次中位數）：
 
@@ -316,7 +316,7 @@ Instruments 孤立 trace（Xcode 26 的表名為 `ane-hw-intervals-internal`，�
 
 Benchmark 審查要求的補做：（1）LUT8 bundle 全部 10 個 graph 的 MLComputePlan——frontend 27、encoder 4740、每個 decoder partition 1030、LM head 51 個具成本算子全部 preferred ANE，沒有 CPU-only 算子；unknown 裝置的 14432 個算子是 `const`（14217）與 `constexpr_lut_to_dense`（215，LUT 解壓，計畫不給裝置與成本，但其時間包含在量到的 ANE 區間內）。（2）同日 compiled FP16 的 selection set：品質與 9/12 的 precise run 完全相同（EN 42/2094、ZH 232/3663），corpus RTF 0.133，LUT8 0.097（−27%），配對 Δ 不變。（3）floor probe 改用高斯 hidden state、cache 中段位置與真實 RoPE 重跑：baseline 3.82、attention-only 1.94、MLP-only 2.10、不寫 KV 3.06、cache 256／4096 3.14／7.36、LUT4 2.72、int8 2.73、LUT8 2.74 ms，與全零輸入的結果差在 0.1 ms 內，第 23 節的分解成立；`.floor.json` 現在記錄真實的 mode 與輸入協定。
 
-等工作量能耗（每 block 40 輪 × 2 smoke = 770.2 音訊秒，ABBA 反向重複；同場次 30 秒閒置 4.93 W，先前 handoff 的 12.18 W 閒置是充電時量的）：ANE FP16 3.172／3.202、ANE LUT8 2.307／2.382、MLX bf16 1.970／2.011、MLX 4-bit 1.135／1.165 J 每音訊秒；above-idle 分別為 2.52／2.55、1.83／1.90、1.82／1.86、1.06／1.09。LUT8 對 FP16 −27%，兩個 block 都優於 FP16 的兩個 block，通過預先登記的能耗門檻；對 MLX bf16 gross 高 17%、above-idle 持平；MLX 4-bit 只用一半。ANE 路徑高於閒置約 19 W，不能用「低瓦數」推論省電，也不能把整機功率當成 ANE 歸屬證據；process 端 CPU 使用率已加入 `benchmark_energy.py`（rusage），第 27 節的 p14 block 會有數字。
+等工作量能耗（每 block 40 輪 × 2 smoke = 770.2 音訊秒，ABBA 反向重複；同場次 30 秒閒置 4.93 W，先前記錄的 12.18 W 閒置是充電時量的）：ANE FP16 3.172／3.202、ANE LUT8 2.307／2.382、MLX bf16 1.970／2.011、MLX 4-bit 1.135／1.165 J 每音訊秒；above-idle 分別為 2.52／2.55、1.83／1.90、1.82／1.86、1.06／1.09。LUT8 對 FP16 −27%，兩個 block 都優於 FP16 的兩個 block，通過預先登記的能耗門檻；對 MLX bf16 gross 高 17%、above-idle 持平；MLX 4-bit 只用一半。ANE 路徑高於閒置約 19 W，不能用「低瓦數」推論省電，也不能把整機功率當成 ANE 歸屬證據；process 端 CPU 使用率已加入 `benchmark_energy.py`（rusage），第 27 節的 p14 block 會有數字。
 
 更少 partition：用 `build_decoder_variant.py --layers-per-partition 14` 建 2 個 14 層 partition 的 T16 bundle 再 LUT8 壓縮（p14），smoke EN 1.426 s、ZH 0.351 s（7 partition LUT8 為 1.499／0.367，再快約 5%，文字相同）；28 層單一 partition 轉換與 compile 都成功，但載入時 `Failed to build the model execution plan`，放棄。`build` 指令新增 `--layers-per-partition {4,7,14}`。p14 的逐句一致性、held-out 與能耗 ABBA 排在第 27 節。
 
