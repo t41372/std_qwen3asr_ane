@@ -228,7 +228,7 @@ Shared state的英文中位1.6903秒，copy控制1.7565秒，相差66.2ms；中�
 
 ## 2026-09-13 — 23：接手、預先登記門檻、分解 ANE 逐 token 成本的 floor
 
-新工作方式下接手。先確認起點：289 tests 通過、Standard ASR main 仍是 uv.lock 鎖定的 `b63bb73b`、M5 Max／macOS 27.0。以既有 profile 與孤立 Instruments trace 重新判讀瓶頸：兩段 smoke 的 623 筆 ANE Prediction 合計 2.311 秒，對應 predict 牆鐘約 2.53 秒，ANE 硬體忙碌約 91%。瓶頸是 ANE 每個 token 的成本本身（7 個 partition 各約 4.15 ms＋LM head 4.5 ms ≈ 33 ms／token），不是 Python。在任何新候選結果出現前，先把品質／latency／能耗／記憶體門檻與比較對象寫進 `research/preregistration-2026-09-13.md` 並提交。
+新工作方式下接手。先確認起點：289 tests 通過、Standard ASR main 仍是 uv.lock 鎖定的 `b63bb73b`、M5 Max／macOS 27.0。以既有 profile 與孤立 Instruments trace 重新判讀瓶頸：兩段 smoke 的 623 筆 ANE Prediction 合計 2.311 秒，對應 predict 牆鐘約 2.53 秒，ANE 硬體忙碌約 91%。瓶頸主要是 ANE 每個 token 的成本本身（7 個 partition 各約 4.15 ms＋LM head 4.5 ms ≈ 33 ms／token）；predict 之外與之內的 host 開銷約 9%，之後 ANE 變快時這個比例會相對上升。在任何新候選結果出現前，先把品質／latency／能耗／記憶體門檻與比較對象寫進 `research/preregistration-2026-09-13.md` 並提交。
 
 之前的 probe 顯示 LUT4 與 LUT8 幾乎同速，代表存在與權重 bytes 無關的 floor。用真實第 0–3 層建 T1 變體逐項移除工作（`experiments/probe_decoder_floor.py`，10 warmup／30 次中位數）：
 
@@ -292,7 +292,7 @@ Held-out（各語 101–200 列，只跑一次）：LUT8 EN WER 32/2382 = 1.343%
 
 記憶體（`/usr/bin/time -l`，載入 + 兩段 smoke 一次）：ANE FP16 peak footprint 663 MB、ANE LUT8 661 MB、MLX bf16 5.81 GB、MLX 4-bit 3.32 GB、官方 MPS bf16 6.61 GB。ANE process 的 footprint 幾乎不隨權重大小變動，代表 ANE 端的權重配置不在 process 統計內；磁碟上 LUT8 compiled bundle 2.8 GB（FP16 4.4 GB）。系統層級的 wired memory 差異另行量測。
 
-Instruments 孤立 trace（Xcode 26 的表名為 `ane-hw-intervals-internal`，欄位與舊版相同，`trace_ane.py` 已接受別名）：兩段 smoke 共 623 筆 ANE Prediction，與 FP16 trace 相同數量；7 個 decoder partition 各 77 次共 1.477 s、LM head 60 次 0.121 s、encoder 3 次 0.016 s、frontend 21 次 0.015 s，ANE 硬體時間合計 1.628 s，佔轉錄牆鐘 1.902 s 的 86%；目標 PID 的 GPU 硬體列為 0。每次 partition 預測 2.74 ms（FP16 為 4.1 ms）。
+Instruments 孤立 trace（Xcode 26 的表名為 `ane-hw-intervals-internal`，欄位與舊版相同，`trace_ane.py` 已接受別名）：兩段 smoke 共 623 筆 ANE Prediction，與 FP16 trace 相同數量；7 個 decoder partition 各 77 次共 1.477 s、LM head 60 次 0.121 s、encoder 3 次 0.016 s、frontend 21 次 0.015 s，Instruments 的 ANE-active 區間合計 1.628 s，佔轉錄牆鐘 1.903 s 的 85.6%（FP16 trace 為約 90%，ANE 變快後 host 側的 mask 建構、輸入輸出複製與 151936 維 argmax 等固定成本相對上升）；目標 PID 的 GPU 硬體列為 0。每個預期的 Core ML 呼叫都恰好對應一筆 ANE 區間（EN 16 frontend／2 encoder／62 decoder／49 head，ZH 5／1／15／11），這個閉合是歸屬的主要依據。每次 partition 預測 2.74 ms（FP16 為 4.1 ms）。
 
 串流：15 秒英文即時餵入，7 個 partial、closed final 在 15.63 s，event／result compliance 通過，closed 文字與 batch 相同；0.1／0.5／5／29.99 秒靜音全回傳空字串，explicit close 18 ms。`verify_plugin_runtime` 與 `standard-asr compliance run`（以環境變數指向 LUT8 bundle）exit 0。
 

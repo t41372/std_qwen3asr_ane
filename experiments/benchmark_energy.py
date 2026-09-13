@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import resource
 import subprocess
 import sys
 import time
@@ -109,6 +110,7 @@ def main():
             if collector.poll() is not None:
                 raise RuntimeError("Power collector stopped before workload")
             begin = time.monotonic()
+            usage_begin = resource.getrusage(resource.RUSAGE_SELF)
             audio_seconds, completed = 0.0, 0
             with (args.output / "predictions.jsonl").open("w") as predictions:
                 for repeat in range(args.repeats):
@@ -140,11 +142,14 @@ def main():
                         flush=True,
                     )
             end = time.monotonic()
+            usage_end = resource.getrusage(resource.RUSAGE_SELF)
             time.sleep(12)
             collector.terminate()
             collector.wait(timeout=10)
         rows = [json.loads(line) for line in trace.read_text().splitlines()]
         power = integrate(rows, begin, end)
+        cpu_user = usage_end.ru_utime - usage_begin.ru_utime
+        cpu_system = usage_end.ru_stime - usage_begin.ru_stime
         report.update(
             start_monotonic_s=begin,
             end_monotonic_s=end,
@@ -153,6 +158,13 @@ def main():
             rtf=(end - begin) / audio_seconds,
             power=power,
             gross_j_per_audio_second=power["gross_j_estimate"] / audio_seconds,
+            # This process only: excludes the Core ML/ANE daemons and kernel work
+            # done on its behalf, so it bounds the Python-side host cost from below.
+            process_cpu={
+                "user_seconds": cpu_user,
+                "system_seconds": cpu_system,
+                "mean_cores_busy": (cpu_user + cpu_system) / (end - begin),
+            },
         )
         # Show sensor lag sensitivity without selecting a favorable boundary.
         report["boundary_shift_j"] = {
