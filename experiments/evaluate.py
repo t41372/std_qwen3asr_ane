@@ -384,11 +384,6 @@ def run(args: argparse.Namespace) -> int:
         raise ValueError(f"Model directory must already exist: {args.model_dir}")
     model_dir = str(args.model_dir.resolve()) if args.model_dir is not None else None
     token_budget = None if args.backend == "standard" else args.max_new_tokens
-    if args.backend == "standard":
-        # The engine owns the budget; record it so paired comparisons can check
-        # that both runs used the same one. The bundle stays plugin-managed.
-        settings = (args.engine_config or {}) if isinstance(args.engine_config, dict) else {}
-        token_budget = settings.get("max_new_tokens", token_budget)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if any(
         Path(str(args.output) + suffix).exists()
@@ -400,6 +395,13 @@ def run(args: argparse.Namespace) -> int:
     start = time.perf_counter()
     try:
         backend = make_backend(args)
+        if args.backend == "standard":
+            # The engine owns the budget; record its effective value so paired
+            # comparisons can check both runs used the same one. The bundle
+            # stays plugin-managed.
+            token_budget = backend.metadata.get("engine_config", {}).get(
+                "max_new_tokens", token_budget
+            )
     except Exception as exc:  # noqa: BLE001 — persist model-load failures for every sample.
         setup_error = backend_error(exc, redact=args.backend == "standard")
         backend = None
