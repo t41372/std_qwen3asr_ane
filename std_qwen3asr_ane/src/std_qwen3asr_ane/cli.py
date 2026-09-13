@@ -13,7 +13,11 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     download = commands.add_parser("download", help="Download the pinned official checkpoint")
     download.add_argument("--output", type=Path, default=Path("artifacts/source/Qwen3-ASR-1.7B"))
-    download.add_argument("--revision", default="main")
+    download.add_argument(
+        "--revision",
+        default="7278e1e70fe206f11671096ffdd38061171dd6e5",
+        help="checkpoint revision; the default is the revision every measurement used",
+    )
     build = commands.add_parser(
         "build", help="Convert a local checkpoint; requires the convert group"
     )
@@ -55,7 +59,10 @@ def main(argv: list[str] | None = None) -> int:
     inspect.add_argument(
         "--compute-units", choices=("cpu_and_ne", "cpu_only"), default="cpu_and_ne"
     )
-    transcribe = commands.add_parser("transcribe")
+    transcribe = commands.add_parser(
+        "transcribe",
+        help="Transcribe one audio file with a local bundle (default artifacts/qwen3-asr-1.7b)",
+    )
     transcribe.add_argument("audio", type=Path)
     transcribe.add_argument("--model-dir", type=Path, default=Path("artifacts/qwen3-asr-1.7b"))
     transcribe.add_argument("--language", default="auto")
@@ -100,6 +107,7 @@ def main(argv: list[str] | None = None) -> int:
 
         result = inspect_compute_plan(args.model, args.compute_units)
     else:
+        from standard_asr.contract.exceptions import StructuredError
         from standard_asr.engine import RuntimeParams
 
         from .plugin import Qwen3ASREngine
@@ -109,6 +117,13 @@ def main(argv: list[str] | None = None) -> int:
             result = engine.transcribe(
                 args.audio, RuntimeParams(language=args.language)
             ).model_dump(mode="json")
+        except StructuredError as error:
+            # Framework errors carry the remedy; a traceback would hide it.
+            print(f"error: {error}", file=sys.stderr)
+            hint = getattr(error, "hint", None)
+            if hint:
+                print(f"hint: {hint}", file=sys.stderr)
+            return 2
         finally:
             engine.close()
     print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))

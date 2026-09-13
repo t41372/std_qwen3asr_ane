@@ -4,7 +4,7 @@
 
 ## 現況
 
-- 正式 entry point `std-qwen3asr-ane/1.7b`，Standard ASR main `b63bb73b`／protocol 0.2.0，compliance CLI exit 0，300 tests 通過。
+- 正式 entry point `std-qwen3asr-ane/1.7b`，Standard ASR main `b63bb73b`／protocol 0.2.0，compliance CLI exit 0（entry-point 層級，與 bundle 無關；bundle 層級的 event／result compliance 見 results 的協議與串流節），300 tests（fresh clone 未下載 source 時 298 passed、2 skipped）。
 - 預設產物 `artifacts/qwen3-asr-1.7b` → `qwen3-asr-1.7b-p14-lut8-g32-compiled`：8-bit palettized（LUT8 g32）decoder 與 LM head 分成 2 個 14 層 Core ML model、FP16 audio graphs、1024-position cache、30 秒。與 FP16 起點相比：smoke warm latency −30%、磁碟 4.4→2.8 GB；整機 J／音訊秒 −27% 是 7-partition LUT8 對 FP16 的同場次量測，p14 對 7-partition 差 1–4%。held-out 品質門檻在 7-partition LUT8 上跑，p14 的 400 句輸出逐 token 相同、繼承結論。ANE 硬體忙碌 90.1% 轉錄牆鐘（trace 綁定檔在 `artifacts/telemetry/p14-lut8-g32-attribution.json`）。
 - 已量測但未併入 plugin 的 ANE+GPU 路線：MLX 上的 0.6B 草稿 + ANE T16 驗證，200 句逐 token 與 serial 相同，selection 2.0–2.25×、整機能耗 −38%，但 wired 記憶體 6.4 GB、GPU 不再空閒、依賴 transformers 5（與 `convert` 群組衝突，獨立環境 `experiments/mlx_draft/`）。是否作為選配功能是產品決定，見 results 的 ANE+GPU 節。
 - 已否定的路線（都有量測）：4-bit palette（速度與 8-bit 相同、品質超門檻）、linear int4 per-block（慢一倍）、動態 `slice_update`／`scatter` KV 寫入（此 macOS 27 beta 無法載入）、grouped／SDPA／fused 投影、28 層單一 partition（無法建立 execution plan）、SenseVoice 草稿。
@@ -21,9 +21,10 @@
 
 ```sh
 export UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface"
-uv sync --project std_qwen3asr_ane --frozen --group convert
+uv sync --project std_qwen3asr_ane --frozen --group convert --python 3.12
 std_qwen3asr_ane/.venv/bin/pytest -q std_qwen3asr_ane/tests
-std_qwen3asr_ane/.venv/bin/standard-asr compliance run std-qwen3asr-ane/1.7b   # 預設 bundle（p14），不需環境變數
+std_qwen3asr_ane/.venv/bin/standard-asr compliance run std-qwen3asr-ane/1.7b   # entry-point 檢查，與 bundle 無關
+std_qwen3asr_ane/.venv/bin/qwen3-asr-ane transcribe artifacts/evaluation/smoke/qwen_official_en.wav   # 走預設 bundle（p14）
 experiments/workflows/candidate_gate.sh lut8-g32     # smoke latency + selection quality（門檻所用的 7-partition bundle）
 experiments/workflows/final_gate.sh lut8-g32         # held-out、能耗、記憶體、trace、串流、compliance
 experiments/workflows/p14_and_draft_evidence.sh      # p14 證據 + GPU 草稿實驗（需 experiments/mlx_draft/ 環境）
@@ -32,4 +33,4 @@ experiments/workflows/closing_checks.sh              # 草稿 trace、CLI 重建
 
 其他 bundle 用 `STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR=<bundle>` 指定。
 
-硬體量測必須序列、期間不做轉換。`artifacts/` 不在版本控制內；bundle 之間以 hash 證明相同的 weight.bin 為 hard link，不要原地修改任何 weight.bin。
+gate 腳本需要 gitignored 的輸入：`artifacts/evaluation/smoke/`、`artifacts/evaluation/silu-validation/{selection-200,heldout-200,diagnostic-*,heldout-*}.jsonl`（FP16 與官方 baseline 要先重跑）與 `artifacts/source/Qwen3-ASR-1.7B-MLX-4bit`；產生方式在 [research/evaluation-plan.md](research/evaluation-plan.md)。GPU 草稿實驗另需 `experiments/mlx_draft/`（見其 README）與 `artifacts/source/Qwen3-ASR-0.6B`。硬體量測必須序列、期間不做轉換。`artifacts/` 不在版本控制內；bundle 之間以 hash 證明相同的 weight.bin 為 hard link，不要原地修改任何 weight.bin。

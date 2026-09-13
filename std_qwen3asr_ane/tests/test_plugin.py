@@ -171,7 +171,9 @@ def test_missing_artifact_reports_build_action_without_side_effects(tmp_path: Pa
     assert requirement.state == "missing"
     assert requirement.location == root
     assert requirement.required_actions[0].kind == "provide_artifacts"
-    assert "qwen3-asr-ane build --output" in requirement.required_actions[0].message
+    message = requirement.required_actions[0].message
+    assert "qwen3-asr-ane build --token-batch-size 16" in message
+    assert "qwen3-asr-ane compile" in message and str(root) in message
     assert not requirement.can_acquire_now
     assert not requirement.may_acquire_during_inference
     assert engine.artifact_status() == report

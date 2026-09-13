@@ -2,37 +2,39 @@
 
 An experimental Standard ASR 0.2 plugin that runs Qwen3-ASR 1.7B through Core ML with GPU excluded (`CPU_AND_NE`). Its offline converter targets ANE for the audio encoder, all decoder layers, and vocabulary projection. Tokenization, mel preprocessing, embedding lookup, and generation control run on CPU.
 
-Install from the development workspace with uv:
+Install from the development workspace with uv. Run every command from the
+workspace root (the directory containing `std_qwen3asr_ane/`), because bundles
+are resolved relative to the working directory at `artifacts/`:
 
 ```sh
-uv sync --python 3.12 --group convert
-uv run --group convert qwen3-asr-ane download
-uv run --group convert qwen3-asr-ane build --token-batch-size 16 --layers-per-partition 14
-uv run standard-asr compliance run std-qwen3asr-ane/1.7b
-uv run qwen3-asr-ane transcribe recording.wav
+export UV_CACHE_DIR="$PWD/.cache/uv"
+export HF_HOME="$PWD/.cache/huggingface"
+uv sync --project std_qwen3asr_ane --python 3.12 --group convert
+uv run --project std_qwen3asr_ane --group convert qwen3-asr-ane download
+uv run --project std_qwen3asr_ane --group convert qwen3-asr-ane build \
+  --token-batch-size 16 --layers-per-partition 14 --output artifacts/qwen3-asr-1.7b-fp16
+uv run --project std_qwen3asr_ane --group convert qwen3-asr-ane compress \
+  --source artifacts/qwen3-asr-1.7b-fp16 --output artifacts/qwen3-asr-1.7b-lut8 --bits 8
+uv run --project std_qwen3asr_ane qwen3-asr-ane compile \
+  --source artifacts/qwen3-asr-1.7b-lut8 --output artifacts/qwen3-asr-1.7b
+uv run --project std_qwen3asr_ane qwen3-asr-ane transcribe recording.wav
 ```
 
-Commands resolve `artifacts/` relative to the working directory. Use `--source`, `--output`, and `--model-dir` when running from another directory. Initial compilation uses macOS-managed caches and can take longer than warm model loading. Conversion needs the `convert` dependency group; runtime does not require PyTorch.
+`download` fetches the pinned checkpoint revision. `build` converts it to FP16
+Core ML models (two 14-layer decoder models by default, 16-token graph, 1024
+cache positions). `compress` palettizes the decoder and vocabulary-head weights
+to 8 bits per group of 32 output channels; the audio graphs stay FP16, and the
+command refuses to write a bundle whose weights were not actually compressed.
+`compile` produces stable `.mlmodelc` paths so later process launches reuse
+device specialization (first load about 35 seconds, later loads under 2
+seconds). Only `download` and `build` need the `convert` dependency group;
+runtime does not require PyTorch. Every bundle starts as `unvalidated`; the
+measured quality and hardware evidence in the workspace's research notes apply
+to the bundles they name.
 
-Compress the decoder and vocabulary head weights before compiling. The audio
-graphs stay FP16; activations, KV caches and the verified activation expressions
-are unchanged. On the Apple Neural Engine every fast compressed format costs the
-same time per weight element, so the bit width only changes memory and DRAM
-traffic; measured latency and quality for each width are in the workspace's
-research notes, and a compressed bundle starts as `unvalidated`:
-
-```sh
-uv run qwen3-asr-ane compress --source artifacts/qwen3-asr-1.7b --output artifacts/qwen3-asr-1.7b-lut8 --scheme palette --bits 8 --group-size 32
-```
-
-Prepare stable compiled paths once to reduce loading cost on later process launches:
-
-```sh
-uv run qwen3-asr-ane compile --source artifacts/qwen3-asr-1.7b --output artifacts/qwen3-asr-1.7b-compiled
-uv run qwen3-asr-ane transcribe recording.wav --model-dir artifacts/qwen3-asr-1.7b-compiled
-```
-
-The command creates a separate local bundle and retains source hashes. Its first model load still performs device specialization; subsequent loads can reuse that work. On the development M5 Max, the same FP16 bundle loaded in 36.3 seconds initially and 1.54 seconds in the next process. This preparation improves repeated startup; it does not accelerate warm token generation.
+If the bundle is missing, `qwen3-asr-ane transcribe` and the Standard ASR CLI
+print the preparation sequence above; `STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR`
+or `--model-dir` selects another bundle.
 
 ```python
 from standard_asr import discover_models

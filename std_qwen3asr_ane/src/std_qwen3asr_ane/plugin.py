@@ -146,7 +146,16 @@ class Qwen3ASREngine(EngineBase):
         self._inference_lock = Lock()
 
     def _build_command(self) -> str:
-        return f"qwen3-asr-ane build --output {shlex.quote(str(self.config.model_dir))}"
+        """The documented preparation sequence ending at the configured bundle path."""
+        target = self.config.model_dir
+        fp16 = shlex.quote(f"{target}-fp16")
+        lut8 = shlex.quote(f"{target}-lut8")
+        return (
+            "qwen3-asr-ane download && "
+            f"qwen3-asr-ane build --token-batch-size 16 --output {fp16} && "
+            f"qwen3-asr-ane compress --source {fp16} --output {lut8} --bits 8 && "
+            f"qwen3-asr-ane compile --source {lut8} --output {shlex.quote(str(target))}"
+        )
 
     def _artifact_requirements(
         self, context: ArtifactContext
