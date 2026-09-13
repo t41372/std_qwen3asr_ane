@@ -1,14 +1,15 @@
 # Qwen3-ASR 1.7B on the Apple Neural Engine
 
-`std_qwen3asr_ane/` is a [Standard ASR](https://github.com/standard-voice/standard_asr) protocol 0.2 plugin (`std-qwen3asr-ane/1.7b`) that runs the official Qwen3-ASR 1.7B checkpoint through Core ML with the GPU excluded (`CPU_AND_NE`). The audio encoder, all 28 decoder layers and the vocabulary projection execute on the Neural Engine; tokenization, mel features, embedding lookup and greedy control run on the CPU. In an isolated Instruments trace of two warm utterances the ANE was active for 85.6% of transcription wall time, with one ANE interval per expected Core ML call and no GPU intervals for the process.
+`std_qwen3asr_ane/` is a [Standard ASR](https://github.com/standard-voice/standard_asr) protocol 0.2 plugin (`std-qwen3asr-ane/1.7b`) that runs the official Qwen3-ASR 1.7B checkpoint through Core ML with the GPU excluded (`CPU_AND_NE`). The audio encoder, all 28 decoder layers and the vocabulary projection execute on the Neural Engine; tokenization, mel features, embedding lookup and greedy control run on the CPU. In an isolated Instruments trace of two warm utterances the ANE was active for 90.1% of transcription wall time with the default bundle (85.6% with the seven-partition variant), with one ANE interval per expected Core ML call and no GPU intervals for the process.
 
 Measured results, methods and limits are in [research/results-2026-09-13.md](research/results-2026-09-13.md). The chronological decision record, including failed routes, is [research/technical-blog.md](research/technical-blog.md); the acceptance gates were fixed in [research/preregistration-2026-09-13.md](research/preregistration-2026-09-13.md) before any candidate result existed. The previous handoff is preserved in [HANDOFF.md](HANDOFF.md).
 
 ## What it is and is not
 
-- Default bundle: FP16 audio graphs, 8-bit palettized decoder and vocabulary head (per group of 32 output channels), 1024-position decoder cache, 30 seconds per utterance. Quality on 200 held-out LibriSpeech and FLEURS-zh utterances is within the pre-registered margin of the FP16 conversion and of the official FP32 model.
-- Compared with the FP16 ANE conversion this workspace started from, the default bundle is about 27% faster and uses about 27% less whole-machine energy per second of audio.
+- Default bundle: FP16 audio graphs, 8-bit palettized decoder and vocabulary head (per group of 32 output channels) split into two 14-layer Core ML models, 1024-position decoder cache, 30 seconds per utterance. Quality on 200 held-out LibriSpeech and FLEURS-zh utterances is within the pre-registered margin of the FP16 conversion and of the official FP32 model.
+- Compared with the FP16 ANE conversion this workspace started from, the default bundle is about 30% faster on the two smoke utterances. Whole-machine energy per second of audio was measured 27% lower for the seven-partition 8-bit bundle in the same session as FP16; the two-model default measured within 1–4% of that bundle in a separate session. The quality gate was run on the seven-partition bundle; the default produces byte-identical greedy output on all 400 evaluated utterances.
 - On an M5 Max, every GPU path (MLX-Audio, official PyTorch on MPS) has lower latency than the ANE path: the GPU's memory bandwidth is several times the ANE's effective weight bandwidth, and greedy decoding is bandwidth-bound. The ANE path draws about a third of the average power, uses far less process memory, and leaves the GPU free. See the results file before choosing a backend.
+- An ANE+GPU variant was measured but is not part of the plugin: a Qwen3-ASR-0.6B draft on the GPU through MLX with exact verification on the ANE produced token-identical output on 200 evaluated utterances at about 2× the serial speed and 38% less whole-machine energy, at the cost of a second model in memory, a busy GPU and a dependency conflict (`mlx-audio` needs transformers 5). It lives under `experiments/` with its own lock file; see the results file.
 - Not supported: word timestamps, diarization, candidate-language restriction, long-form rollover. These are declared as unsupported and the framework rejects or degrades such requests before inference.
 
 ## Run from this workspace
@@ -51,7 +52,8 @@ Streaming follows the official cumulative-audio prefix-rollback strategy with re
 - `experiments/evaluate.py`: fixed corpora, official FP32, MPS and Core ML backends, one normalizer, paired bootstrap comparisons.
 - `experiments/benchmark_mlx.py`: MLX-Audio BF16, 8-bit and 4-bit references in an isolated environment.
 - `experiments/benchmark_energy.py` with `experiments/power_v2/`: equal-work whole-machine energy from the SMC `PSTR` estimate; `sudo powermetrics` was not available.
-- `experiments/trace_ane.py`: Instruments Neural Engine intervals per compiled model.
+- `experiments/trace_ane.py` and `experiments/bind_trace_evidence.py`: Instruments Neural Engine and GPU intervals per compiled model, bound to the bundle, placement report and workload by hash.
+- `experiments/benchmark_mlx_draft.py` with `experiments/mlx_draft/`: the GPU-draft speculative experiment (separate environment).
 - `experiments/probe_decoder_floor.py`: the per-step cost decomposition that motivated 8-bit palettization and larger partitions.
 - `experiments/workflows/`: the serial candidate and final gate scripts.
 
