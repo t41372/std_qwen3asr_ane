@@ -1,63 +1,58 @@
-# Qwen3-ASR 1.7B on Apple Neural Engine
+# Qwen3-ASR 1.7B on the Apple Neural Engine
 
-This workspace develops a Standard ASR 0.2 plugin and a reproducible Core ML conversion pipeline for the official Qwen3-ASR 1.7B checkpoint.
+`std_qwen3asr_ane/` is a [Standard ASR](https://github.com/standard-voice/standard_asr) protocol 0.2 plugin (`std-qwen3asr-ane/1.7b`) that runs the official Qwen3-ASR 1.7B checkpoint through Core ML with the GPU excluded (`CPU_AND_NE`). The audio encoder, all 28 decoder layers and the vocabulary projection execute on the Neural Engine; tokenization, mel features, embedding lookup and greedy control run on the CPU. Isolated Instruments traces show ANE hardware busy for about 86% of transcription wall time.
 
-The latest continuation state is in [HANDOFF.md](HANDOFF.md). The original speed, energy and broad quality objectives remain unfinished. The user is preparing a different workflow; experimental draft-model investigations are not part of the default plugin.
+Measured results, methods and limits are in [research/results-2026-09-13.md](research/results-2026-09-13.md). The chronological decision record, including failed routes, is [research/technical-blog.md](research/technical-blog.md); the acceptance gates were fixed in [research/preregistration-2026-09-13.md](research/preregistration-2026-09-13.md) before any candidate result existed. The previous handoff is preserved in [HANDOFF.md](HANDOFF.md).
 
-Read the [measured results](research/results.md) for the held-out quality comparison, ANE hardware evidence, streaming limits, and MLX timing comparison. In this workspace, `artifacts/qwen3-asr-1.7b` points to the final corrected bundle; historical variants remain available for reproduction.
+## What it is and is not
 
-**Research preview.** The protocol adapter passes Standard ASR main compliance, including a real transcription result. The corrected baseline's frontend, encoder, decoder partitions, and vocabulary head execute with `CPU_AND_NE`; Instruments traces confirm ANE predictions for every major component. A later whole-machine SMC measurement found the baseline used more energy than MLX for equal work. See the handoff for measurement scope and current limitations.
-
-The maintained Python package is in [`std_qwen3asr_ane/`](std_qwen3asr_ane/). Experiments, reference checkouts, model artifacts, and research notes stay outside the package. The [chronological technical blog](research/technical-blog.md) records decisions and failures; [prior art](research/prior-art.md) distinguishes existing Core ML ports from demonstrated ANE inference.
+- Default bundle: FP16 audio graphs, 8-bit palettized decoder and vocabulary head (per group of 32 output channels), 1024-position decoder cache, 30 seconds per utterance. Quality on 200 held-out LibriSpeech and FLEURS-zh utterances is within the pre-registered margin of the FP16 conversion and of the official FP32 model.
+- Compared with the FP16 ANE conversion this workspace started from, the default bundle is about 27% faster and uses about 27% less whole-machine energy per second of audio.
+- On an M5 Max, every GPU path (MLX-Audio, official PyTorch on MPS) has lower latency than the ANE path: the GPU's memory bandwidth is several times the ANE's effective weight bandwidth, and greedy decoding is bandwidth-bound. The ANE path draws about a third of the average power, uses far less process memory, and leaves the GPU free. See the results file before choosing a backend.
+- Not supported: word timestamps, diarization, candidate-language restriction, long-form rollover. These are declared as unsupported and the framework rejects or degrades such requests before inference.
 
 ## Run from this workspace
 
-Requirements: Apple Silicon, macOS 15 or later, Python 3.12, uv, and sufficient space for the official checkpoint and converted models. Development is being measured on an M5 Max with 64 GB and macOS 27.0. Other machines are not yet validated.
+Requirements: Apple Silicon, macOS 15 or later, Python 3.12, uv. Development and every measurement used an M5 Max with 64 GB on macOS 27.0; other machines are not yet validated.
 
 ```sh
 export UV_CACHE_DIR="$PWD/.cache/uv"
 export HF_HOME="$PWD/.cache/huggingface"
 uv sync --project std_qwen3asr_ane --python 3.12 --group convert
 uv run --project std_qwen3asr_ane --group convert qwen3-asr-ane download
-uv run --project std_qwen3asr_ane --group convert qwen3-asr-ane build --token-batch-size 16
+uv run --project std_qwen3asr_ane --group convert qwen3-asr-ane build \
+  --token-batch-size 16 --layers-per-partition 14 --output artifacts/qwen3-asr-1.7b-fp16
+uv run --project std_qwen3asr_ane --group convert qwen3-asr-ane compress \
+  --source artifacts/qwen3-asr-1.7b-fp16 --output artifacts/qwen3-asr-1.7b-lut8 --bits 8
+uv run --project std_qwen3asr_ane qwen3-asr-ane compile \
+  --source artifacts/qwen3-asr-1.7b-lut8 --output artifacts/qwen3-asr-1.7b
 uv run --project std_qwen3asr_ane qwen3-asr-ane transcribe recording.wav
 ```
 
-The Git dependency follows Standard ASR **main**, while `uv.lock` pins the exact commit used. An explicit `uv lock --upgrade-package standard-asr` is required to adopt a newer main revision.
-
-Conversion is offline after downloading the source. It produces a bundle with a manifest, mel filters, tokenizer, CPU embedding lookup, frontend, encoder, seven stateful decoder partitions, and a split vocabulary projection. Inference defaults to `CPU_AND_NE`; GPU is not an allowed compute device. This still allows CPU fallback, so placement and hardware measurements remain separate evidence.
+Conversion is offline after the download. `compress` refuses to write a bundle whose weights were not actually compressed, and `compile` produces stable `.mlmodelc` paths so later process launches reuse the device specialization (first load about 35 seconds, later loads under 2 seconds). Every bundle starts as `unvalidated`; the quality and hardware evidence in the results file applies to the bundles it names.
 
 ```sh
 uv run --project std_qwen3asr_ane standard-asr list
 uv run --project std_qwen3asr_ane standard-asr compliance run std-qwen3asr-ane/1.7b
-uv run --project std_qwen3asr_ane standard-asr status std-qwen3asr-ane/1.7b
 uv run --project std_qwen3asr_ane --group convert pytest std_qwen3asr_ane/tests -q
 ```
-
-An application uses the ordinary Standard ASR API:
 
 ```python
 from standard_asr import discover_models
 
-engine = discover_models().create(
-    "std-qwen3asr-ane/1.7b",
-    model_dir="artifacts/qwen3-asr-1.7b",
-)
+engine = discover_models().create("std-qwen3asr-ane/1.7b", model_dir="artifacts/qwen3-asr-1.7b")
 print(engine.transcribe("recording.wav").text)
 ```
 
-The default historical bundle has a 30-second limit. A separate 4096-position bundle now passes a real 180-second streaming diagnostic; its exact path and reproduction command are in the handoff. Streaming retains only exactly unchanged decoder prompt prefixes, and provides revisable partials, a closed final, cancellation and bounded backpressure. The default plugin still uses serial greedy Qwen3-ASR decoding. Quantization and speculative decoding are experiments; timestamps, diarization and indefinite long-form stitching remain unfinished. A model instance serializes inference because its Core ML resources are shared.
+Streaming follows the official cumulative-audio prefix-rollback strategy with revisable partials, a closed final, cancellation, backpressure, language selection and a context prompt of at most 128 tokens. A larger-context bundle (4096 positions, 180 seconds) exists for streaming experiments; its per-token cost is higher because attention over the cache scales with cache length. See [research/standard-asr-features.md](research/standard-asr-features.md).
 
-See the [feature matrix and streaming examples](research/standard-asr-features.md). Streaming follows the official cumulative-audio/prefix-rollback strategy; it does not claim a persistent causal audio encoder. The [input-lifetime investigation](research/coreml-input-lifetime.md) records the native crash caught by real streaming tests and the fixed-buffer mitigation.
+## Reproducing the measurements
 
-## Evidence and reproducibility
+- `experiments/evaluate.py`: fixed corpora, official FP32, MPS and Core ML backends, one normalizer, paired bootstrap comparisons.
+- `experiments/benchmark_mlx.py`: MLX-Audio BF16, 8-bit and 4-bit references in an isolated environment.
+- `experiments/benchmark_energy.py` with `experiments/power_v2/`: equal-work whole-machine energy from the SMC `PSTR` estimate; `sudo powermetrics` was not available.
+- `experiments/trace_ane.py`: Instruments Neural Engine intervals per compiled model.
+- `experiments/probe_decoder_floor.py`: the per-step cost decomposition that motivated 8-bit palettization and larger partitions.
+- `experiments/workflows/`: the serial candidate and final gate scripts.
 
-- [ANE validation methods](research/ane-validation.md): anticipated compute plans versus actual execution, timing, and energy evidence.
-- `experiments/probe_decoder.py` and `experiments/validate_decoder_layer.py`: a real-weight decoder layer conversion and causal KV-cache parity check.
-- `experiments/scan_decoder_numerics.py`: all 28 decoder layers against the official reference, including FP16 ranges and final token agreement.
-- `experiments/prepare_corpus.py` and `experiments/evaluate.py`: fixed, hashed public corpora, official FP32 comparison, language-specific scoring, and paired bootstrap intervals.
-- `experiments/run_validation.py`: bounded subprocesses, evidence fingerprints, strict resume, and separate protocol, quality, placement, execution, and energy gates.
-- `experiments/trace_ane.py`: public Instruments recording and machine-readable ANE hardware intervals, with model attribution kept separate from background activity.
-- `artifacts/` contains generated models and machine-readable local results; it is excluded from version control.
-
-Core ML compilation uses macOS-managed temporary files and caches. Power telemetry requires privileges on the development machine; unavailable measurements are reported as unavailable, never as zero energy. No benchmark currently justifies a public claim that this engine saves power. Quality conclusions must name the measured corpus and confidence interval.
+`artifacts/` holds generated models and machine-readable results and is not under version control.

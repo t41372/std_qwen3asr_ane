@@ -7,7 +7,7 @@ Install from the development workspace with uv:
 ```sh
 uv sync --python 3.12 --group convert
 uv run --group convert qwen3-asr-ane download
-uv run --group convert qwen3-asr-ane build --token-batch-size 16
+uv run --group convert qwen3-asr-ane build --token-batch-size 16 --layers-per-partition 14
 uv run standard-asr compliance run std-qwen3asr-ane/1.7b
 uv run qwen3-asr-ane transcribe recording.wav
 ```
