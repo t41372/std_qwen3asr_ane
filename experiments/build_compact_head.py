@@ -19,17 +19,16 @@ class CompactHead(LanguageHead):
         normalized = self.norm(hidden_states)
         values, indices = [], []
         for head in self.heads:
-            value, index = torch.max(
-                head(normalized).reshape(1, -1), dim=-1, keepdim=True
-            )
+            value, index = torch.max(head(normalized).squeeze(2), dim=1)
             values.append(value)
             indices.append(index.to(torch.int32))
-        return torch.cat(values, dim=-1), torch.cat(indices, dim=-1)
+        return torch.stack(values, dim=1), torch.stack(indices, dim=1)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--token-batch-size", type=int, default=1)
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(args.output)
@@ -48,7 +47,7 @@ def main():
         head.weight.data.copy_(embedding[offset : offset + count, :, None, None])
         offset += count
     del embedding
-    example = torch.zeros(1, config["hidden_size"], 1, 1)
+    example = torch.zeros(1, config["hidden_size"], 1, args.token_batch_size)
     model = ct.convert(
         torch.jit.trace(module, example, check_trace=False),
         inputs=[

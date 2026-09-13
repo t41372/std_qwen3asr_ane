@@ -70,9 +70,14 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--realtime", action="store_true")
     parser.add_argument("--silence", action="store_true")
+    parser.add_argument("--chunk-seconds", type=float, default=1.0)
+    parser.add_argument("--max-new-tokens", type=int, default=256)
     args = parser.parse_args()
     engine = discover_models(strict=True).create(
-        "std-qwen3asr-ane/1.7b", model_dir=args.model_dir, stream_chunk_seconds=1.0
+        "std-qwen3asr-ane/1.7b",
+        model_dir=args.model_dir,
+        stream_chunk_seconds=args.chunk_seconds,
+        max_new_tokens=args.max_new_tokens,
     )
     report = {}
     try:

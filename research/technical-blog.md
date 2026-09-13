@@ -169,3 +169,43 @@ SMC active control的30秒閒置／四CPU負載／恢復平均12.18／53.95／15
 開始投影權重palettization，保留FP16 activation、穩定SiLU、相同KV布局。為避免對數億重複BF16來源值跑昂貴的隨機k-means，利用FP16最多65536個bit patterns建立完整histogram，以元素出現次數作Lloyd更新權重，再按實際FP16 LUT精度重算nearest assignment。這仍優化全部權重的MSE，沒有抽樣，也不等於端到端品質保證。四層weight.bin由384MiB降到8-bit的193MiB；實際T1中位数2.747ms，比FP16約快28%。6-bit約2.877ms，顯示bit更少不自動更快。4-bit仍在測量。
 
 使用者進一步要求各benchmark都勝過MLX，實作改由主代理為主，研究子代理只處理有界資料查核。量化還有品質與頻寬上限，因此開始研究0.6B作draft、1.7B作最終verifier的精確greedy speculative decoding：一次搬入1.7B權重可驗證多個token，只有被1.7B驗證的前綴才能輸出。這是待實作與測試的方向，絕不把draft結果直接冒充1.7B。
+
+## 2026-09-12 — 17：三分鐘真實串流與 speculative decoding 首輪結果
+
+轉出4096-position、T16的完整target decoder，encoder及七個decoder的相同weight.bin仍可按hash共享。新artifact明確宣告180秒，沒有改寫原始30秒artifact的歷史。Stable compiled bundle也只共享完全同hash的immutable weights，避免為每個context bucket浪費數GiB磁碟。
+
+長音訊diagnostic串接19個完整LibriSpeech句子並加入短間隔，保留每段來源hash／已知起迄，補尾靜音至恰好180秒。這不是獨立的自然長音訊語料。10秒更新一次的真實ANE串流完整處理180秒並送出closed→done，event/result compliance通過，沒有詞級deletion或insertion。串流為6/436 WER，batch為7/436；文字不完全相同，不能把batch equality当作所有streaming策略的必要語義。MLX同音訊也是7/436，warm約4.737秒。ANE stream整個快速feed replay耗76.767秒，這包含18次累積辨識，不與一次batch的4.737秒直接相比。較大cache第一次模型載入32.939秒，explicit close22.7ms。資料在artifacts/evaluation/long-stream-180-en。
+
+更小位元數沒有持續改善：4-bit四層T1為2.712ms，與8-bit的2.747ms接近，尚未作量化品質評測。Grouped attention透過Q head與O projection column重排，把16個獨立head改成2個batch；Torch因果輸出與KV parity通過，但真機3.984ms不如原始3.838ms。原生CoreML SDPA亦約3.832ms，沒有實質改善。14層partition約12.845ms，換算28層25.69ms，只比七個四層26.87ms略快；其8-bit palette版14層9.059ms，仍不足以獨自解決差距。Compact T1 LM head保持60個真實hidden states的所有greedy選擇，4.789ms對原始4.838ms，改善很小；下一步改成T16一次求多個位置的最大值，這才可能攤薄詞彙權重讀取。
+
+已在ANE轉出官方0.6B draft（revision 5eb144179a02acc5e5ba31e748d22b0cf3e303b0），兩者tokenizer與prompt IDs實際一致。新增純算法greedy verifier及79個拒絕位置／EOS／預算／stale suffix測試。採held-target-token策略，所以T16最多搭配15個draft proposals，不犯off-by-one。拒絕後只輸出target correction，之後覆寫相同絕對位置；full acceptance則補上draft尚未消耗的最後proposal，避免KV中留下缺口。
+
+第一個K7真機版本兩語全部與serial target逐token完全相同。英文47個proposals接受42個、7次target verification、52次draft step，但總時間約2.11–2.13秒，比serial2.05–2.08秒略慢；中文也是約0.552秒對0.500秒。0.6B本身仍有28層與相同16Q/8KV heads，ANE上其逐token代價沒有隨parameter數等比例下降。高acceptance並不保證端到端加速，必須改善draft與prefill、批次LM head，再量完整流程。
+
+## 2026-09-12 — 18：批次 LM head、狀態轉移與理想下界
+
+T16 compact vocabulary head在60個真實hidden states維持全部greedy選擇，扣掉各自第一call後，每個有效token成本由4.567ms降至0.344ms。將它接入K7 verifier後，英文完整流程約1.923秒、中文0.520秒，仍沒有勝过MLX。再加入T64 prefill並用公開MLState read/write轉移112MiB級的cache，英文約1.716秒、中文0.512秒；copy本身約63–67ms，吃掉短句的prefill收益。
+
+接著補做更具體的state compatibility小實驗。早先的toy multifunction載入失敗並不能回答兩個真實static模型能否接受相同MLState。使用相同四層decoder的T16與T1模型，在8-token prefill後，將原state直接交給T1；另一條對照則先public read/write copy到T1新state。後續5個位置的output max_abs均0、所有key/value arrays逐元素完全一致。這只證明此host上的這對模型；尚未整合成正式runtime策略或廣泛驗證全部shape／partition。
+
+為判斷值得找更快draft與否，另作明確標示的oracle診斷：ground-truth文字經TranscriptDraft提出候選，T64 target搭配T16 head驗證，與原T16 serial target逐token一致。英文target驗證下界約0.400秒、中文0.127秒。這**不包含取得草稿的成本**，不是可交付引擎性能，也不能宣稱已勝過MLX。它只表明把逐token draft換成更便宜的整段文字提案可能值得研究。
+
+Q/K/V與gate/up projection合併通過Torch因果輸出及KV parity，但真機四層T1約3.981ms，沒有改善，因此仍未啟用。
+
+## 2026-09-12 — 19：SenseVoice 草稿支線未成功
+
+研究找到非自回歸SenseVoiceSmall公開CoreML產物，嘗試以其CTC全文當草稿，由1.7B保留最終token決定權。它只涵蓋中、英、日、韓、粵五語，不是1.7B移植必需的部分，也尚未進入正式插件。
+
+固定取得FluidInference conversion revision 0e0bf30bfc6836f182ccd1d89984df919c949e26，保留upstream model attribution與自訂FunASR model license。原始frontend配置／CMVN來自FunAudioLLM/SenseVoiceSmall revision 3847d57b6bdf2dd8875cb1508d2af43d80a16bf7。用kaldi-native-fbank1.22.3＋NumPy重建CPU frontend，共同feature範圍max_abs4.53e-5、relative L2 2.11e-6。公開frontend在某些長度多一個尾端LFR row，原因是固定右補7個frame後stride6，沒有裁至upstream的ceil(T/6)。這個差異被記錄，沒有隱藏。
+
+真正阻塞在encoder：英文T256輸出shape正確，但6,514,300個logits全部nonfinite。Integer input控制值與dtype已確認保留。預期compute plan的2207個已知device ops全為CPU，2928個unknown，所有estimated costs缺失；因此不能因為指定CPU_AND_NE或外部模型卡就斷言它在此host跑ANE。
+
+infrequent-reshape hint、將-inf mask改為-10000、提高LayerNorm epsilon及repeat-padding均未修復。只改MIL固定輸入形狀卻沿用原enum metadata的獨立process因default-shape不一致NSException abort；之後用public compiler產生一致fixed I/O metadata，再保留原MIL arithmetic及weight bytes的128/256/512版本能load，但仍全NaN。這些是假說被否定／尚未解決的結果，沒有證明某個特定算子或driver是根因。
+
+這條支線花了太多時間。應更早設定停止條件，避免未先確認關鍵device/shape路徑就持續修第三方模型。所有失敗資產與程式留在實驗區，不作為可用backend。
+
+## 2026-09-12 — 20：依使用者的新方向收束並交接
+
+使用者詢問進度及SenseVoice與目標的關係，表示正在整理更好的工作方式，允許先收束、寫handoff，之後使用乾淨上下文繼續。停止擴大研究，整理原始資料、預設引擎和未啟用的實驗邊界。
+
+收尾通過289個tests、修改檔案的Ruff、Standard ASR main CLI compliance及正式引擎的真實中文辨識。SenseVoice、oracle、quantization和speculative prototypes均未進入default plugin；預設model alias也沒有指向未驗證的新候選。工作狀態與重現命令寫入HANDOFF.md，原始速度／能耗／廣泛品質目標仍未完成，沒有再次標記完成。

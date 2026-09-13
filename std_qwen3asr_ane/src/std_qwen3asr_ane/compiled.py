@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import platform
 import subprocess
 from datetime import UTC, datetime
@@ -57,11 +58,26 @@ def compile_bundle(source: Path, output: Path) -> dict:
         }
         started = perf_counter()
         ct.models.utils.compile_model(str(path), destination_path=str(destination))
+        shared = []
+        for binary in destination.rglob("weight.bin"):
+            compiled_digest = digest(binary)
+            originals = [
+                name
+                for name, value in hashes.items()
+                if name.endswith("/weight.bin") and value == compiled_digest
+            ]
+            if len(originals) == 1:
+                # Models are immutable artifacts. Share only payloads proven
+                # byte-identical, never compiler metadata or specialization data.
+                binary.unlink()
+                os.link(path / originals[0], binary)
+                shared.append(str(binary.relative_to(destination)))
         record = {
             "source": relative,
             "compiled": compiled,
             "compile_seconds": perf_counter() - started,
             "source_sha256": hashes,
+            "shared_immutable_weights": shared,
         }
         records.append(record)
         mapping[relative] = compiled

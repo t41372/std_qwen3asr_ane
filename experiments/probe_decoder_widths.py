@@ -22,6 +22,8 @@ def main():
     parser.add_argument("--layers", type=int, default=4)
     parser.add_argument("--enumerated", action="store_true")
     parser.add_argument("--grouped-attention", action="store_true")
+    parser.add_argument("--fused-attention", action="store_true")
+    parser.add_argument("--fused-projections", action="store_true")
     args = parser.parse_args()
     source = Path("artifacts/source/Qwen3-ASR-1.7B")
     config = json.loads((source / "config.json").read_text())["thinker_config"][
@@ -38,6 +40,12 @@ def main():
     if args.grouped_attention:
         for layer in module.layers:
             layer.enable_grouped_attention()
+    if args.fused_attention:
+        for layer in module.layers:
+            layer.fused_attention = True
+    if args.fused_projections:
+        for layer in module.layers:
+            layer.fuse_projections()
     convert_partition(
         module,
         config,

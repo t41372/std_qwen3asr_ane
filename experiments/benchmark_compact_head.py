@@ -43,30 +43,45 @@ def main():
         compact = PersistentInputModel(
             ct.models.MLModel(str(args.model), compute_units=ct.ComputeUnit.CPU_AND_NE)
         )
+        width = compact.get_spec().description.input[0].type.multiArrayType.shape[-1]
         elapsed, mismatches = {"original": [], "compact": []}, []
-        for index, hidden in enumerate(recorder.hidden):
+        expected_tokens = []
+        for hidden in recorder.hidden:
             data = {"hidden_states": hidden}
             start = perf_counter()
             original = recorder.model.predict(data)
             elapsed["original"].append(perf_counter() - start)
-            start = perf_counter()
-            selected = compact.predict(data)
-            elapsed["compact"].append(perf_counter() - start)
             logits = np.concatenate(
                 [original[f"logits_{i}"].reshape(-1) for i in range(len(original))]
             )
-            expected = int(np.argmax(logits))
-            chunk = int(np.argmax(selected["max_values"]))
-            actual = chunk * 8192 + int(selected["max_indices"].reshape(-1)[chunk])
-            if actual != expected:
-                mismatches.append(
-                    {"index": index, "expected": expected, "actual": actual}
-                )
+            expected_tokens.append(int(np.argmax(logits)))
+        for offset in range(0, len(recorder.hidden), width):
+            block = recorder.hidden[offset : offset + width]
+            padded = np.zeros((1, runtime.embeddings.shape[1], 1, width), np.float32)
+            padded[..., : len(block)] = np.concatenate(block, axis=-1)
+            start = perf_counter()
+            selected = compact.predict({"hidden_states": padded})
+            elapsed["compact"].append(perf_counter() - start)
+            values = selected["max_values"].reshape(1, -1, width)
+            indices = selected["max_indices"].reshape(1, -1, width)
+            for row in range(len(block)):
+                chunk = int(np.argmax(values[0, :, row]))
+                actual = chunk * 8192 + int(indices[0, chunk, row])
+                expected = expected_tokens[offset + row]
+                if actual != expected:
+                    mismatches.append(
+                        {"index": offset + row, "expected": expected, "actual": actual}
+                    )
         report = {
             "states": len(recorder.hidden),
+            "token_batch_size": width,
             "mismatches": mismatches,
             "median_seconds": {
                 name: float(np.median(values[1:])) for name, values in elapsed.items()
+            },
+            "seconds_per_useful_token_after_first_call": {
+                "original": sum(elapsed["original"][1:]) / (len(recorder.hidden) - 1),
+                "compact": sum(elapsed["compact"][1:]) / (len(recorder.hidden) - width),
             },
         }
         args.output.write_text(json.dumps(report, indent=2) + "\n")

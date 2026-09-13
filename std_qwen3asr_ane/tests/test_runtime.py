@@ -509,6 +509,47 @@ def test_close_preserves_borrowed_buffers_until_native_reference_release():
     assert reference() is None
 
 
+def test_integer_control_inputs_preserve_exact_dtype_and_value():
+    class NativeModel:
+        def predict(self, data):
+            assert data["length"].dtype == np.int32
+            assert int(data["length"][0]) == 2**24 + 1
+            return {"length": data["length"]}
+
+    model = PersistentInputModel(NativeModel())
+    result = model.predict({"length": np.array([2**24 + 1], np.int32)})
+    assert int(result["length"][0]) == 2**24 + 1
+    with pytest.raises(ValueError, match="dtype changed"):
+        model.predict({"length": np.array([1], np.int64)})
+    model.close()
+
+
+def test_shared_model_close_retires_all_handles_before_input_owners():
+    owners, live_during_release = [], []
+
+    class NativeModel:
+        def __init__(self):
+            self.borrowed = []
+
+        def predict(self, data):
+            self.borrowed.append(data["x"])
+            owners.append(weakref.ref(data["x"]))
+            return {"out": np.zeros(1)}
+
+        def __del__(self):
+            live_during_release.append(all(owner() is not None for owner in owners))
+            self.borrowed.clear()
+
+    native = NativeModel()
+    models = [PersistentInputModel(native), PersistentInputModel(native)]
+    del native
+    models[0].predict({"x": np.zeros(3)})
+    models[1].predict({"x": np.zeros(5)})
+    PersistentInputModel.close_many(models)
+    assert live_during_release == [True]
+    assert all(owner() is None for owner in owners)
+
+
 def test_retirement_polling_backs_off_without_busy_wait(monkeypatch):
     import std_qwen3asr_ane.runtime as module
 

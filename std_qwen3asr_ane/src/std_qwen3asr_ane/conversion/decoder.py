@@ -82,6 +82,24 @@ class DecoderLayer(nn.Module):
         self.up_proj = projection(width, config["intermediate_size"])
         self.down_proj = projection(config["intermediate_size"], width)
         self.grouped_attention = False
+        self.fused_attention = False
+        self.fused_projections = False
+
+    def fuse_projections(self) -> None:
+        """Combine Q/K/V and gate/up projections after weight loading and reordering."""
+        if self.fused_projections:
+            return
+        self.qkv_proj = projection(
+            self.q_proj.in_channels, self.q_proj.out_channels + 2 * self.k_proj.out_channels
+        )
+        self.gate_up_proj = projection(self.gate_proj.in_channels, 2 * self.gate_proj.out_channels)
+        with torch.no_grad():
+            self.qkv_proj.weight.copy_(
+                torch.cat([self.q_proj.weight, self.k_proj.weight, self.v_proj.weight])
+            )
+            self.gate_up_proj.weight.copy_(torch.cat([self.gate_proj.weight, self.up_proj.weight]))
+        del self.q_proj, self.k_proj, self.v_proj, self.gate_proj, self.up_proj
+        self.fused_projections = True
 
     def enable_grouped_attention(self) -> None:
         """Reorder projection channels so each attention call batches all KV heads.
@@ -92,6 +110,8 @@ class DecoderLayer(nn.Module):
         """
         if self.grouped_attention:
             return
+        if self.fused_projections:
+            raise RuntimeError("Reorder attention heads before fusing projections")
         group_size = self.heads // self.kv_heads
         order = [
             kv * group_size + group for group in range(group_size) for kv in range(self.kv_heads)
@@ -111,10 +131,21 @@ class DecoderLayer(nn.Module):
     def forward(self, x, cosine, sine, mask, update_mask, key_cache, value_cache):
         normalized = self.input_layernorm(x)
         tokens = x.shape[-1]
-        q = self.q_norm(self.q_proj(normalized).reshape(self.heads, self.head_dim, 1, tokens))
-        k = self.k_norm(self.k_proj(normalized).reshape(self.kv_heads, self.head_dim, 1, tokens))
+        if self.fused_projections:
+            q, k, v = self.qkv_proj(normalized).split(
+                [
+                    self.heads * self.head_dim,
+                    self.kv_heads * self.head_dim,
+                    self.kv_heads * self.head_dim,
+                ],
+                dim=1,
+            )
+        else:
+            q, k, v = self.q_proj(normalized), self.k_proj(normalized), self.v_proj(normalized)
+        q = self.q_norm(q.reshape(self.heads, self.head_dim, 1, tokens))
+        k = self.k_norm(k.reshape(self.kv_heads, self.head_dim, 1, tokens))
         q, k = self._rotary(q, cosine, sine), self._rotary(k, cosine, sine)
-        v = self.v_proj(normalized).reshape(self.kv_heads, self.head_dim, 1, tokens)
+        v = v.reshape(self.kv_heads, self.head_dim, 1, tokens)
         if self.token_batch_size == 1:
             key_cache.mul_(1 - update_mask)
             key_cache.add_(k * update_mask)
@@ -132,19 +163,29 @@ class DecoderLayer(nn.Module):
             attended = self._headwise_attention(q, key_cache, value_cache, mask)
         x = x + self.o_proj(attended)
         normalized = self.post_attention_layernorm(x)
-        return x + self.down_proj(
-            stable_silu(self.gate_proj(normalized)) * self.up_proj(normalized)
-        )
+        if self.fused_projections:
+            gate, up = self.gate_up_proj(normalized).chunk(2, dim=1)
+        else:
+            gate, up = self.gate_proj(normalized), self.up_proj(normalized)
+        return x + self.down_proj(stable_silu(gate) * up)
 
     def _grouped_attention(self, q, key_cache, value_cache, mask):
         outputs = []
         for group in range(self.heads // self.kv_heads):
             queries = q[group * self.kv_heads : (group + 1) * self.kv_heads]
-            scores = torch.matmul(queries.permute(0, 2, 3, 1), key_cache.transpose(1, 2))
-            probabilities = torch.softmax(scores * self.head_dim**-0.5 + mask, dim=-1)
-            attended = torch.matmul(probabilities, value_cache.permute(0, 2, 3, 1))
+            attended = self._attend(queries, key_cache, value_cache, mask)
             outputs.append(attended.permute(0, 3, 1, 2).reshape(1, -1, 1, q.shape[-1]))
         return torch.cat(outputs, dim=1)
+
+    def _attend(self, queries, keys, values, mask):
+        queries = queries.permute(0, 2, 3, 1)
+        values = values.permute(0, 2, 3, 1)
+        if self.fused_attention:
+            return F.scaled_dot_product_attention(
+                queries, keys.permute(0, 2, 3, 1), values, attn_mask=mask
+            )
+        scores = torch.matmul(queries, keys.transpose(1, 2)) * self.head_dim**-0.5
+        return torch.matmul(torch.softmax(scores + mask, dim=-1), values)
 
     def _headwise_attention(self, q, key_cache, value_cache, mask):
         # Each query head uses one KV head without materializing a GQA repeat.
@@ -152,15 +193,9 @@ class DecoderLayer(nn.Module):
         group_size = self.heads // self.kv_heads
         for head in range(self.heads):
             kv = head // group_size
-            scores = (
-                torch.matmul(
-                    q[head : head + 1].permute(0, 2, 3, 1),
-                    key_cache[kv : kv + 1].transpose(1, 2),
-                )
-                * self.head_dim**-0.5
+            attended = self._attend(
+                q[head : head + 1], key_cache[kv : kv + 1], value_cache[kv : kv + 1], mask
             )
-            probabilities = torch.softmax(scores + mask, dim=-1)
-            attended = torch.matmul(probabilities, value_cache[kv : kv + 1].permute(0, 2, 3, 1))
             outputs.append(attended.permute(0, 3, 1, 2))
         return torch.cat(outputs, dim=1)
 

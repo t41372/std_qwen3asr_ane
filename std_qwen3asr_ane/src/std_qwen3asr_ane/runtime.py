@@ -10,6 +10,7 @@ import json
 import sys
 import time
 import weakref
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Thread
@@ -100,13 +101,23 @@ class PersistentInputModel:
         buffers = self._resources["buffers"]
         if not buffers:
             buffers.update(
-                {name: np.empty(value.shape, dtype=np.float32) for name, value in data.items()}
+                {
+                    name: np.empty(
+                        value.shape,
+                        dtype=np.float32
+                        if np.issubdtype(value.dtype, np.floating)
+                        else value.dtype,
+                    )
+                    for name, value in data.items()
+                }
             )
         if buffers.keys() != data.keys():
             raise ValueError("Core ML input names changed after buffer initialization")
         for name, value in data.items():
             if buffers[name].shape != value.shape:
                 raise ValueError(f"Core ML input shape changed for {name}")
+            if not np.issubdtype(value.dtype, np.floating) and buffers[name].dtype != value.dtype:
+                raise ValueError(f"Core ML integer input dtype changed for {name}")
             np.copyto(buffers[name], value)
         submitted = dict(buffers)
         output = (
@@ -121,6 +132,19 @@ class PersistentInputModel:
         _release_model_resources(self._resources, timeout)
         self._finalizer.detach()
 
+    @staticmethod
+    def close_many(models: Sequence[PersistentInputModel], *, timeout: float = 5.0) -> None:
+        """Retire all shared model handles before waiting for their input owners.
+
+        Useful for a finite set of shape-specific buffers sharing one compiled
+        model. Callers must release any additional model handles and serialize
+        this operation with predictions, exactly as for single-model close.
+        """
+        for model in models:
+            model._resources["model"] = None
+        for model in models:
+            model.close(timeout=timeout)
+
 
 DEFAULT_PROMPT = (
     "<|im_start|>system\n<|im_end|>\n"
@@ -134,6 +158,17 @@ class RuntimeResult:
     text: str
     language: str | None
     raw_text: str
+    token_ids: tuple[int, ...]
+    audio_tokens: int
+    timings: dict[str, float]
+
+
+@dataclass(frozen=True)
+class PreparedPrompt:
+    """Encoded prompt and private decoder state, ready for a decoding strategy."""
+
+    hidden: np.ndarray
+    states: tuple
     token_ids: tuple[int, ...]
     audio_tokens: int
     timings: dict[str, float]
@@ -344,7 +379,9 @@ class CoreMLRuntime:
             raise RuntimeError("Audio encoder produced invalid embeddings")
         return result
 
-    def _decode_step(self, hidden: np.ndarray, position: int, states: list) -> np.ndarray:
+    def _decode_step(
+        self, hidden: np.ndarray, position: int, states: list, *, all_rows: bool = False
+    ) -> np.ndarray:
         """Consume up to the graph's fixed token width, returning the last valid row.
 
         Padded query rows see a finite causal mask but never update the KV cache.
@@ -382,6 +419,8 @@ class CoreMLRuntime:
             inputs["hidden_states"] = hidden
         if not np.isfinite(hidden).all():
             raise RuntimeError("Decoder produced non-finite hidden states")
+        if all_rows:
+            return np.ascontiguousarray(hidden[..., :valid_tokens])
         return np.ascontiguousarray(hidden[..., valid_tokens - 1 : valid_tokens])
 
     def _next_token(self, hidden: np.ndarray) -> int:
@@ -422,7 +461,7 @@ class CoreMLRuntime:
             make_states=lambda: [model.make_state() for model in self.decoders],
         )
 
-    def transcribe(
+    def prepare_prompt(
         self,
         samples: np.ndarray,
         *,
@@ -431,7 +470,8 @@ class CoreMLRuntime:
         context: str = "",
         prefix_text: str = "",
         decoder_context: DecoderPrefixContext | None = None,
-    ) -> RuntimeResult:
+    ) -> PreparedPrompt:
+        """Prepare one prompt without selecting or emitting any generated tokens."""
         started = perf_counter()
         samples = np.asarray(samples, dtype=np.float32)
         if samples.ndim != 1 or not samples.size or not np.isfinite(samples).all():
@@ -480,6 +520,40 @@ class CoreMLRuntime:
             prefill = decoder_context.prefill(embeddings, decode_step=self._decode_step, owner=self)
             hidden, states = prefill.hidden, prefill.states
         prefill_done = perf_counter()
+        return PreparedPrompt(
+            hidden=hidden,
+            states=tuple(states),
+            token_ids=tuple(prompt),
+            audio_tokens=audio.shape[-1],
+            timings={
+                "features_seconds": feature_done - started,
+                "prompt_seconds": prompt_done - feature_done,
+                "encoder_seconds": encoder_done - prompt_done,
+                "prefill_seconds": prefill_done - encoder_done,
+            },
+        )
+
+    def transcribe(
+        self,
+        samples: np.ndarray,
+        *,
+        language: str | None,
+        max_new_tokens: int,
+        context: str = "",
+        prefix_text: str = "",
+        decoder_context: DecoderPrefixContext | None = None,
+    ) -> RuntimeResult:
+        started = perf_counter()
+        prepared = self.prepare_prompt(
+            samples,
+            language=language,
+            max_new_tokens=max_new_tokens,
+            context=context,
+            prefix_text=prefix_text,
+            decoder_context=decoder_context,
+        )
+        hidden, states = prepared.hidden, prepared.states
+        generation_started = perf_counter()
         generated = []
         try:
             for index in range(max_new_tokens):
@@ -488,7 +562,9 @@ class CoreMLRuntime:
                     break
                 generated.append(token)
                 if index + 1 < max_new_tokens:
-                    hidden = self._decode_step(self._embedding(token), len(prompt) + index, states)
+                    hidden = self._decode_step(
+                        self._embedding(token), len(prepared.token_ids) + index, states
+                    )
             else:
                 raise RuntimeError(
                     "Generation reached max_new_tokens before EOS; refusing a truncated transcript"
@@ -506,13 +582,10 @@ class CoreMLRuntime:
             language=detected,
             raw_text=raw_text,
             token_ids=tuple(generated),
-            audio_tokens=audio.shape[-1],
+            audio_tokens=prepared.audio_tokens,
             timings={
-                "features_seconds": feature_done - started,
-                "prompt_seconds": prompt_done - feature_done,
-                "encoder_seconds": encoder_done - prompt_done,
-                "prefill_seconds": prefill_done - encoder_done,
-                "generation_seconds": generation_done - prefill_done,
+                **prepared.timings,
+                "generation_seconds": generation_done - generation_started,
                 "total_seconds": finished - started,
             },
         )

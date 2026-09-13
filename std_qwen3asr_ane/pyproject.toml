@@ -23,6 +23,9 @@ qwen3-asr-ane = "std_qwen3asr_ane.cli:main"
 [dependency-groups]
 dev = ["pytest>=8.4", "ruff>=0.12"]
 convert = ["torch>=2.7", "safetensors>=0.5", "huggingface-hub>=0.34", "transformers>=4.57,<5", "qwen-asr>=0.0.6", "jiwer>=4.0"]
+draft = [
+    "kaldi-native-fbank==1.22.3",
+]
 
 [build-system]
 requires = ["hatchling"]

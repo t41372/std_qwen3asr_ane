@@ -12,7 +12,9 @@ from std_qwen3asr_ane.conversion.decoder import DecoderPartition, StableRMSNorm,
 
 
 @pytest.mark.parametrize("width", [1, 4])
-def test_grouped_attention_preserves_causal_outputs_and_kv_states(width):
+@pytest.mark.parametrize("fused", [False, True])
+@pytest.mark.parametrize("fuse_projections", [False, True])
+def test_grouped_attention_preserves_causal_outputs_and_kv_states(width, fused, fuse_projections):
     torch.manual_seed(17)
     config = Qwen3ASRTextConfig(
         hidden_size=64,
@@ -26,6 +28,9 @@ def test_grouped_attention_preserves_causal_outputs_and_kv_states(width):
     grouped = copy.deepcopy(reference)
     for layer in grouped.layers:
         layer.enable_grouped_attention()
+        layer.fused_attention = fused
+        if fuse_projections:
+            layer.fuse_projections()
     with torch.inference_mode():
         for position in (0, width, 2 * width, width):
             x = torch.randn(1, 64, 1, width)
