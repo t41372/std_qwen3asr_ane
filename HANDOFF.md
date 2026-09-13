@@ -23,10 +23,13 @@
 export UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface"
 uv sync --project std_qwen3asr_ane --frozen --group convert
 std_qwen3asr_ane/.venv/bin/pytest -q std_qwen3asr_ane/tests
-STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR=artifacts/qwen3-asr-1.7b-lut8-g32-compiled \
-  std_qwen3asr_ane/.venv/bin/standard-asr compliance run std-qwen3asr-ane/1.7b
-experiments/workflows/candidate_gate.sh lut8-g32     # smoke latency + selection quality
+std_qwen3asr_ane/.venv/bin/standard-asr compliance run std-qwen3asr-ane/1.7b   # 預設 bundle（p14），不需環境變數
+experiments/workflows/candidate_gate.sh lut8-g32     # smoke latency + selection quality（門檻所用的 7-partition bundle）
 experiments/workflows/final_gate.sh lut8-g32         # held-out、能耗、記憶體、trace、串流、compliance
+experiments/workflows/p14_and_draft_evidence.sh      # p14 證據 + GPU 草稿實驗（需 experiments/mlx_draft/ 環境）
+experiments/workflows/closing_checks.sh              # 草稿 trace、CLI 重建 hash 比對、fresh clone 安裝
 ```
+
+其他 bundle 用 `STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR=<bundle>` 指定。
 
 硬體量測必須序列、期間不做轉換。`artifacts/` 不在版本控制內；bundle 之間以 hash 證明相同的 weight.bin 為 hard link，不要原地修改任何 weight.bin。
