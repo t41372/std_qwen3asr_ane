@@ -6,17 +6,17 @@ The model is converted to Core ML, Apple's model runtime, with the GPU excluded.
 
 ## Results
 
-Measured on a MacBook Pro M5 Max (64 GB, macOS 27.0). Latency is the median of 5 warm runs on two official test recordings (English 15 s, Chinese 4 s). Energy is the whole-machine power estimate from the Mac's power controller (`PSTR`), integrated over equal work and divided by seconds of audio; it is not a wall meter. Memory is the system-wide wired memory added by loading the model and transcribing. Quality is paired word error rate (English, LibriSpeech) and character error rate (Chinese, FLEURS) on 200 selection and 200 held-out sentences; "same" means every paired difference from the official FP32 model is within 0.3 percentage points with a confidence interval that includes zero. Methods, limits and raw numbers are in [research/results-2026-09-13.md](research/results-2026-09-13.md) (Chinese); terms are in [research/glossary.md](research/glossary.md).
+Measured on a MacBook Pro M5 Max (64 GB, macOS 27.0). Latency is the median of 5 warm runs on two official test recordings (English 15 s, Chinese 4 s). Energy is the whole-machine power estimate from the Mac's power controller (`PSTR`), integrated over equal work and divided by seconds of audio; it is not a wall meter. Memory is the system-wide wired memory added by loading the model and transcribing. Quality is paired word error rate (English, LibriSpeech) and character error rate (Chinese, FLEURS) on 200 selection and 200 held-out sentences, reported as the difference from the official FP32 model in percentage points. Only "identical" rows produce byte-identical text; every other path differs from the official model on some sentences (punctuation, sentence breaks, number formatting, the occasional word) and the error-rate difference is what is compared. Methods, limits and raw numbers are in [research/results-2026-09-13.md](research/results-2026-09-13.md) (Chinese); terms are in [research/glossary.md](research/glossary.md).
 
-| Path | EN 15 s | ZH 4 s | J per audio second | Wired memory | Quality vs official |
+| Path | EN 15 s | ZH 4 s | J per audio second | Wired memory | Error rate vs official (pp) |
 |---|---:|---:|---:|---:|---|
-| Neural Engine, FP16 (uncompressed) | 2.06 s | 0.50 s | 3.19 | 4.2 GB | same |
-| **Neural Engine, 8-bit (default)** | **1.43 s** | **0.35 s** | **2.34** | **2.6 GB** | same |
-| Neural Engine verify + GPU draft (optional) | 0.61 s | 0.20 s | 38% below default | 6.5 GB | identical tokens to default |
-| GPU, MLX 8-bit | 0.30 s | 0.11 s | pending | 2.5 GB | same |
-| GPU, MLX bf16 | 0.46 s | 0.14 s | 1.99 | 4.1 GB | same |
-| GPU, MLX 4-bit | 0.21 s | 0.09 s | 1.15 | 2.1 GB | Chinese +0.5 to +1.0 pp worse |
-| GPU, official PyTorch (MPS, bf16) | 0.78 s | 0.20 s | not measured | not measured | same |
+| Neural Engine, FP16 (uncompressed) | 2.06 s | 0.50 s | 3.19 | 4.2 GB | −0.24 to +0.05 |
+| **Neural Engine, 8-bit (default)** | **1.43 s** | **0.35 s** | **2.34** | **2.6 GB** | −0.46 to −0.08 |
+| Neural Engine verify + GPU draft (optional) | 0.61 s | 0.20 s | 38% below default | 6.5 GB | identical text to default, 400/400 |
+| GPU, MLX 8-bit | 0.30 s | 0.11 s | pending | 2.5 GB | −0.41 to 0.00 |
+| GPU, MLX bf16 | 0.46 s | 0.14 s | 1.99 | 4.1 GB | −0.30 to +0.05 |
+| GPU, MLX 4-bit | 0.21 s | 0.09 s | 1.15 | 2.1 GB | −0.25 to +0.55 (Chinese worse) |
+| GPU, official PyTorch (MPS, bf16) | 0.78 s | 0.20 s | not measured | not measured | −0.22 to 0.00 |
 | CPU, official PyTorch (FP32) | 2.74 s | 0.80 s | not measured | not measured | reference |
 
 What the numbers say:
