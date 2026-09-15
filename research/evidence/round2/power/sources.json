@@ -1,0 +1,47 @@
+{
+  "measurement": "whole-machine SMC PSTR estimate; desktop active; uncalibrated",
+  "records": [
+    {
+      "source": "artifacts/evaluation/round2/energy-short/A1/power.jsonl",
+      "file": "short-A1.jsonl.gz",
+      "uncompressed_sha256": "1efc54a96418d39f56b307c34ff490b7d126c98c0bec9e9ea4fd1a569fc29d7e",
+      "compressed_sha256": "31f4a045dd23cef7e28babb09cff405e1fba76daadb2d5bd4d1645f22e08b501",
+      "samples": 147
+    },
+    {
+      "source": "artifacts/evaluation/round2/energy-short/B1/power.jsonl",
+      "file": "short-B1.jsonl.gz",
+      "uncompressed_sha256": "a24ca58a131f5ddcaf2cc9d470405a3db273a69a10bf94f10807cf25b1f5b0b3",
+      "compressed_sha256": "c03987ce7d6aa7da1ca05c6807e7cace4da118ea08260403f22862862837d8b2",
+      "samples": 123
+    },
+    {
+      "source": "artifacts/evaluation/round2/energy-short/B2/power.jsonl",
+      "file": "short-B2.jsonl.gz",
+      "uncompressed_sha256": "5d1947c1bd791fe7fbedd1c2979f46b1742b6e1baca6bc838e68c93427e7c02c",
+      "compressed_sha256": "8d75b39f45462902be1d7fadd9a1573405bada90b18b2c111e296b95c9f8971c",
+      "samples": 123
+    },
+    {
+      "source": "artifacts/evaluation/round2/energy-short/A2/power.jsonl",
+      "file": "short-A2.jsonl.gz",
+      "uncompressed_sha256": "624800cc126c282553ee6f777fd69bb3b1521cec94a6a1fcafe0e6905628c718",
+      "compressed_sha256": "b64325fa43cb02a22d56b45d2afdcbc1feb154df1c418d5e6784383067dd6751",
+      "samples": 146
+    },
+    {
+      "source": "artifacts/evaluation/round2/idle-target/power.jsonl",
+      "file": "idle-target.jsonl.gz",
+      "uncompressed_sha256": "4d0ff5d57b07b189df8adbfbac317b612cdb17fdf16cd1649fb2e11477d674aa",
+      "compressed_sha256": "b9eff0a4b03f44367463f41f8b34fdc4aaaf764a3901c6960eeba1c88535f571",
+      "samples": 4320
+    },
+    {
+      "source": "artifacts/evaluation/round2/idle-draft/power.jsonl",
+      "file": "idle-draft.jsonl.gz",
+      "uncompressed_sha256": "259d14400b514f0ad25f04bd7782efd8c00f13c7408ea3bdf0901fe58a071c1f",
+      "compressed_sha256": "aa527752663f6312bb17dcd52bd31652402aa4e678876ee4d184970c8fc6a1f8",
+      "samples": 4320
+    }
+  ]
+}

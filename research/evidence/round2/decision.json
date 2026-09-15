@@ -1,0 +1,45 @@
+{
+  "scope": "explicit short-dictation profile on the measured M5 Max; general default unchanged",
+  "checks": {
+    "short-eos-parity": true,
+    "multilingual-paired": true,
+    "robustness-paired": true,
+    "short_latency": true,
+    "short-smoke-kv-parity": true,
+    "robustness-kv-parity": true,
+    "streaming": true,
+    "observed_gross_energy": true,
+    "measured_memory": true,
+    "trace_coverage": true,
+    "idle_wake": true,
+    "power_sampling_coverage": true,
+    "installed_profile": true,
+    "anticipated_placement": true
+  },
+  "short_p50_reduction_fraction": 0.1890707477666803,
+  "short_language_p95_ratios": {
+    "en": 0.809289200541326,
+    "zh": 0.8101813350940974
+  },
+  "process_peak_footprint_bytes": {
+    "baseline": 703858248,
+    "candidate": 607422000
+  },
+  "system_wired_after_inference_mib": {
+    "baseline": 2381.75,
+    "candidate": 2368.546875
+  },
+  "energy_scope": "Observed whole-machine PSTR with desktop activity; not calibrated or ANE-only.",
+  "trace_scope": "Model-label/call-count attribution; zero identified target GPU rows, but 17 GPU rows have unknown process.",
+  "lut6_general_recommended": false,
+  "lut6_reason": "Material additional-language regressions; coarse mixed alternatives do not resolve quality and memory tradeoff.",
+  "tests": {
+    "passed": 339,
+    "log_sha256": "d762bc0a8698f5a597df040f604263633f447cfa95d2f51f23443d369c003c42"
+  },
+  "required_work_remaining": [],
+  "unknown_device_operator_types": [
+    "const",
+    "ios18.constexpr_lut_to_dense"
+  ]
+}

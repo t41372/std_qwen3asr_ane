@@ -1,0 +1,146 @@
+{
+  "source": "artifacts/evaluation/round2/lut6-trace-commands.json",
+  "source_sha256": "b2b12a690ca240dcad405bddb5255e9d1beb3b0adc2608cfa646d3402ebe5630",
+  "data": [
+    {
+      "argv": [
+        "xcrun",
+        "xctrace",
+        "list",
+        "templates"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "xcrun",
+        "xctrace",
+        "list",
+        "instruments"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "xcrun",
+        "xctrace",
+        "record",
+        "--template",
+        "Core ML",
+        "--instrument",
+        "Neural Engine",
+        "--instrument",
+        "GPU",
+        "--time-limit",
+        "60s",
+        "--no-prompt",
+        "--output",
+        "artifacts/evaluation/round2/lut6-trace.trace",
+        "--target-stdout",
+        "artifacts/evaluation/round2/lut6-trace-stdout.log",
+        "--launch",
+        "--",
+        "std_qwen3asr_ane/.venv/bin/python",
+        "experiments/evaluate.py",
+        "--backend",
+        "coreml",
+        "--model-dir",
+        "artifacts/qwen3-asr-1.7b-r2-lut6-g32-compiled",
+        "--manifest",
+        "artifacts/evaluation/round2/short-smoke.jsonl",
+        "--output",
+        "artifacts/evaluation/round2/lut6-trace-workload.jsonl",
+        "--max-new-tokens",
+        "128",
+        "--warmups",
+        "0",
+        "--repeats",
+        "1"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "xcrun",
+        "xctrace",
+        "export",
+        "--input",
+        "artifacts/evaluation/round2/lut6-trace.trace",
+        "--toc",
+        "--output",
+        "artifacts/evaluation/round2/lut6-trace-toc.xml"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "xcrun",
+        "xctrace",
+        "export",
+        "--input",
+        "artifacts/evaluation/round2/lut6-trace.trace",
+        "--xpath",
+        "/trace-toc/run[@number=\"1\"]/data/table[@schema=\"ane-hw-intervals-internal\"]",
+        "--output",
+        "artifacts/evaluation/round2/lut6-trace-ane-hw-intervals.xml"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "xcrun",
+        "xctrace",
+        "export",
+        "--input",
+        "artifacts/evaluation/round2/lut6-trace.trace",
+        "--xpath",
+        "/trace-toc/run[@number=\"1\"]/data/table[@schema=\"coreml-os-signpost\"]",
+        "--output",
+        "artifacts/evaluation/round2/lut6-trace-coreml-os-signpost.xml"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "xcrun",
+        "xctrace",
+        "export",
+        "--input",
+        "artifacts/evaluation/round2/lut6-trace.trace",
+        "--xpath",
+        "/trace-toc/run[@number=\"1\"]/data/table[@schema=\"metal-gpu-intervals\"]",
+        "--output",
+        "artifacts/evaluation/round2/lut6-trace-metal-gpu-intervals.xml"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "xcrun",
+        "xctrace",
+        "export",
+        "--input",
+        "artifacts/evaluation/round2/lut6-trace.trace",
+        "--xpath",
+        "/trace-toc/run[@number=\"1\"]/data/table[@schema=\"time-info\"]",
+        "--output",
+        "artifacts/evaluation/round2/lut6-trace-time-info.xml"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "xcrun",
+        "xctrace",
+        "export",
+        "--input",
+        "artifacts/evaluation/round2/lut6-trace.trace",
+        "--xpath",
+        "/trace-toc/run[@number=\"1\"]/data/table[@schema=\"os-signpost\" and (@category=\"coreml\" or @category=\"DynamicTracing\")]",
+        "--output",
+        "artifacts/evaluation/round2/lut6-trace-coreml-raw-signpost.xml"
+      ],
+      "exit_code": 0
+    }
+  ]
+}

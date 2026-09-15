@@ -1,0 +1,19 @@
+{
+  "frozen_at": "2026-09-14T04:42:49.629538+00:00",
+  "git_commit": "f06265652615bd2ba329b8e037746efbedee574d",
+  "profile": "short-dictation",
+  "candidate_path": "artifacts/qwen3-asr-1.7b-r2-short-p14-lut8-compiled",
+  "candidate_manifest_sha256": "23b1098b0ffd245558b94d30794b93a15b3481bd90061ed9e90b6b105104e3d2",
+  "baseline_manifest_sha256": "6fb52962b00b709994915b857551c92a13074b2223e31de94ac3b73b284fa43f",
+  "max_new_tokens": 128,
+  "eligibility": "duration_seconds <= 12, selected only from metadata before held-out inference",
+  "heldout_parent_manifest_sha256": "ac8e791a54b01e46ff1590652b1744a90018d5f7efc0e99753c61e767bfe6f8e",
+  "heldout_manifest_sha256": "53e33b890fc406f2ea65c5ba170e5ad72f0449585efd5102cfb9ee45fef63721",
+  "heldout_count": 137,
+  "by_language": {
+    "en": 75,
+    "zh": 62
+  },
+  "selection_comparison_sha256": "9bf5b98d12fe5d1f2323d7f10bd6564a2319c92a2e9f56dc46bd81ba61a7313c",
+  "policy": "Do not retune this candidate based on the held-out result."
+}

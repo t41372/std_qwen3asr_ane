@@ -1,0 +1,23 @@
+{
+  "frozen_at": "2026-09-14T05:55:34.836779+00:00",
+  "git_commit": "0738597155960ca9542279007ee73337e1ef5a66",
+  "candidate_path": "artifacts/qwen3-asr-1.7b-r2-lut6-g32-compiled",
+  "candidate_manifest_sha256": "cfdbc004b567b27293afb6bd80c1215fff41a810c7eca163af4c7b4f4e3e210b",
+  "baseline_manifest_sha256": "6fb52962b00b709994915b857551c92a13074b2223e31de94ac3b73b284fa43f",
+  "purpose": "optional memory-saving general bundle; not a default speed candidate",
+  "max_new_tokens": 256,
+  "heldout_manifest_sha256": "2cb3213f194074843a02b9a29cd5a5c72a2cc70ddd8e3e5133e95ead399409f9",
+  "heldout_count": 200,
+  "by_language": {
+    "en": 100,
+    "zh": 100
+  },
+  "selection_comparison_sha256": "0933d2ba52e6fb812719b16ce7b0d4efb9dc5442b26743f1e502343925d981b2",
+  "heldout_selection": "rows 401–500 of the same nested metadata-balanced 30-second source ordering, per language",
+  "disjoint_from": [
+    "old regression 400",
+    "previous heldout 200",
+    "calibration 200"
+  ],
+  "policy": "Do not tune this candidate using the final held-out result. Promotion still requires repeated memory, full regression, held-out quality and latency gates."
+}

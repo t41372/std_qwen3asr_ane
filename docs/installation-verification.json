@@ -1,0 +1,141 @@
+{
+  "plugin_commit_tested": "a671338e5a40781e13c93bd2731f9df60c49aa17",
+  "standard_asr_commit": "8b124e8c8fbcb6b0382792262bee05595b895440",
+  "environment": {
+    "python": "3.12.11",
+    "platform": "Apple Silicon macOS"
+  },
+  "installation": {
+    "local_path_tool_install": true,
+    "git_tool_install": true,
+    "git_transport": "local file URL at committed snapshot",
+    "public_remote_updated": false,
+    "native_standard_asr_cli": true,
+    "wheel_and_sdist": [
+      {
+        "file": "std_qwen3asr_ane-0.1.0a1-py3-none-any.whl",
+        "bytes": 79143,
+        "entries": 37,
+        "worker_included": true,
+        "research_and_caches_excluded": true
+      },
+      {
+        "file": "std_qwen3asr_ane-0.1.0a1.tar.gz",
+        "bytes": 63777,
+        "entries": 37,
+        "worker_included": true,
+        "research_and_caches_excluded": true
+      }
+    ]
+  },
+  "acquisition": {
+    "general_fresh_pull_ready": true,
+    "short_git_install_offline_conversion_ready": true,
+    "gpu_draft_extra_pull_ready": true,
+    "no_manual_conversion_environment_required": true
+  },
+  "runtime": {
+    "general_offline_two_working_directories": true,
+    "short_git_install_offline_transcription": true,
+    "general_rebuild_weight_payloads_equal": true,
+    "general_two_fixture_texts_equal": true,
+    "short_fixture_text_matches_general": true,
+    "gpu_draft_english_text_matches_serial": true,
+    "real_stream_event_compliance": true,
+    "real_stream_result_compliance": true
+  },
+  "tests": {
+    "passed": 355,
+    "warnings": 25,
+    "ruff": "passed",
+    "shell_syntax": "passed"
+  },
+  "limits": [
+    "VCS install used the local committed Git repository; no push or public-branch installation was performed.",
+    "Runtime smoke checks cover two batch fixtures and one Chinese stream; they do not prove general recognition quality.",
+    "No new ANE-versus-MLX performance claim is made by this installation repair.",
+    "Current interface compliance is not a prediction about future compliance suites."
+  ],
+  "local_evidence_sha256": {
+    "artifacts/installation-check/install.log": "d293bf1224d5dc2ceb94faf7ed5107f97e8887cab44ed1a4e9739731f4f500f1",
+    "artifacts/installation-check/install-draft.log": "d337d585800176372d090e040e60597127bff88ce692b762db3da2b15d1ff841",
+    "artifacts/installation-check/install-vcs.log": "93a76adf72cfa101f4f5fe6a09d62dd0e95e066e5e1ca37a92ae9bfb2a01fe94",
+    "artifacts/installation-check/pull.json": "9da84a614bbf4ace11c734a4d535a5046a2de59365e3c878724c132a3d9c3e11",
+    "artifacts/installation-check/pull-draft.json": "2f92d1f78cfeafc137ecb20c223b1102d388281232a6c16fcedbb9fdf3c455e3",
+    "artifacts/installation-check/pull-short-vcs.json": "1e85ae954196ff38bb964ae2439445619a486676ba2d4b35b00021675c89b8ea",
+    "artifacts/installation-check/offline/results.json": "003a1a776cfb52e7735d18016958b436f850eba3673ae73979455d4145ed883b",
+    "artifacts/installation-check/runtime-smoke.json": "583d0c0d47ab250aa1bc3c865721ebccca4c63aa9c53d15b362fb2d8b502a7f7",
+    "artifacts/installation-check/draft-en.json": "e6b1be937b226172bb5fa8fdcd98382c7e7e978ef46b663bfac8a0b5f43826f1",
+    "artifacts/installation-check/tests-final.log": "89945744b0fdbb1b22f963c72ae4ba54f523a68ada7daf580bb97705589c75a2",
+    "artifacts/installation-check/compliance-vcs.log": "d45d50808f19c56dc52d50d710ae362655707359fb884f32e8e397e6dffb62dd",
+    "artifacts/installation-check/shared-core-resolution.log": "92604ac64a1dbcdba8518f581b5a0a5d6c0d836e5b382a5f868d97298f8b8f49",
+    "artifacts/installation-check/vcs-short-offline/results.json": "eeff60f9b271c98c49e107dbd64b5a4041ec067f29a2f033fb312123febb5a25"
+  },
+  "historical_verification": true,
+  "history_note": "The top-level installation and runtime results refer to the pre-rewrite commit. Merge-review checks are recorded separately in merge_readiness.",
+  "merge_readiness": {
+    "base_commit": "6b94702e4e8b184b3adab84bd5bc6dfc34403992",
+    "original_tip": "0a5cf03d9615c6156c3b3202a5edf58fe857a39d",
+    "backup_branch": "backup/ane-optimization-round2-before-rewrite-20260914",
+    "product_commit": "147e4488325d8ccb784db1c39125cf74acb85e32",
+    "evaluation_commit": "2ec8537964decb1d3c1a4394d238a46a60e6bcbb",
+    "tests": {
+      "python312": {
+        "passed": 371,
+        "skipped": 0,
+        "warnings": 25,
+        "log_sha256": "c147c7159dd0ef39ed5fc2e0353b9cd4103e2f6ef47dcd38f02499ef152db38b"
+      },
+      "python313": {
+        "passed": 371,
+        "skipped": 0,
+        "warnings": 25,
+        "log_sha256": "aba78b2f49af1659ac7540a5fcf3e5f9063f0f64748e830225ec5c1ef9b428ee"
+      },
+      "product_checkout": {
+        "passed": 359,
+        "skipped": 2,
+        "warnings": 27,
+        "log_sha256": "826c7410c8bdeeb966a1c38e6aef70a4476d1053809a614156772cd90d6565fb"
+      },
+      "evaluation_checkout": {
+        "passed": 369,
+        "skipped": 2,
+        "warnings": 25,
+        "log_sha256": "4004f586f85567955068d5a96fb456e14445007e018f5b011347637c47626a37"
+      }
+    },
+    "checkout_skips": "Two tests need model fixtures absent from a clean Git checkout; the populated workspace ran them on both Python versions.",
+    "git_install_commit": "2ec8537964decb1d3c1a4394d238a46a60e6bcbb",
+    "git_install_python": "3.13.11",
+    "offline_runtime": {
+      "passed": true,
+      "recordings": 2,
+      "text_matches_initial_installation": true
+    },
+    "worker_error_classification": {
+      "exit_code": 2,
+      "expected": "action_required; CLI exit 2",
+      "passed": true
+    },
+    "static_checks": {
+      "ruff": "passed",
+      "experiment_fatal_lint": "passed",
+      "shell_syntax": "passed",
+      "swift6_typecheck": "passed",
+      "diff_check": "passed"
+    },
+    "ci": {
+      "configured": true,
+      "remote_run_performed": false,
+      "runner": "macos-15",
+      "python": [
+        "3.12",
+        "3.13"
+      ]
+    },
+    "preserved_readme_blob": "7cd7f94b63788babfa48150bb34d0dd9ff5410b3",
+    "preserved_research_evidence_tree": "dd062338f7f51166af6262bf8b1a193fc00ec146",
+    "push_or_merge_performed": false
+  }
+}
