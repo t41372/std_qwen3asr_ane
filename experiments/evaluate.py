@@ -218,7 +218,7 @@ def make_backend(args: argparse.Namespace) -> Backend:
                 )
             timings = getattr(result, "timings", None)
             if isinstance(timings, dict) and hasattr(result, "token_ids"):
-                timings = {**timings, "token_ids": list(result.token_ids)}
+                timings = {**timings, "token_ids": list(result.token_ids), "raw_text": result.raw_text}
             return result.text, result.language, timings
 
         def close():
@@ -433,12 +433,14 @@ def run(args: argparse.Namespace) -> int:
                 audio = None
                 audio_error = None
                 audio_hash = None
+                audio_prepare_started = time.perf_counter()
                 try:
                     audio, audio_hash = audio_samples(Path(item["audio_path"]))
                     if item.get("audio_sha256") and item["audio_sha256"] != audio_hash:
                         raise ValueError("Audio SHA256 does not match manifest")
                 except Exception as exc:  # noqa: BLE001 — malformed audio must remain in results.
                     audio_error = f"{type(exc).__name__}: {exc}"
+                audio_prepare_seconds = time.perf_counter() - audio_prepare_started
                 language = (
                     item.get("language") if args.language_mode == "manifest" else None
                 )
@@ -452,6 +454,7 @@ def run(args: argparse.Namespace) -> int:
                         "language_mode": args.language_mode,
                         "audio_path": item["audio_path"],
                         "audio_sha256": audio_hash,
+                        "audio_prepare_seconds": audio_prepare_seconds,
                         "audio_seconds": len(audio) / 16000
                         if audio is not None
                         else None,
@@ -492,6 +495,8 @@ def run(args: argparse.Namespace) -> int:
                                 timings = dict(timings)
                                 if "token_ids" in timings:
                                     record["token_ids"] = timings.pop("token_ids")
+                                if "raw_text" in timings:
+                                    record["raw_text"] = timings.pop("raw_text")
                                 record["backend_timings"] = timings
                         except Exception as exc:  # noqa: BLE001 — backend failures are benchmark data.
                             record["seconds"] = time.perf_counter() - begin

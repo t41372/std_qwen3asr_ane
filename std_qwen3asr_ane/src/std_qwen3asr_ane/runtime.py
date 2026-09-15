@@ -10,11 +10,12 @@ import json
 import sys
 import time
 import weakref
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Thread
 from time import perf_counter
+from typing import TypeVar
 
 import numpy as np
 from tokenizers import Tokenizer
@@ -36,6 +37,7 @@ from .streaming_context import DecoderPrefixContext
 # Last-resort owners during interpreter teardown, when starting cleanup threads
 # is forbidden. Explicit close is the supported, observable shutdown path.
 _SHUTDOWN_RETAINED_RESOURCES: list[dict] = []
+_Consumed = TypeVar("_Consumed")
 
 
 def _release_model_resources(resources: dict, timeout: float | None = None) -> None:
@@ -99,6 +101,30 @@ class PersistentInputModel:
         return getattr(model, name)
 
     def predict(self, data: dict[str, np.ndarray], *, state=None) -> dict[str, np.ndarray]:
+        output = self._predict_outputs(data, state=state)
+        # Never hand native-backed output storage to downstream model calls or
+        # retain it across idle periods. Each returned array owns its allocation.
+        return {name: np.array(value, copy=True, order="C") for name, value in output.items()}
+
+    def predict_consumed(
+        self,
+        data: dict[str, np.ndarray],
+        consumer: Callable[[dict[str, np.ndarray]], _Consumed],
+        *,
+        state=None,
+    ) -> _Consumed:
+        """Consume native outputs synchronously without an additional deep copy.
+
+        The consumer must return only owned values and must not retain output
+        arrays, call another prediction, or close this model. The caller keeps
+        the same serial execution lane through prediction and consumption.
+        Inputs remain owned by this wrapper even when the consumer raises.
+        """
+        output = self._predict_outputs(data, state=state)
+        return consumer(output)
+
+    def _predict_outputs(self, data: dict[str, np.ndarray], *, state=None):
+        """Prepare persistent inputs and return outputs to the immediate caller."""
         model = self._resources["model"]
         if model is None:
             raise RuntimeError("Core ML model is closed")
@@ -124,12 +150,9 @@ class PersistentInputModel:
                 raise ValueError(f"Core ML integer input dtype changed for {name}")
             np.copyto(buffers[name], value)
         submitted = dict(buffers)
-        output = (
+        return (
             model.predict(submitted, state=state) if state is not None else model.predict(submitted)
         )
-        # Never hand native-backed output storage to downstream model calls or
-        # retain it across idle periods. Each returned array owns its allocation.
-        return {name: np.array(value, copy=True, order="C") for name, value in output.items()}
 
     def close(self, *, timeout: float = 5.0) -> None:
         """Stop using the model; raise while preserving buffers if borrowers remain."""
@@ -232,6 +255,25 @@ def parse_output(raw_text: str, language: str | None) -> tuple[str, str | None]:
             detected = normalize_model_language(line.strip()[len("language ") :])
             break
     return text.strip(), detected
+
+
+def logits_token(outputs: dict[str, np.ndarray], *, vocabulary_size: int) -> int:
+    """Scan ordered vocabulary chunks, retaining the first maximum on ties."""
+    offset, best_id, best_value = 0, 0, -float("inf")
+    keys = sorted(outputs, key=lambda name: int(name.removeprefix("logits_")))
+    if keys != [f"logits_{index}" for index in range(len(keys))]:
+        raise RuntimeError("LM head output chunks are not contiguous")
+    for key in keys:
+        logits = np.asarray(outputs[key]).reshape(-1)
+        if logits.size == 0 or not np.isfinite(logits).all():
+            raise RuntimeError("LM head produced empty or non-finite logits")
+        index = int(np.argmax(logits))
+        if float(logits[index]) > best_value:
+            best_value, best_id = float(logits[index]), offset + index
+        offset += logits.size
+    if offset != vocabulary_size:
+        raise RuntimeError("LM head vocabulary does not match the embedding table")
+    return best_id
 
 
 def compact_token(outputs: dict[str, np.ndarray], *, vocabulary_size: int, chunk_size: int) -> int:
@@ -464,6 +506,10 @@ class CoreMLRuntime:
         outputs = self.lm_head.predict(
             {"hidden_states": np.ascontiguousarray(hidden, dtype=np.float16)}
         )
+        return self._select_token(outputs)
+
+    def _select_token(self, outputs: dict[str, np.ndarray]) -> int:
+        """Select an owned scalar while the head output owner is still alive."""
         head_output = self.head_output
         if head_output.get("kind") == "chunk_max":
             return compact_token(
@@ -473,21 +519,7 @@ class CoreMLRuntime:
             )
         if head_output.get("kind") != "logits":
             raise ValueError("Unsupported language head output format")
-        offset, best_id, best_value = 0, 0, -float("inf")
-        keys = sorted(outputs, key=lambda name: int(name.removeprefix("logits_")))
-        if keys != [f"logits_{index}" for index in range(len(keys))]:
-            raise RuntimeError("LM head output chunks are not contiguous")
-        for key in keys:
-            logits = np.asarray(outputs[key]).reshape(-1)
-            if logits.size == 0 or not np.isfinite(logits).all():
-                raise RuntimeError("LM head produced empty or non-finite logits")
-            index = int(np.argmax(logits))
-            if float(logits[index]) > best_value:
-                best_value, best_id = float(logits[index]), offset + index
-            offset += logits.size
-        if offset != self.embeddings.shape[0]:
-            raise RuntimeError("LM head vocabulary does not match the embedding table")
-        return best_id
+        return logits_token(outputs, vocabulary_size=self.embeddings.shape[0])
 
     def _embedding(self, token: int) -> np.ndarray:
         if not 0 <= token < self.embeddings.shape[0]:
@@ -570,6 +602,7 @@ class CoreMLRuntime:
         if audio_index != audio.shape[-1] or not prompt_embeddings:
             raise RuntimeError("Prompt placeholders do not match encoded audio")
         embeddings = np.concatenate(prompt_embeddings, axis=-1)
+        assembly_done = perf_counter()
         reused_tokens = 0
         if decoder_context is None:
             states = [model.make_state() for model in self.decoders]
@@ -592,6 +625,8 @@ class CoreMLRuntime:
                 "prompt_seconds": prompt_done - feature_done,
                 "encoder_seconds": encoder_done - prompt_done,
                 "prefill_seconds": prefill_done - encoder_done,
+                "prompt_assembly_seconds": assembly_done - encoder_done,
+                "decoder_prefill_seconds": prefill_done - assembly_done,
                 "prompt_tokens": len(prompt),
                 "prefill_tokens": len(prompt) - reused_tokens,
                 "reused_prompt_tokens": reused_tokens,
@@ -739,6 +774,7 @@ class CoreMLRuntime:
                 **prepared.timings,
                 "generation_seconds": generation_done - generation_started,
                 "first_token_seconds": first_token_seconds,
+                "text_decode_seconds": finished - generation_done,
                 "head_seconds": head_seconds,
                 "head_calls": head_calls,
                 "generated_tokens": len(generated),

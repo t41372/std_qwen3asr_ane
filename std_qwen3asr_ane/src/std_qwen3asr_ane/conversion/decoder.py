@@ -84,22 +84,32 @@ class DecoderLayer(nn.Module):
         self.grouped_attention = False
         self.fused_attention = False
         self.fused_projections = False
+        self.fused_qkv = False
+        self.fused_gate_up = False
 
-    def fuse_projections(self) -> None:
-        """Combine Q/K/V and gate/up projections after weight loading and reordering."""
-        if self.fused_projections:
-            return
-        self.qkv_proj = projection(
-            self.q_proj.in_channels, self.q_proj.out_channels + 2 * self.k_proj.out_channels
-        )
-        self.gate_up_proj = projection(self.gate_proj.in_channels, 2 * self.gate_proj.out_channels)
-        with torch.no_grad():
-            self.qkv_proj.weight.copy_(
-                torch.cat([self.q_proj.weight, self.k_proj.weight, self.v_proj.weight])
+    def fuse_projections(self, *, attention: bool = True, mlp: bool = True) -> None:
+        """Fuse loaded projections independently, so each change can be measured."""
+        if attention and not self.fused_qkv:
+            self.qkv_proj = projection(
+                self.q_proj.in_channels, self.q_proj.out_channels + 2 * self.k_proj.out_channels
             )
-            self.gate_up_proj.weight.copy_(torch.cat([self.gate_proj.weight, self.up_proj.weight]))
-        del self.q_proj, self.k_proj, self.v_proj, self.gate_proj, self.up_proj
-        self.fused_projections = True
+            with torch.no_grad():
+                self.qkv_proj.weight.copy_(
+                    torch.cat([self.q_proj.weight, self.k_proj.weight, self.v_proj.weight])
+                )
+            del self.q_proj, self.k_proj, self.v_proj
+            self.fused_qkv = True
+        if mlp and not self.fused_gate_up:
+            self.gate_up_proj = projection(
+                self.gate_proj.in_channels, 2 * self.gate_proj.out_channels
+            )
+            with torch.no_grad():
+                self.gate_up_proj.weight.copy_(
+                    torch.cat([self.gate_proj.weight, self.up_proj.weight])
+                )
+            del self.gate_proj, self.up_proj
+            self.fused_gate_up = True
+        self.fused_projections = self.fused_qkv or self.fused_gate_up
 
     def enable_grouped_attention(self) -> None:
         """Reorder projection channels so each attention call batches all KV heads.
@@ -131,7 +141,7 @@ class DecoderLayer(nn.Module):
     def forward(self, x, cosine, sine, mask, update_mask, key_cache, value_cache):
         normalized = self.input_layernorm(x)
         tokens = x.shape[-1]
-        if self.fused_projections:
+        if self.fused_qkv:
             q, k, v = self.qkv_proj(normalized).split(
                 [
                     self.heads * self.head_dim,
@@ -163,7 +173,7 @@ class DecoderLayer(nn.Module):
             attended = self._headwise_attention(q, key_cache, value_cache, mask)
         x = x + self.o_proj(attended)
         normalized = self.post_attention_layernorm(x)
-        if self.fused_projections:
+        if self.fused_gate_up:
             gate, up = self.gate_up_proj(normalized).chunk(2, dim=1)
         else:
             gate, up = self.gate_proj(normalized), self.up_proj(normalized)

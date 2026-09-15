@@ -98,6 +98,7 @@ def main():
                         record.update(
                             seconds=elapsed,
                             hypothesis=result.text,
+                            raw_text=result.raw_text,
                             detected_language=result.language,
                             token_ids=list(result.token_ids),
                             backend_timings=result.timings,

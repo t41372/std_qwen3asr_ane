@@ -121,6 +121,8 @@ def main() -> None:
     report["after_second_pass_mib"] = delta(vm_stat(), before)
     if close is not None:
         close()
+        report["close_succeeded"] = True
+        report["after_close_mib"] = delta(vm_stat(), before)
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report))
 
