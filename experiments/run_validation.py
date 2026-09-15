@@ -90,7 +90,7 @@ def fingerprint(args):
     paths.update((ROOT / "experiments").glob("*.py"))
     paths.update((ROOT / "std_qwen3asr_ane/src").rglob("*.py"))
     paths.update((ROOT / "std_qwen3asr_ane/tests").glob("*.py"))
-    paths.add(ROOT / "std_qwen3asr_ane/uv.lock")
+    paths.add(ROOT / "uv.lock")
     if args.trace_summary:
         paths.add(args.trace_summary)
         provenance = args.trace_summary.with_suffix(".provenance.json")

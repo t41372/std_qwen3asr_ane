@@ -28,7 +28,13 @@ from standard_asr.contract.exceptions import (
     TranscriptionError,
     UnsupportedFeatureError,
 )
-from standard_asr.engine import DIARIZE, ArtifactContext, AudioFormat, RuntimeParams
+from standard_asr.engine import (
+    DIARIZE,
+    ArtifactContext,
+    AudioFormat,
+    RuntimeParams,
+    resolve_cache_dir,
+)
 
 from std_qwen3asr_ane.errors import ModelLimitError
 from std_qwen3asr_ane.languages import LANGUAGE_NAMES, normalize_model_language
@@ -39,6 +45,12 @@ from std_qwen3asr_ane.plugin import (
     create_engine,
     detected_language,
 )
+
+
+@pytest.fixture(autouse=True)
+def mock_acquisition_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mocked transfers set their policy explicitly, independently of the host."""
+    monkeypatch.setenv("STANDARD_ASR_ALLOW_DOWNLOAD", "1")
 
 
 def make_bundle(tmp_path: Path) -> Path:
@@ -168,6 +180,29 @@ def test_config_environment_and_explicit_precedence(monkeypatch: pytest.MonkeyPa
     assert create_engine(model_dir="local/explicit").config.model_dir == Path("local/explicit")
 
 
+def test_short_profile_defaults_preserve_explicit_and_environment_values(monkeypatch):
+    engine = create_engine(profile="short-dictation")
+    assert (
+        engine.config.model_dir
+        == resolve_cache_dir() / "std-qwen3asr-ane/qwen3-asr-1.7b-short-dictation"
+    )
+    assert engine.config.max_new_tokens == 128
+    monkeypatch.setenv("STANDARD_ASR_STD_QWEN3ASR_ANE__MAX_NEW_TOKENS", "200")
+    assert create_engine(profile="short-dictation").config.max_new_tokens == 200
+    assert create_engine(profile="short-dictation", max_new_tokens=64).config.max_new_tokens == 64
+    assert create_engine(profile="short-dictation", model_dir="custom").config.model_dir == Path(
+        "custom"
+    )
+
+
+def test_short_profile_rejects_a_general_bundle_before_native_loading(bundle, fake_runtime):
+    from standard_asr.contract.exceptions import ConfigError
+
+    with pytest.raises(ConfigError, match="cache-512"):
+        create_engine(profile="short-dictation", model_dir=bundle).prepare()
+    assert not fake_runtime.instances
+
+
 def test_missing_artifact_reports_actions_without_side_effects(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -179,20 +214,11 @@ def test_missing_artifact_reports_actions_without_side_effects(
     assert report.readiness == "unavailable"
     assert requirement.state == "missing"
     assert requirement.location == root
-    assert not requirement.can_acquire_now
-    assert requirement.acquisition_blocker == "action_required"
-    assert requirement.required_actions[0].kind == "install_external"
-    message = requirement.required_actions[0].message
-    assert "--group convert" in message and "standard-asr pull std-qwen3asr-ane/1.7b" in message
-    assert "qwen3-asr-ane build --token-batch-size 16" in message
-    assert "qwen3-asr-ane compile" in message and str(root) in message
+    assert requirement.can_acquire_now
+    assert requirement.acquisition_blocker is None
+    assert requirement.required_actions == ()
     assert not requirement.may_acquire_during_inference
     assert engine.artifact_status() == report
-    with pytest.raises(ArtifactAcquisitionError) as caught:
-        engine.acquire_artifacts()
-    assert caught.value.reason == "action_required"
-    assert caught.value.report == report
-    assert caught.value.required_actions == requirement.required_actions
     with pytest.raises(ArtifactUnavailableError) as unavailable:
         engine.prepare()
     assert "standard-asr pull" in (unavailable.value.hint or "")
@@ -579,11 +605,14 @@ def test_draft_requirement_is_reported_and_actionable(
         for r in engine.artifact_status().requirements
         if r.artifact_id == "qwen3-asr-0.6b-gpu-draft"
     ]
-    message = draft[0].required_actions[0].message
-    assert "qwen3-asr-ane build-draft" in message and str(tmp_path / "draft") in message
+    assert draft[0].can_acquire_now and draft[0].required_actions == ()
+    assert engine.artifact_status(ArtifactContext(mode="streaming")).readiness == "ready"
     with pytest.raises(ArtifactUnavailableError) as info:
         engine.transcribe((np.zeros(16000, dtype=np.float32), 16000), RuntimeParams())
-    assert "build-draft" in (info.value.hint or "") and "standard-asr pull" in info.value.hint
+    assert (
+        str(tmp_path / "draft") in (info.value.hint or "")
+        and "standard-asr pull" in info.value.hint
+    )
     draft_bundle(tmp_path / "draft")
     assert engine.artifact_status().readiness == "ready"
     (tmp_path / "draft/Qwen3-ASR-0.6B/model.safetensors").write_bytes(b"")
@@ -619,6 +648,8 @@ def test_draft_path_verifies_on_the_runtime(
 
     fake_runtime.transcribe_speculative = transcribe_speculative
     engine = create_engine(model_dir=bundle, draft_dir=tmp_path / "draft", draft_lookahead=7)
+    engine.prepare()
+    assert not loaded and engine._draft is None
     result = engine.transcribe((np.zeros(16000, dtype=np.float32), 16000), RuntimeParams())
     assert result.text == "fast"
     runtime = fake_runtime.instances[-1]
@@ -646,7 +677,22 @@ def test_missing_mlx_is_a_configuration_error(
     with pytest.raises(ConfigError) as info:
         engine.transcribe((np.zeros(16000, dtype=np.float32), 16000), RuntimeParams())
     assert "gpu-draft" in (info.value.hint or "")
-    assert fake_runtime.instances[-1].closed and engine._runtime is None
+    assert not fake_runtime.instances[-1].closed
+    assert engine._runtime is fake_runtime.instances[-1]
+    assert engine._draft is None
+    engine.close()
+
+
+def test_prepare_target_does_not_require_a_configured_draft(bundle, tmp_path, fake_runtime):
+    engine = create_engine(model_dir=bundle, draft_dir=tmp_path / "missing-draft")
+    assert engine.artifact_status().readiness != "ready"
+    engine.prepare()
+    assert engine._runtime is fake_runtime.instances[-1]
+    assert engine._draft is None
+    with pytest.raises(ArtifactUnavailableError):
+        engine.transcribe((np.zeros(16000, dtype=np.float32), 16000), RuntimeParams())
+    assert not engine._runtime.closed
+    engine.close()
 
 
 def test_pull_runs_the_measured_recipe_in_a_work_directory(
@@ -680,7 +726,7 @@ def test_pull_runs_the_measured_recipe_in_a_work_directory(
         calls.append(("compile", src, output))
         make_bundle(output)
 
-    def fake_draft(target_dir, src, output):
+    def fake_draft(target_dir, src, output, *, draft_source):
         calls.append(("draft", target_dir, src, output))
         draft_bundle(output)
 
@@ -690,22 +736,34 @@ def test_pull_runs_the_measured_recipe_in_a_work_directory(
     monkeypatch.setattr(compiled, "compile_bundle", fake_compile)
     monkeypatch.setattr(draft_build, "build_draft_bundle", fake_draft)
     monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: True)
-    engine = create_engine(model_dir=target, source_dir=source, draft_dir=draft)
+    engine = create_engine(
+        model_dir=target,
+        source_dir=source,
+        draft_dir=draft,
+        draft_source_dir=tmp_path / "draft-source",
+    )
     assert engine.artifact_status().readiness == "unavailable"
     events = []
     report = engine.acquire_artifacts(progress=events.append)
     assert report.readiness == "ready"
-    assert [c[0] for c in calls] == ["download", "build", "compress", "compile", "draft"]
+    assert [c[0] for c in calls] == [
+        "download",
+        "build",
+        "compress",
+        "compile",
+        "download",
+        "draft",
+    ]
     assert calls[0][2] == "7278e1e70fe206f11671096ffdd38061171dd6e5"
     assert calls[1][3] == {"cache_length": 1024, "token_batch_size": 16, "layers_per_partition": 14}
     assert calls[2][3] == {"scheme": "palette", "bits": 8, "group_size": 32}
-    work = target.with_name(target.name + ".work")
-    assert calls[1][2] == work / "fp16" and calls[2][2] == work / "lut8" and calls[3][2] == target
-    assert calls[4][1] == target and calls[4][3] == draft
+    work = calls[1][2].parent
+    assert calls[2][2] == work / "lut8" and calls[3][2] == work / "compiled"
+    assert calls[5][1] == target and calls[5][3].name == "bundle"
     assert not work.exists() and target.is_dir() and draft.is_dir()
     phases = [event.phase for event in events]
     assert phases[0] == "resolving" and phases[-1] == "finalizing"
-    assert phases[1:-1] == ["transferring", "converting", "verifying", "converting"]
+    assert phases[1:-1] == ["transferring", "converting", "verifying", "transferring", "converting"]
     # A second pull has nothing to do; an existing target is never overwritten.
     calls.clear()
     assert engine.acquire_artifacts().readiness == "ready" and calls == []
@@ -713,7 +771,8 @@ def test_pull_runs_the_measured_recipe_in_a_work_directory(
     (draft / "stale").mkdir(parents=True)
     with pytest.raises(ArtifactAcquisitionError) as caught:
         engine.acquire_artifacts()
-    assert caught.value.reason == "action_required" and "move it away" in str(caught.value)
+    assert caught.value.reason == "action_required"
+    assert any("move it away" in action.message for action in caught.value.required_actions)
 
 
 def test_pull_failure_is_structured_and_keeps_no_partial_bundle(
@@ -723,7 +782,9 @@ def test_pull_failure_is_structured_and_keeps_no_partial_bundle(
 
     source = tmp_path / "source"
     source.mkdir()
-    (source / "source.json").write_text("{}")
+    (source / "source.json").write_text(
+        json.dumps({"model_id": MODEL_ID, "revision": "7278e1e70fe206f11671096ffdd38061171dd6e5"})
+    )
 
     def failing_build(src, output, **recipe):
         raise RuntimeError("conversion exploded")
@@ -733,6 +794,30 @@ def test_pull_failure_is_structured_and_keeps_no_partial_bundle(
     engine = create_engine(model_dir=tmp_path / "bundle", source_dir=source)
     with pytest.raises(ArtifactAcquisitionError) as caught:
         engine.acquire_artifacts()
-    assert caught.value.reason == "failed" and "conversion exploded" in str(caught.value)
-    assert "qwen3-asr-ane build" in (caught.value.hint or "")
+    assert caught.value.reason == "failed" and "conversion exploded" in str(caught.value.__cause__)
+    assert "standard-asr pull" in (caught.value.hint or "")
     assert not (tmp_path / "bundle").exists()
+
+
+def test_draft_close_failure_retains_target_until_retry_succeeds(bundle, fake_runtime):
+    engine = create_engine(model_dir=bundle)
+    engine.prepare()
+    runtime = engine._runtime
+    calls = []
+
+    class Draft:
+        def close(self, *, timeout):
+            calls.append("draft")
+            if len(calls) == 1:
+                raise RuntimeError("draft still owns target buffers")
+
+    draft = Draft()
+    engine._draft = draft
+    with pytest.raises(RuntimeError, match="owns target buffers"):
+        engine.close()
+    assert engine._draft is draft
+    assert engine._runtime is runtime
+    assert not runtime.closed
+    engine.close()
+    assert engine._draft is None and engine._runtime is None
+    assert runtime.closed

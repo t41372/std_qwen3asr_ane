@@ -160,6 +160,12 @@ def test_complete_decode_masks_scaling_and_reset(bundle: Path, fake_coreml) -> N
     assert result.language == "en"
     assert result.audio_tokens == 7
     assert result.token_ids == (1,)
+    assert result.timings["generated_tokens"] == 1
+    assert result.timings["eos_token_id"] == runtime.tokenizer.token_to_id("<|im_end|>")
+    assert result.timings["head_calls"] == 2  # Includes the EOS decision.
+    assert result.timings["generation_decoder_calls"] == 1
+    assert 0 < result.timings["first_token_seconds"] <= result.timings["total_seconds"]
+    assert 0 < result.timings["head_seconds"] <= result.timings["generation_seconds"]
     assert all(value >= 0 for value in result.timings.values())
     assert all(model.compute_units == "cpu_and_ne" for model in fake_coreml)
     frontend = next(model for model in fake_coreml if model.role == "frontend")
@@ -169,6 +175,9 @@ def test_complete_decode_masks_scaling_and_reset(bundle: Path, fake_coreml) -> N
     encoder_input = runtime.encoder.calls[0][0]
     assert np.count_nonzero(encoder_input["key_mask"] == 0) == 7
     prompt = build_prompt(runtime.tokenizer, 7, "en")
+    assert result.timings["prompt_tokens"] == len(prompt)
+    assert result.timings["prefill_tokens"] == len(prompt)
+    assert result.timings["reused_prompt_tokens"] == 0
     calls = runtime.decoders[0].calls
     for position, token in enumerate(prompt):
         inputs, state = calls[position]
@@ -188,6 +197,9 @@ def test_complete_decode_masks_scaling_and_reset(bundle: Path, fake_coreml) -> N
     runtime.lm_head.tokens[:] = [runtime.tokenizer.token_to_id("<|im_end|>")]
     second = runtime.transcribe(np.zeros(16000, dtype=np.float32), language=None, max_new_tokens=2)
     assert second.text == ""
+    assert second.timings["head_calls"] == 1
+    assert second.timings["generated_tokens"] == 0
+    assert second.timings["generation_decoder_calls"] == 0
     assert len(runtime.decoders[0].states) == 2
     assert runtime.decoders[0].states[0] is not runtime.decoders[0].states[1]
 

@@ -2,8 +2,8 @@
 # p14 evidence (placement, compliance, streaming, trace) and the speculative path's parity + energy.
 cd "$(dirname "$0")/../.."
 export UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface" HF_HUB_OFFLINE=1
-PY=std_qwen3asr_ane/.venv/bin/python
-DPY=std_qwen3asr_ane/.venv-draft/bin/python
+PY=.venv/bin/python
+DPY=.venv-draft/bin/python
 OUT=artifacts/evaluation/candidates
 SMOKE=artifacts/evaluation/smoke/manifest.jsonl
 SEL=artifacts/evaluation/silu-validation/selection-200.jsonl
@@ -24,7 +24,7 @@ import json; d=json.load(open('$OUT/streaming-p14-en.json')); print('events', le
 $PY experiments/verify_streaming_runtime.py --model-dir $P14 --audio artifacts/evaluation/smoke/qwen_official_zh.wav --output $OUT/streaming-p14-silence.json --silence > $OUT/streaming-p14-silence.log 2>&1
 $PY -c "
 import json; d=json.load(open('$OUT/streaming-p14-silence.json')); print('silence', d['silence'], 'stream_matches_batch', d.get('stream_matches_batch'))"
-STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR=$P14 std_qwen3asr_ane/.venv/bin/standard-asr compliance run std-qwen3asr-ane/1.7b > $OUT/compliance-p14.log 2>&1; echo "compliance exit $?"
+STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR=$P14 .venv/bin/standard-asr compliance run std-qwen3asr-ane/1.7b > $OUT/compliance-p14.log 2>&1; echo "compliance exit $?"
 echo "=== p14 trace $(date +%H:%M:%S) ==="
 $PY experiments/trace_ane.py record --prefix artifacts/telemetry/p14-lut8-g32-isolated --developer-dir /Applications/Xcode.app/Contents/Developer --seconds 60 -- $PWD/$PY $PWD/experiments/evaluate.py --backend coreml --model-dir $PWD/$P14 --manifest $PWD/$SMOKE --output $PWD/artifacts/telemetry/p14-lut8-g32-isolated-workload.jsonl --warmups 0 --repeats 1 > artifacts/telemetry/p14-record.log 2>&1
 $PY experiments/bind_trace_evidence.py --prefix artifacts/telemetry/p14-lut8-g32-isolated --bundle artifacts/qwen3-asr-1.7b-p14-lut8-g32-compiled --placement-dir artifacts/validation/p14-lut8-g32-placement --output artifacts/telemetry/p14-lut8-g32-attribution.json 2>&1 | grep -E "ane_active_share|candidate_prediction|unattributed|target_pid|exit" 
@@ -52,25 +52,4 @@ run_block spec-2 $DPY --backend specdraft --model-dir $P14 --draft-dir $DRAFTB -
 run_block serial-2 $PY --backend coreml --model-dir $P14
 echo "--- sysmem spec"
 $DPY experiments/measure_system_memory.py --backend coreml --model-dir $P14 --draft-dir $DRAFTB --manifest $SMOKE --output artifacts/evaluation/candidates/memory/sysmem-specdraft-q4.json | cut -c1-400
-import json, subprocess, time, sys
-sys.path.insert(0, "experiments")
-from measure_system_memory import vm_stat, delta
-from evaluate import audio_samples, manifest_rows
-from pathlib import Path
-import coremltools as ct
-from benchmark_speculative import DecoderCursor
-from mlx_draft import MLXDraft
-from std_qwen3asr_ane.runtime import CoreMLRuntime, PersistentInputModel
-from std_qwen3asr_ane.speculative import greedy_speculative_decode
-inputs=[audio_samples(Path(r["audio_path"]))[0] for r in manifest_rows(Path("$SMOKE"))]
-time.sleep(5); before=vm_stat()
-runtime=CoreMLRuntime(Path("$P14")); head=PersistentInputModel(ct.models.MLModel("$HEAD", compute_units=ct.ComputeUnit.CPU_AND_NE)); draft=MLXDraft(Path("$DRAFT"), quantize_bits=4)
-loaded=vm_stat()
-for s in inputs:
-    p=runtime.prepare_prompt(s, language=None, max_new_tokens=256); draft.prepare(s, list(p.token_ids))
-    greedy_speculative_decode(DecoderCursor(runtime, p, head), draft, p.hidden, target_position=len(p.token_ids), draft_position=len(p.token_ids), eos_token_ids=frozenset(runtime.eos_token_ids), max_new_tokens=256, lookahead=15)
-after=vm_stat()
-print(json.dumps({"after_load_mib": delta(loaded, before), "after_inference_mib": delta(after, before)}))
-head.close(); runtime.close()
-PYEOF
 echo ALL_P14_DRAFT_DONE

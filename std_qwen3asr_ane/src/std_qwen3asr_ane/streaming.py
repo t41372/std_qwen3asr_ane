@@ -1,6 +1,7 @@
 """Bounded Qwen prefix-rollback streaming with exact decoder-prefix state reuse.
 
-This follows the upstream streaming strategy, not a causal audio encoder cache.
+This follows the upstream streaming strategy, with exact stateless audio-graph
+reuse rather than a causal audio encoder state.
 Every partial is revisable; only an end-of-input closed event is immutable.
 """
 
@@ -76,6 +77,7 @@ class Qwen3ASRSession(TranscriptionSession):
         self._last_result = None
         self._pcm_tail = b""
         self._decoder_context = None
+        self._audio_context = None
 
     async def finish(self) -> None:
         """Flush the final partial audio chunk, then close the utterance."""
@@ -92,6 +94,7 @@ class Qwen3ASRSession(TranscriptionSession):
         # An in-flight native worker keeps its own context reference until it
         # finishes. Do not reset state from the async thread while it is used.
         self._decoder_context = None
+        self._audio_context = None
 
     async def _until_cancelled(self, operation: Awaitable[_T]) -> _T:
         task = asyncio.ensure_future(operation)
@@ -122,7 +125,10 @@ class Qwen3ASRSession(TranscriptionSession):
                 raise _AudioLimit(limit, source)
             if self._decoder_context is None:
                 self._decoder_context = runtime.new_decoder_context()
+            if self._audio_context is None:
+                self._audio_context = runtime.new_audio_context()
             decoder_context = self._decoder_context
+            audio_context = self._audio_context
             prefix = ""
             if self._decode_count >= self.engine.config.stream_unfixed_chunks:
                 prefix = rollback_prefix(
@@ -132,13 +138,15 @@ class Qwen3ASRSession(TranscriptionSession):
                 return runtime.transcribe(
                     samples,
                     language=None if self.params.language == "auto" else self.params.language,
-                    max_new_tokens=self.engine.config.max_new_tokens,
+                    max_new_tokens=self.engine._generation_budget(self.params),
                     context=self.params.prompt or "",
                     prefix_text=prefix,
                     decoder_context=decoder_context,
+                    audio_context=audio_context,
                 )
             except Exception:
                 decoder_context.reset()
+                audio_context.reset()
                 raise
 
     async def _decode(self, samples: np.ndarray) -> TranscriptionEvent:

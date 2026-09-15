@@ -2,7 +2,7 @@
 # Peak memory of "load bundle + transcribe both smoke utterances once" per backend.
 cd "$(dirname "$0")/../.."
 export UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface"
-PY=std_qwen3asr_ane/.venv/bin/python
+PY=.venv/bin/python
 MLXPY=experiments/mlx_reference/.venv/bin/python
 OUT=artifacts/evaluation/candidates/memory
 mkdir -p $OUT

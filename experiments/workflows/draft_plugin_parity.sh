@@ -5,13 +5,13 @@
 set -u
 cd "$(dirname "$0")/../.."
 export UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface"
-DPY=std_qwen3asr_ane/.venv-draft/bin/python
-PY=std_qwen3asr_ane/.venv/bin/python
+DPY=.venv-draft/bin/python
+PY=.venv/bin/python
 OUT=artifacts/evaluation/candidates
 SV=artifacts/evaluation/silu-validation
 DRAFTB=artifacts/qwen3-asr-1.7b-draft
 echo "=== cli transcribe with draft $(date +%H:%M:%S) ==="
-std_qwen3asr_ane/.venv-draft/bin/qwen3-asr-ane transcribe artifacts/evaluation/smoke/qwen_official_zh.wav --draft-dir $DRAFTB | head -5
+.venv-draft/bin/qwen3-asr-ane transcribe artifacts/evaluation/smoke/qwen_official_zh.wav --draft-dir $DRAFTB | head -5
 for set in selection heldout; do
   echo "=== plugin draft $set $(date +%H:%M:%S) ==="
   $DPY experiments/evaluate.py --backend standard --model-key std-qwen3asr-ane/1.7b \

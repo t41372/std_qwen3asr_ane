@@ -247,6 +247,20 @@ class LanguageHead(nn.Module):
         return tuple(head(normalized).reshape(1, -1) for head in self.heads)
 
 
+class CompactLanguageHead(LanguageHead):
+    """Per-chunk winners with exact int32 indices and first-index tie breaking."""
+
+    def forward(self, hidden_states):
+        normalized = self.norm(hidden_states)
+        values, indices = [], []
+        for head in self.heads:
+            value, index = torch.max(head(normalized).squeeze(2), dim=1)
+            values.append(value)
+            # FP16 cannot represent every vocabulary index above 2048.
+            indices.append(index.to(torch.int32))
+        return torch.stack(values, dim=1), torch.stack(indices, dim=1)
+
+
 class SourceWeights:
     """Read only requested tensors from the sharded official checkpoint."""
 

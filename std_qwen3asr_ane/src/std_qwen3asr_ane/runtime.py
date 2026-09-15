@@ -26,7 +26,8 @@ from .audio import (
     convolution_masks,
     log_mel_spectrogram,
 )
-from .bundle import digest
+from .audio_context import AudioPrefixContext
+from .bundle import digest, language_head_output
 from .errors import ModelLimitError
 from .languages import LANGUAGE_NAMES, normalize_model_language
 from .speculative import greedy_speculative_decode
@@ -233,6 +234,31 @@ def parse_output(raw_text: str, language: str | None) -> tuple[str, str | None]:
     return text.strip(), detected
 
 
+def compact_token(outputs: dict[str, np.ndarray], *, vocabulary_size: int, chunk_size: int) -> int:
+    """Select a serial compact-head winner with the full-logits tie convention."""
+    if type(chunk_size) is not int or chunk_size < 1:
+        raise ValueError("Vocabulary chunk size must be a positive integer")
+    if set(outputs) != {"max_values", "max_indices"}:
+        raise RuntimeError("Compact head must return chunk maxima and indices")
+    values, indices = np.asarray(outputs["max_values"]), np.asarray(outputs["max_indices"])
+    chunks = (vocabulary_size + chunk_size - 1) // chunk_size
+    if (
+        values.shape != (1, chunks, 1)
+        or indices.shape != values.shape
+        or not np.isfinite(values).all()
+        or not np.issubdtype(indices.dtype, np.integer)
+    ):
+        raise RuntimeError("Compact head produced invalid shapes, values or index dtype")
+    limits = np.minimum(chunk_size, vocabulary_size - np.arange(chunks) * chunk_size)
+    local = indices[0, :, 0]
+    if np.any(local < 0) or np.any(local >= limits):
+        raise RuntimeError("Compact head index exceeds its vocabulary chunk")
+    # np.argmax chooses the first chunk on ties, just as serial full-logits
+    # selection retains the earlier chunk. The graph uses first-index argmax.
+    best_chunk = int(np.argmax(values[0, :, 0]))
+    return best_chunk * chunk_size + int(local[best_chunk])
+
+
 class CoreMLRuntime:
     """An utterance-local KV cache over persistent, reusable Core ML models.
 
@@ -255,10 +281,11 @@ class CoreMLRuntime:
         self.manifest = json.loads((self.model_dir / "manifest.json").read_text())
         if (
             type(self.manifest.get("schema_version")) is not int
-            or self.manifest.get("schema_version") != 1
+            or self.manifest.get("schema_version") not in (1, 2)
             or self.manifest.get("model_id") != model_id
         ):
             raise ValueError("Unsupported model bundle identity or schema")
+        self.head_output = language_head_output(self.manifest)
         files = self.manifest["files"]
         self.embeddings = np.load(self._path(files["embedding"]), mmap_mode="r", allow_pickle=False)
         if self.embeddings.ndim != 2:
@@ -347,7 +374,13 @@ class CoreMLRuntime:
             raise ValueError("Artifact path escapes the model directory")
         return path
 
-    def _encode_audio(self, features: np.ndarray) -> np.ndarray:
+    def _encode_audio(
+        self, features: np.ndarray, *, audio_context: AudioPrefixContext | None = None
+    ) -> np.ndarray:
+        if audio_context is not None:
+            return audio_context.encode(
+                features, owner=self, frontend=self.frontend, encoder=self.encoder
+            )
         frames = features.shape[1]
         masks = convolution_masks(frames, self.chunk_frames)
         chunks = []
@@ -431,6 +464,15 @@ class CoreMLRuntime:
         outputs = self.lm_head.predict(
             {"hidden_states": np.ascontiguousarray(hidden, dtype=np.float16)}
         )
+        head_output = self.head_output
+        if head_output.get("kind") == "chunk_max":
+            return compact_token(
+                outputs,
+                vocabulary_size=self.embeddings.shape[0],
+                chunk_size=head_output["vocabulary_chunk"],
+            )
+        if head_output.get("kind") != "logits":
+            raise ValueError("Unsupported language head output format")
         offset, best_id, best_value = 0, 0, -float("inf")
         keys = sorted(outputs, key=lambda name: int(name.removeprefix("logits_")))
         if keys != [f"logits_{index}" for index in range(len(keys))]:
@@ -465,6 +507,12 @@ class CoreMLRuntime:
             make_states=lambda: [model.make_state() for model in self.decoders],
         )
 
+    def new_audio_context(self) -> AudioPrefixContext:
+        """Create an independent exact audio-graph cache for one session."""
+        return AudioPrefixContext(
+            owner=self, hidden_width=self.embeddings.shape[1], mel_filters=self.mel_filters
+        )
+
     def prepare_prompt(
         self,
         samples: np.ndarray,
@@ -474,6 +522,7 @@ class CoreMLRuntime:
         context: str = "",
         prefix_text: str = "",
         decoder_context: DecoderPrefixContext | None = None,
+        audio_context: AudioPrefixContext | None = None,
     ) -> PreparedPrompt:
         """Prepare one prompt without selecting or emitting any generated tokens."""
         started = perf_counter()
@@ -488,8 +537,11 @@ class CoreMLRuntime:
             raise ValueError("max_new_tokens must be a positive integer")
         if language is not None and language not in LANGUAGE_NAMES:
             raise ValueError(f"Unsupported language: {language}")
-        samples = np.pad(samples, (0, max(0, MIN_SAMPLES - samples.size)))
-        features = log_mel_spectrogram(samples, self.mel_filters)
+        if audio_context is None:
+            samples = np.pad(samples, (0, max(0, MIN_SAMPLES - samples.size)))
+            features = log_mel_spectrogram(samples, self.mel_filters)
+        else:
+            features = audio_context.features(samples, owner=self)
         feature_done = perf_counter()
         prompt = build_prompt(
             self.tokenizer,
@@ -504,7 +556,7 @@ class CoreMLRuntime:
                 "Prompt and requested generation budget exceed the decoder KV cache"
             )
         prompt_done = perf_counter()
-        audio = self._encode_audio(features) / self.residual_scale
+        audio = self._encode_audio(features, audio_context=audio_context) / self.residual_scale
         encoder_done = perf_counter()
         audio_index = 0
         prompt_embeddings = []
@@ -518,6 +570,7 @@ class CoreMLRuntime:
         if audio_index != audio.shape[-1] or not prompt_embeddings:
             raise RuntimeError("Prompt placeholders do not match encoded audio")
         embeddings = np.concatenate(prompt_embeddings, axis=-1)
+        reused_tokens = 0
         if decoder_context is None:
             states = [model.make_state() for model in self.decoders]
             for position in range(0, len(prompt), self.token_batch_size):
@@ -527,6 +580,7 @@ class CoreMLRuntime:
         else:
             prefill = decoder_context.prefill(embeddings, decode_step=self._decode_step, owner=self)
             hidden, states = prefill.hidden, prefill.states
+            reused_tokens = prefill.reused_tokens
         prefill_done = perf_counter()
         return PreparedPrompt(
             hidden=hidden,
@@ -538,6 +592,26 @@ class CoreMLRuntime:
                 "prompt_seconds": prompt_done - feature_done,
                 "encoder_seconds": encoder_done - prompt_done,
                 "prefill_seconds": prefill_done - encoder_done,
+                "prompt_tokens": len(prompt),
+                "prefill_tokens": len(prompt) - reused_tokens,
+                "reused_prompt_tokens": reused_tokens,
+                "prefill_calls": (len(prompt) - reused_tokens + self.token_batch_size - 1)
+                // self.token_batch_size,
+                "decoder_partition_count": len(self.decoders),
+                **(
+                    audio_context.timings
+                    if audio_context is not None
+                    else {
+                        "frontend_calls": (features.shape[1] + self.chunk_frames - 1)
+                        // self.chunk_frames,
+                        "encoder_calls": (audio.shape[-1] + self.window_tokens - 1)
+                        // self.window_tokens,
+                        "reused_frontend_chunks": 0,
+                        "reused_encoder_windows": 0,
+                        "computed_feature_frames": features.shape[1],
+                        "reused_feature_frames": 0,
+                    }
+                ),
             },
         )
 
@@ -607,6 +681,7 @@ class CoreMLRuntime:
         context: str = "",
         prefix_text: str = "",
         decoder_context: DecoderPrefixContext | None = None,
+        audio_context: AudioPrefixContext | None = None,
     ) -> RuntimeResult:
         started = perf_counter()
         prepared = self.prepare_prompt(
@@ -616,13 +691,25 @@ class CoreMLRuntime:
             context=context,
             prefix_text=prefix_text,
             decoder_context=decoder_context,
+            audio_context=audio_context,
         )
         hidden, states = prepared.hidden, prepared.states
         generation_started = perf_counter()
         generated = []
+        head_seconds = 0.0
+        first_token_seconds = 0.0
+        head_calls = 0
         try:
             for index in range(max_new_tokens):
+                head_started = perf_counter()
                 token = self._next_token(hidden)
+                head_done = perf_counter()
+                head_seconds += head_done - head_started
+                head_calls += 1
+                if index == 0:
+                    # Includes feature extraction, encoding, prefill and first
+                    # greedy choice; model loading is outside this request.
+                    first_token_seconds = head_done - started
                 if token in self.eos_token_ids:
                     break
                 generated.append(token)
@@ -651,6 +738,12 @@ class CoreMLRuntime:
             timings={
                 **prepared.timings,
                 "generation_seconds": generation_done - generation_started,
+                "first_token_seconds": first_token_seconds,
+                "head_seconds": head_seconds,
+                "head_calls": head_calls,
+                "generated_tokens": len(generated),
+                "eos_token_id": token,
+                "generation_decoder_calls": max(0, head_calls - 1),
                 "total_seconds": finished - started,
             },
         )
@@ -684,19 +777,28 @@ class VerifyHead:
         probe = target.lm_head.predict(
             {"hidden_states": np.zeros((1, hidden_size, 1, 1), np.float16)}
         )
-        keys = sorted(probe, key=lambda name: int(name.removeprefix("logits_")))
-        sizes = {int(np.asarray(probe[key]).size) for key in keys[:-1]}
-        if len(sizes) != 1:
-            raise ValueError("Bundle LM head chunks are not uniform")
+        head_output = getattr(target, "head_output", {"kind": "logits"})
+        if head_output["kind"] == "chunk_max":
+            self.chunk_size = head_output["vocabulary_chunk"]
+            compact_token(
+                probe, vocabulary_size=target.embeddings.shape[0], chunk_size=self.chunk_size
+            )
+            chunk_count = probe["max_values"].shape[1]
+        else:
+            keys = sorted(probe, key=lambda name: int(name.removeprefix("logits_")))
+            sizes = {int(np.asarray(probe[key]).size) for key in keys[:-1]}
+            if len(sizes) != 1:
+                raise ValueError("Bundle LM head chunks are not uniform")
+            self.chunk_size = sizes.pop()
+            chunk_count = len(keys)
         compact = self.model.predict(
             {"hidden_states": np.zeros((1, hidden_size, 1, self.width), np.float32)}
         )
         if (
-            compact["max_values"].shape[1] != len(keys)
+            compact["max_values"].shape[1] != chunk_count
             or compact["max_values"].shape[-1] != self.width
         ):
             raise ValueError("Verify head chunk count or token width differs from the bundle head")
-        self.chunk_size = sizes.pop()
         if vocabulary_chunk is not None and vocabulary_chunk != self.chunk_size:
             raise ValueError("Verify head vocabulary chunk differs from the bundle head")
 

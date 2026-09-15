@@ -7,6 +7,8 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ..profiles import PROFILES, ProfileName
+
 SUPPORTED_CHECKPOINTS = {"Qwen/Qwen3-ASR-1.7B", "Qwen/Qwen3-ASR-0.6B"}
 # The 1.7B revision every measurement in research/ used.
 SOURCE_REVISION = "7278e1e70fe206f11671096ffdd38061171dd6e5"
@@ -16,10 +18,11 @@ def build_bundle(
     source: Path,
     output: Path,
     *,
-    cache_length=1024,
+    cache_length=None,
     reuse_encoder=False,
-    token_batch_size=1,
+    token_batch_size=None,
     layers_per_partition=4,
+    profile: ProfileName | None = None,
 ):
     import numpy as np
     import torch
@@ -27,6 +30,14 @@ def build_bundle(
 
     from .decoder import build_decoder
     from .encoder import build_encoder
+
+    settings = PROFILES[profile] if profile is not None else None
+    if cache_length is None:
+        cache_length = settings.cache_length if settings else 1024
+    if settings is not None and cache_length != settings.cache_length:
+        raise ValueError("Explicit cache length conflicts with the selected profile")
+    if token_batch_size is None:
+        token_batch_size = 16 if settings else 1
 
     source, output = source.resolve(), output.resolve()
     if not (source / "config.json").is_file():
@@ -75,7 +86,12 @@ def build_bundle(
         "source_revision": provenance["revision"],
         "files": files,
         "created_at": datetime.now(UTC).isoformat(),
-        "max_audio_seconds": 30,
+        "max_audio_seconds": settings.max_audio_seconds if settings else 30,
+        **(
+            {"profile": profile, "default_max_new_tokens": settings.max_new_tokens}
+            if settings
+            else {}
+        ),
         "frontend": encoder["frontend"],
         "encoder": encoder["encoder"],
         "prompt_template": prompt,
@@ -99,10 +115,22 @@ def build_bundle(
 
 def download_source(destination: Path, *, revision="main", model_id="Qwen/Qwen3-ASR-1.7B"):
     from huggingface_hub import HfApi, snapshot_download
+    from standard_asr.contract.exceptions import ArtifactAcquisitionError
+    from standard_asr.engine import allow_downloads
 
     if model_id not in SUPPORTED_CHECKPOINTS:
         raise ValueError("Unsupported Qwen3-ASR checkpoint")
+    if not allow_downloads():
+        raise ArtifactAcquisitionError(
+            "Checkpoint download is disabled by STANDARD_ASR_ALLOW_DOWNLOAD.",
+            reason="downloads_disabled",
+        )
     commit = HfApi().model_info(model_id, revision=revision).sha
+    if not allow_downloads():
+        raise ArtifactAcquisitionError(
+            "Checkpoint download is disabled by STANDARD_ASR_ALLOW_DOWNLOAD.",
+            reason="downloads_disabled",
+        )
     snapshot_download(
         model_id,
         revision=commit,

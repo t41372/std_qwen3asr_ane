@@ -2,8 +2,8 @@
 # Review follow-ups needing hardware, run serially: speculative-only trace, then the LUT8 compact-head probe.
 cd "$(dirname "$0")/../.."
 export UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface" HF_HUB_OFFLINE=1
-PY=std_qwen3asr_ane/.venv/bin/python
-DPY=std_qwen3asr_ane/.venv-draft/bin/python
+PY=.venv/bin/python
+DPY=.venv-draft/bin/python
 P14=artifacts/qwen3-asr-1.7b-p14-lut8-g32-compiled
 DRAFTB=artifacts/qwen3-asr-1.7b-draft   # from: qwen3-asr-ane build-draft
 SMOKE=artifacts/evaluation/smoke/manifest.jsonl

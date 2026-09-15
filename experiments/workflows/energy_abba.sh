@@ -4,7 +4,7 @@
 # so each block transcribes the same audio seconds (equal work).
 cd "$(dirname "$0")/../.."
 export UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface"
-PY=std_qwen3asr_ane/.venv/bin/python
+PY=.venv/bin/python
 MLXPY=experiments/mlx_reference/.venv/bin/python
 OUT=${ENERGY_OUT:-artifacts/power}
 mkdir -p $OUT

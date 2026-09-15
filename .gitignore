@@ -3,6 +3,7 @@ references/
 past_chat/
 artifacts/
 **/.venv/
+**/.venv-draft/
 **/__pycache__/
 **/.pytest_cache/
 **/.ruff_cache/

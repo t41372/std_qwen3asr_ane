@@ -3,7 +3,7 @@
 set -u
 cd "$(dirname "$0")/../.."
 export UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface"
-PY=std_qwen3asr_ane/.venv/bin/python
+PY=.venv/bin/python
 EV=experiments/evaluate.py
 OUT=artifacts/evaluation/candidates
 SMOKE=artifacts/evaluation/smoke/manifest.jsonl

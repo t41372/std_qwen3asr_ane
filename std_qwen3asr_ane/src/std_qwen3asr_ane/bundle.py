@@ -7,6 +7,33 @@ import subprocess
 from pathlib import Path
 
 
+def language_head_output(manifest: dict) -> dict:
+    """Validate the versioned serial-head contract without loading model assets.
+
+    Schema 1 is the original full-logits interface. Schema 2 declares its head
+    output explicitly, so older runtimes reject compact heads at the schema gate
+    rather than misinterpreting per-chunk maxima as vocabulary logits.
+    """
+    version = manifest.get("schema_version")
+    if type(version) is not int or version not in (1, 2):
+        raise ValueError("Unsupported bundle schema")
+    if version == 1:
+        output = manifest.get("head_output", {"kind": "logits"})
+        if not isinstance(output, dict) or output.get("kind", "logits") != "logits":
+            raise ValueError("Compact head outputs require bundle schema 2")
+        return {"kind": "logits", "token_batch_size": 1}
+    output = manifest.get("head_output")
+    if not isinstance(output, dict) or output.get("kind") not in ("logits", "chunk_max"):
+        raise ValueError("Schema 2 requires a supported head_output descriptor")
+    if type(output.get("token_batch_size")) is not int or output["token_batch_size"] != 1:
+        raise ValueError("The serial language head must have token width 1")
+    if output["kind"] == "chunk_max" and (
+        type(output.get("vocabulary_chunk")) is not int or output["vocabulary_chunk"] < 1
+    ):
+        raise ValueError("Compact heads require a positive vocabulary_chunk")
+    return dict(output)
+
+
 def digest(path: Path) -> str:
     result = hashlib.sha256()
     with path.open("rb") as stream:

@@ -3,15 +3,17 @@ name = "std-qwen3asr-ane"
 version = "0.1.0a1"
 description = "Qwen3-ASR 1.7B on Apple Neural Engine, with Standard ASR integration"
 license = "Apache-2.0"
+license-files = ["LICENSE", "std_qwen3asr_ane/NOTICE"]
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-  "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@main",
-  "coremltools>=9.0",
+  "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@8b124e8c8fbcb6b0382792262bee05595b895440",
+  "coremltools>=9.0,<10",
   "numpy>=2.0",
   "tokenizers>=0.22",
   "soundfile>=0.13",
   "scipy>=1.15",
+  "uv>=0.12,<0.13",
 ]
 
 [project.optional-dependencies]
@@ -21,8 +23,12 @@ gpu-draft = ["mlx-audio[stt]==0.5.3"]
 
 [project.entry-points."standard_asr.models"]
 "std-qwen3asr-ane/1.7b" = "std_qwen3asr_ane.plugin:Qwen3ASREngine"
+"std-qwen3asr-ane/1.7b-short-dictation" = "std_qwen3asr_ane.plugin:ShortDictationEngine"
 
 [project.scripts]
+# Expose the upstream CLI in `uv tool install`'s isolated environment. This is
+# the Standard ASR entry point itself, not a second transcription interface.
+standard-asr = "standard_asr.toolchain.cli:main"
 qwen3-asr-ane = "std_qwen3asr_ane.cli:main"
 
 [dependency-groups]
@@ -37,9 +43,14 @@ conflicts = [[{ extra = "gpu-draft" }, { group = "convert" }]]
 requires = ["uv_build>=0.12,<0.13"]
 build-backend = "uv_build"
 
+[tool.uv.build-backend]
+module-root = "std_qwen3asr_ane/src"
+module-name = "std_qwen3asr_ane"
+
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["std_qwen3asr_ane/tests"]
 
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+src = ["std_qwen3asr_ane/src"]

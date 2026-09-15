@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from .conversion.build import SOURCE_REVISION
+from .profiles import PROFILES
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,10 +25,11 @@ def main(argv: list[str] | None = None) -> int:
         "build", help="Convert a local checkpoint; requires the convert group"
     )
     build.add_argument("--source", type=Path, default=Path("artifacts/source/Qwen3-ASR-1.7B"))
-    build.add_argument("--output", type=Path, default=Path("artifacts/qwen3-asr-1.7b"))
-    build.add_argument("--cache-length", type=int, choices=(512, 1024, 2048), default=1024)
+    build.add_argument("--output", type=Path, default=None)
+    build.add_argument("--profile", choices=tuple(PROFILES), default=None)
+    build.add_argument("--cache-length", type=int, choices=(512, 1024, 2048), default=None)
     build.add_argument("--reuse-encoder", action="store_true")
-    build.add_argument("--token-batch-size", type=int, choices=(1, 8, 16, 32), default=1)
+    build.add_argument("--token-batch-size", type=int, choices=(1, 8, 16, 32, 64), default=None)
     build.add_argument(
         "--layers-per-partition",
         type=int,
@@ -79,9 +81,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Transcribe one audio file with a local bundle (default artifacts/qwen3-asr-1.7b)",
     )
     transcribe.add_argument("audio", type=Path)
-    transcribe.add_argument("--model-dir", type=Path, default=Path("artifacts/qwen3-asr-1.7b"))
+    transcribe.add_argument("--model-dir", type=Path, default=None)
+    transcribe.add_argument("--profile", choices=tuple(PROFILES), default="general")
     transcribe.add_argument("--language", default="auto")
-    transcribe.add_argument("--max-new-tokens", type=int, default=256)
+    transcribe.add_argument("--max-new-tokens", type=int, default=None)
     transcribe.add_argument(
         "--draft-dir", type=Path, default=None, help="Use the GPU-draft bundle at this path"
     )
@@ -95,11 +98,17 @@ def main(argv: list[str] | None = None) -> int:
 
         result = build_bundle(
             args.source,
-            args.output,
+            args.output
+            or Path(
+                "artifacts/qwen3-asr-1.7b-short-dictation"
+                if args.profile == "short-dictation"
+                else "artifacts/qwen3-asr-1.7b"
+            ),
             cache_length=args.cache_length,
             reuse_encoder=args.reuse_encoder,
             token_batch_size=args.token_batch_size,
             layers_per_partition=args.layers_per_partition,
+            profile=args.profile,
         )
     elif args.command == "compress":
         from .conversion.compress import compress_bundle, validate_settings
@@ -136,11 +145,12 @@ def main(argv: list[str] | None = None) -> int:
 
         from .plugin import Qwen3ASREngine
 
-        engine = Qwen3ASREngine(
-            model_dir=args.model_dir,
-            max_new_tokens=args.max_new_tokens,
-            draft_dir=args.draft_dir,
-        )
+        settings = {"profile": args.profile, "draft_dir": args.draft_dir}
+        if args.model_dir is not None:
+            settings["model_dir"] = args.model_dir
+        if args.max_new_tokens is not None:
+            settings["max_new_tokens"] = args.max_new_tokens
+        engine = Qwen3ASREngine(**settings)
         try:
             result = engine.transcribe(
                 args.audio, RuntimeParams(language=args.language)

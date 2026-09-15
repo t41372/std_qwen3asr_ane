@@ -64,6 +64,9 @@ def engine():
             self.contexts.append(context)
             return context
 
+        def new_audio_context(self):
+            return SimpleNamespace(reset=lambda: None)
+
         def transcribe(
             self,
             samples,
@@ -73,6 +76,7 @@ def engine():
             context="",
             prefix_text="",
             decoder_context=None,
+            audio_context=None,
         ):
             self.entered.set()
             if self.block:
@@ -85,6 +89,7 @@ def engine():
                     "prefix": prefix_text,
                     "max_new_tokens": max_new_tokens,
                     "decoder_context": decoder_context,
+                    "audio_context": audio_context,
                 }
             )
             raw = "language English<asr_text>hello world again today"
@@ -401,3 +406,15 @@ def test_stream_duration_is_configurable_beyond_thirty_seconds_and_finite():
     for value in [0, -1, float("inf"), float("nan")]:
         with pytest.raises(ValueError):
             create_engine(stream_max_audio_seconds=value)
+
+
+def test_streaming_provider_budget_is_frozen_per_session(engine):
+    from std_qwen3asr_ane.plugin import Qwen3ASRParams
+
+    session = engine.start_transcription(
+        audio_format=FORMAT,
+        params=RuntimeParams(provider_params=Qwen3ASRParams(max_new_tokens=32)),
+    )
+    asyncio.run(recorded(session, [np.zeros(8000, dtype="<f4").tobytes()]))
+    assert engine._runtime.calls[-1]["max_new_tokens"] == 32
+    assert engine.config.max_new_tokens == 256

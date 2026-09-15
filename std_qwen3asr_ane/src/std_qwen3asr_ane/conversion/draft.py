@@ -29,23 +29,12 @@ def build_compact_head(
     import numpy as np
     import torch
 
-    from .decoder import LanguageHead, SourceWeights
-
-    class CompactHead(LanguageHead):
-        def forward(self, hidden_states):
-            normalized = self.norm(hidden_states)
-            values, indices = [], []
-            for head in self.heads:
-                value, index = torch.max(head(normalized).squeeze(2), dim=1)
-                values.append(value)
-                # Local indices stay int32; FP16 cannot carry exact integers above 2048.
-                indices.append(index.to(torch.int32))
-            return torch.stack(values, dim=1), torch.stack(indices, dim=1)
+    from .decoder import CompactLanguageHead, SourceWeights
 
     torch.set_num_threads(4)
     config = json.loads((source / "config.json").read_text())["thinker_config"]["text_config"]
     weights = SourceWeights(source)
-    module = CompactHead(config, residual_scale=residual_scale).eval()
+    module = CompactLanguageHead(config, residual_scale=residual_scale).eval()
     module.norm.weight.data.copy_(weights.get("thinker.model.norm.weight"))
     embedding = weights.get("thinker.model.embed_tokens.weight")
     offset = 0
@@ -84,7 +73,10 @@ def build_draft_bundle(
     if output.exists():
         raise FileExistsError("Use a new directory to preserve previous artifacts")
     manifest = json.loads((target / "manifest.json").read_text())
-    if manifest.get("schema_version") != 1 or manifest.get("model_id") != "Qwen/Qwen3-ASR-1.7B":
+    if (
+        manifest.get("schema_version") not in (1, 2)
+        or manifest.get("model_id") != "Qwen/Qwen3-ASR-1.7B"
+    ):
         raise ValueError("The target must be a Qwen3-ASR 1.7B bundle")
     provenance = json.loads((source / "source.json").read_text())
     if (

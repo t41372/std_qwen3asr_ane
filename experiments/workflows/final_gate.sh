@@ -2,7 +2,7 @@
 # Final-candidate validation chain. Usage: final_gate.sh <bundle-name>
 cd "$(dirname "$0")/../.."
 export UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface"
-PY=std_qwen3asr_ane/.venv/bin/python
+PY=.venv/bin/python
 EV=experiments/evaluate.py
 OUT=artifacts/evaluation/candidates
 LUT=$1
@@ -42,5 +42,5 @@ $PY experiments/verify_streaming_runtime.py --model-dir $DIR --audio artifacts/e
 tail -2 $OUT/streaming-$LUT-silence.log | cut -c1-300
 echo "=== plugin verify + compliance $(date +%H:%M:%S) ==="
 $PY experiments/verify_plugin_runtime.py --model-dir $DIR --audio artifacts/evaluation/smoke/qwen_official_zh.wav --output $OUT/plugin-$LUT.json > /dev/null 2>&1; echo "plugin verify exit $?"
-STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR=$DIR std_qwen3asr_ane/.venv/bin/standard-asr compliance run std-qwen3asr-ane/1.7b > $OUT/compliance-$LUT.log 2>&1; echo "compliance exit $?"; tail -3 $OUT/compliance-$LUT.log | cut -c1-300
+STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR=$DIR .venv/bin/standard-asr compliance run std-qwen3asr-ane/1.7b > $OUT/compliance-$LUT.log 2>&1; echo "compliance exit $?"; tail -3 $OUT/compliance-$LUT.log | cut -c1-300
 echo ALL_FINAL_DONE

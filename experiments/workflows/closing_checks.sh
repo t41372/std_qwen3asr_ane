@@ -3,8 +3,8 @@
 # rebuild p14 through the CLI path and hash-compare, then the fresh-clone install check.
 cd "$(dirname "$0")/../.."
 export UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface" HF_HUB_OFFLINE=1
-PY=std_qwen3asr_ane/.venv/bin/python
-DPY=std_qwen3asr_ane/.venv-draft/bin/python
+PY=.venv/bin/python
+DPY=.venv-draft/bin/python
 P14=artifacts/qwen3-asr-1.7b-p14-lut8-g32-compiled
 DRAFTB=artifacts/qwen3-asr-1.7b-draft   # from: qwen3-asr-ane build-draft
 SMOKE=artifacts/evaluation/smoke/manifest.jsonl
@@ -29,8 +29,8 @@ done
 echo "=== fresh clone install check $(date +%H:%M:%S) ==="
 SCRATCH="${SCRATCH:-/tmp/std-qwen3asr-ane-fresh-install}"
 rm -rf $SCRATCH && git clone -q $PWD $SCRATCH && cd $SCRATCH && export UV_CACHE_DIR="$PWD/.cache/uv" && uv sync --project std_qwen3asr_ane --frozen --group convert --python 3.12 2>&1 | tail -3; echo "uv sync exit ${PIPESTATUS[0]}"
-std_qwen3asr_ane/.venv/bin/python -c "import std_qwen3asr_ane, standard_asr, coremltools; print('import ok', coremltools.__version__)"
-std_qwen3asr_ane/.venv/bin/pytest -q std_qwen3asr_ane/tests 2>&1 | tail -1
-std_qwen3asr_ane/.venv/bin/standard-asr list 2>&1 | head -5
-std_qwen3asr_ane/.venv/bin/qwen3-asr-ane --help | head -3
+.venv/bin/python -c "import std_qwen3asr_ane, standard_asr, coremltools; print('import ok', coremltools.__version__)"
+.venv/bin/pytest -q std_qwen3asr_ane/tests 2>&1 | tail -1
+.venv/bin/standard-asr list 2>&1 | head -5
+.venv/bin/qwen3-asr-ane --help | head -3
 echo ALL_CLOSING_DONE
