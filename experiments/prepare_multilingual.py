@@ -49,13 +49,15 @@ def acquire(record, cache):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sources", type=Path, required=True)
-    parser.add_argument(
-        "--cache", type=Path, default=Path("artifacts/evaluation/sources")
-    )
+    parser.add_argument("--cache", type=Path, default=Path("artifacts/evaluation/sources"))
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--max-duration", type=float, default=12)
+    parser.add_argument("--per-split", type=int, default=50)
+    parser.add_argument("--role-prefix", default="round2_multilingual")
     args = parser.parse_args()
-    if args.output.exists():
-        parser.error("Use a fresh output")
+    if args.output.exists() or args.per_split < 1 or not 0 < args.max_duration <= 30:
+        parser.error("Use a fresh output, positive per-split count and duration in (0, 30]")
+    total = 2 * args.per_split
     args.output.mkdir(parents=True)
     args.cache.mkdir(parents=True, exist_ok=True)
     sources = json.loads(args.sources.read_text())
@@ -65,7 +67,7 @@ def main():
         "languages": [],
         "license": "cc-by-4.0",
         "reference_status": "dataset-provided transcription",
-        "selection": "first 100 unique eligible rows per language, <=12s; first 50 calibration, next 50 regression",
+        "selection": f"first {total} unique eligible rows per language, <={args.max_duration}s; first {args.per_split} calibration, next {args.per_split} regression",
     }
     groups = {"calibration": [], "regression": []}
     seen = set()
@@ -86,7 +88,7 @@ def main():
                         info = sf.info(io.BytesIO(blob))
                         reference = row["raw_transcription"]
                         if (
-                            not 0 < info.duration <= 12
+                            not 0 < info.duration <= args.max_duration
                             or not isinstance(reference, str)
                             or not reference.strip()
                         ):
@@ -103,9 +105,7 @@ def main():
                             else ".audio"
                         )
                         audio = (
-                            args.output
-                            / "audio"
-                            / f"{record['config']}-{row_index:05d}{suffix}"
+                            args.output / "audio" / f"{record['config']}-{row_index:05d}{suffix}"
                         )
                         audio.parent.mkdir(parents=True, exist_ok=True)
                         audio.write_bytes(blob)
@@ -124,39 +124,35 @@ def main():
                                 "dataset_config": record["config"],
                             }
                         )
-                        if len(selected) == 100:
+                        if len(selected) == total:
                             break
-                    if len(selected) == 100:
+                    if len(selected) == total:
                         break
             finally:
                 source.close()
-            if len(selected) != 100:
+            if len(selected) != total:
                 raise ValueError(f"Too few eligible samples for {record['language']}")
             for role, rows in (
-                ("calibration", selected[:50]),
-                ("regression", selected[50:]),
+                ("calibration", selected[: args.per_split]),
+                ("regression", selected[args.per_split :]),
             ):
                 for row in rows:
-                    row["evaluation_role"] = f"round2_multilingual_{role}"
+                    row["evaluation_role"] = f"{args.role_prefix}_{role}"
                 groups[role].extend(rows)
             report["languages"].append(
-                {**record, "eligible_selected": 100, "source_rows_scanned": ordinal}
+                {**record, "eligible_selected": total, "source_rows_scanned": ordinal}
             )
             print(
-                json.dumps({"language": record["language"], "selected": 100}),
+                json.dumps({"language": record["language"], "selected": total}),
                 flush=True,
             )
         for role, rows in groups.items():
             path = args.output / f"{role}.jsonl"
-            path.write_text(
-                "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
-            )
+            path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows))
             report[f"{role}_sha256"] = digest(path)
         report["complete"] = True
     finally:
-        (args.output / "provenance.json").write_text(
-            json.dumps(report, indent=2) + "\n"
-        )
+        (args.output / "provenance.json").write_text(json.dumps(report, indent=2) + "\n")
 
 
 if __name__ == "__main__":

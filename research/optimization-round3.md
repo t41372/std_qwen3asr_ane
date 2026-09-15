@@ -153,3 +153,148 @@ Remaining implementation/validation:
    five randomized ABBA energy series, isolated Instruments call closure.
 6. Update evidence collector/docs, run full tests/compliance, conventional commits.
    Re-read the original user brief after compaction before continuing.
+
+## Latest checkpoint — supersedes earlier pending lists
+
+- Commits: `01dd553` foundation; `ddb30dc` production B4/INT8 support. Current
+  branch `feat/ane-round3-voice-command`; README user edit remains uncommitted.
+- Production runtime IS now wired for B4 (`frontend.offline_batch_size=4` plus
+  `files.frontend_batched`) and schema3 INT8 (`embedding_quantization` plus
+  `files.embedding_scales`). Scalar and vector prompt gather supported. All
+  owned prediction models are included in `_prediction_models()` and close.
+  Build CLI has `--frontend-batch-size`; compress CLI has encoder role and
+  `--int8-embedding`. Acquisition defaults still unchanged.
+- Latest full native suite: 481 passed, 37 warnings.
+- Frontend B4: all 400 EN/ZH + 300 multilingual + 12 robustness transcripts,
+  language labels, tokens and EOS match. Component p50 -21.5%, B8 only -9.3%.
+- INT8: same full score gates passed. Four punctuation changes; one JA deletion
+  (`捜査官` -> `捜査`, reference `総監`) lowers CER but is NOT semantic improvement.
+  Keep that caveat in raw review; do not advertise better quality.
+- Encoder g32 failed full regression: EN WER +0.02234 pp. Do not promote it.
+- All six fusion probes completed, zero costly CPU fallback. Gains: qkv -2.21%,
+  mlp -0.63%, both -2.22%, grouped -4.37%, sdpa +1.64%, all -4.71%. All below
+  8% gate; no full decoder export justified. Artifacts under round3/fusion.
+- Cache256 candidate built at `artifacts/qwen3-asr-1.7b-r3-voice-command`:
+  6 s, 64 output tokens, original FP16 embedding/audio + LUT8 head, new p14 KV256.
+  95 naturally eligible old EN/ZH rows, three paired repetitions at equal budget:
+  p50 .379179 -> .353254 s (-6.84%); p95 .591825 -> .542818 s (-8.28%);
+  all emitted tokens and EOS match. This clears speed screening, not promotion.
+- Original <=6 s FLEURS subset had no JA/ES. Do not crop/stretch to fit. Pinned
+  public Common Voice 17 source shards for JA/ES/DE/FR/KO, plus cached FLEURS YUE.
+  Natural short supplement is `round3/voice-command/short-supplement/manifest.jsonl`:
+  50 each JA/ES/DE/FR/KO, 20 YUE, total270. Provenance records all source hashes.
+  Pins at `round3/voice-command/short-six-sources.json`. CV mirror revision
+  `34f78a43893414e7b6e271ba94c1d5e05f18b239`; source is fixie-ai/common_voice_17_0.
+  Earlier failed metadata/preparation attempts remain; use the completed supplement.
+- A minimal combined host candidate (B4 + INT8, no encoder quantization) exists at
+  `artifacts/qwen3-asr-1.7b-r3-host-combined`, manifest
+  `79d39bf51dd2dc21d1ff7d103ae28cd141a59bc4342adf1e9dc4eec59ca0949f`.
+- Old complete source package is archived from `92810d7` under
+  `round3/baseline/source`. `baseline_runtime.py` isolates its namespace.
+  `benchmark_paired_corpus.py --baseline-source <package>` measures original
+  code as well as original artifact; cleanup now includes optional B4 models.
+  Resource series also accepts `--baseline-source`.
+- Stage2 validation is ACTIVE, tool session **70003**:
+  `caffeinate -di bash experiments/workflows/round3_stage2_validation.sh`.
+  Sequence: instrumentation smoke pair; old-source vs host-combined smoke pair;
+  voice supplement270 three paired repetitions; voice robustness5 three pairs;
+  encoder g16 full quality; g8 only if g16 fails. Each job has bounded logs under
+  round3; inspect summaries and `*-command/stdout.log`. No concurrent model work.
+- Stage2 bundle payload hashes saved in `round3/stage2-payload-fingerprints.json`.
+  C process sampler is compiled at `round3/process-memory` and smoke-tested.
+
+Still required:
+1. Finish stage2 and inspect all score, raw-text, latency and closure gates.
+2. Measure standalone memory for selected components; choose final combination.
+   If encoder g16 passes, g8 need not be quality-tested just to chase a smaller
+   micro difference; if both fail, keep audio encoder FP16.
+3. Register public voice profile ONLY after quality and energy gate. Consider a
+   conservative context cap (32 tokens) because default 6 s audio + 64 generation
+   + streaming prefix must fit KV256; retain actual BPE capacity guard and record
+   upstream Standard ASR word-count limitation in feedback if relevant.
+4. Run combined regression before freezing; then freeze final code/artifact and
+   evaluate truly fresh held-out ONCE. Never tune on its result. Final three-pair
+   corpus timings, per-language p95, five memory pairs and five randomized ABBA
+   energy groups, isolated Instruments and call closure, streaming/compliance.
+5. Update default acquisition recipes only for promoted changes; finalize docs,
+   raw review, evidence index and conventional commits. Full tests again after edits.
+6. Public corpus source links used for supplemental data: Mozilla Common Voice
+   (https://commonvoice.mozilla.org/en/datasets), converted pinned shards at
+   https://huggingface.co/datasets/fixie-ai/common_voice_17_0 . Preserve source pins
+   in compact Git evidence so another engineer can recreate the data.
+
+No fresh held-out has been evaluated. No optimization is promoted by default yet.
+
+## Final-validation checkpoint
+
+Stage2 session 70003 is complete. All audio encoder LUT8 groups failed the
+frozen point-estimate gate: g32 EN +0.02234 pp, g16 ZH +0.04054 pp, g8 ZH
++0.05405 pp. Keep audio encoder FP16; do not add more quantization searches in
+this round. Optional encoder compression authoring support remains unvalidated.
+
+Voice-command passed 95 old EN/ZH + 270 natural short multilingual + 5 robustness
+cases, each with three paired repetitions and exact tokens/EOS. Supplement
+latency: p50 .417584 -> .384569 s; p95 .602051 -> .553246 s. The original
+16 eligible FLEURS multilingual rows are separately materialized but still need
+their short paired pass (some overlap with the supplement is possible).
+
+Host-combined smoke against frozen original code has exact outputs and roughly
+unchanged latency (two-clip medians .888889 -> .889878 s); do not claim E2E speedup.
+Instrumentation smoke has exact outputs and differences within ordinary noise.
+
+**Active native job: session 30179**, `round3_resource_series.py` on the voice
+candidate against frozen old source/cache512. Root: `round3/voice-resources`.
+Five memory pairs completed. Twenty energy blocks (five randomized ABBA/BAAB
+groups) are still running; do not start other model work. Each block takes about
+two minutes including warmup/sampling outside the measured interval.
+
+Memory observations so far: median peak process footprint 665.41 -> 562.49 MiB.
+System wired drift is large: per-pair deltas range from roughly -44 to -1504 MiB;
+do not attribute that whole range to the model. Report process and system metrics
+separately. Energy adoption is not decided until all five groups finish.
+
+The resource sampler now captures request1/request2 and the final request; the
+first pair includes >=100 requests, remaining pairs two passes. It releases host
+references after explicit close. The energy gate is preregistered in
+`research/evidence/round3/promotion-gates.json`: voice requires the paired-group
+median bootstrap upper bound below zero; repeatable regression means lower bound
+above zero. These are uncalibrated PSTR engineering comparisons.
+
+Ready tools/inputs:
+
+- `round3_resource_series.py --mode memory|energy|both --baseline-source ...`;
+  `summarize_round3_resources.py` summarizes a completed series.
+- Voice energy manifest: `round3/voice-command/energy-manifest.jsonl` (10 EN+10 ZH),
+  fixed 10 repetitions per energy block; current job uses budget64.
+- C sampler `round3/process-memory` compiled and tested.
+- `verify_round3_kv.py` tests all consumed p14 KV slots and prefill hidden values;
+  voice eight-language input at `round3/voice-command/kv-manifest.jsonl`.
+- `round3_final_preheldout.sh <candidate> <fresh output root>` performs three
+  paired repetitions on general regression400/multilingual300/robustness12 against
+  frozen old code, then one additional quality-only short-supplement pass. It
+  intentionally does NOT open held-out. Review quality and raw changes first.
+- `freeze_round3_candidate.py` requires committed inference/experiment source and
+  hashes bundle payloads, input manifests, environment and preregistered gates.
+- `bind_trace_evidence.py` now verifies per-model prediction count closure, handles
+  canonicalized hyphen labels, and preserves original placement reports.
+- Public-data pins copied to `research/evidence/round3/short-six-sources.json`.
+- `docs/bundle-optimizations.md` describes authoring options. No public voice entry
+  point and no changed default acquisition recipe yet.
+- Latest full suite: **482 passed, 37 warnings** (`tests-pre-final.txt`). Further
+  changes to resource/trace wrappers and new scripts require final checks.
+
+After the active resource job:
+1. Summarize energy and memory. If voice energy passes, add the public
+   `voice-command` profile (cache256, 6 s, budget64), class/entry point/default
+   paths/acquisition/CLI/tests. A context cap of 32 is conservative for streaming;
+   retain actual BPE capacity enforcement and document upstream word-count limits.
+2. Run remaining voice old-multilingual, KV, streaming, placement and isolated
+   trace; fresh eligible held-out after freezing public implementation.
+3. Freeze/test host-combined against old code via final pre-held-out script;
+   inspect raw differences and all gates; open fresh held-out once only if it
+   passes. Then resource series and isolated trace for general host combination.
+4. Promote only qualified recipes. Avoid applying global recipe changes to
+   unvalidated profiles. Keep rejected audio compression and fusion out of defaults.
+5. Finish docs, evidence collection, final full tests/compliance, conventional
+   commits. Preserve the user's initial README edit. Re-read the original brief
+   after any compaction.

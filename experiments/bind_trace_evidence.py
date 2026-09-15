@@ -13,13 +13,11 @@ import argparse
 import hashlib
 import json
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-LABEL = re.compile(
-    r"^(?P<model>[A-Za-z0-9_]+?)_main__Op(?P<op>\d+)_AneInference\s+Prediction$"
-)
+LABEL = re.compile(r"^(?P<model>[A-Za-z0-9_-]+?)_main__Op(?P<op>\d+)_AneInference\s+Prediction$")
 
 
 def sha256(path: Path) -> str:
@@ -82,13 +80,39 @@ def prediction_rows(xml_path: Path) -> tuple[dict[str, dict], int, list[str]]:
         entry["prediction_count"] += 1
         entry["duration_sum_ns"] += duration
         entry["first_start_ns"] = (
-            start
-            if entry["first_start_ns"] is None
-            else min(entry["first_start_ns"], start)
+            start if entry["first_start_ns"] is None else min(entry["first_start_ns"], start)
         )
         entry["last_end_ns"] = max(entry["last_end_ns"], start + duration)
         entry["compiled_label"] = label
     return dict(per_model), total_rows, unmatched
+
+
+def expected_prediction_counts(manifest: dict, workload: list[dict]) -> dict[str, int]:
+    """Close serial offline model calls against recorded runtime counters."""
+    counts = Counter()
+    files = manifest["files"]
+    batch = manifest.get("frontend", {}).get("offline_batch_size", 1)
+    for row in workload:
+        if row.get("phase") not in ("measured", "warmup"):
+            continue
+        if row.get("error"):
+            raise ValueError("Cannot bind a failed workload as execution evidence")
+        timing = row["backend_timings"]
+        chunks = (int(timing["computed_feature_frames"]) + 99) // 100
+        batched = chunks // batch if batch > 1 else 0
+        single = chunks % batch if batch > 1 else chunks
+        if single + batched != timing["frontend_calls"]:
+            raise ValueError("Workload is not the declared serial offline frontend path")
+        counts[Path(files["frontend"]).stem] += single
+        if batch > 1:
+            counts[Path(files["frontend_batched"]).stem] += batched
+        counts[Path(files["encoder"]).stem] += timing["encoder_calls"]
+        counts[Path(files["lm_head"]).stem] += timing["head_calls"]
+        for partition in manifest["decoder_partitions"]:
+            counts[Path(partition).stem] += (
+                timing["prefill_calls"] + timing["generation_decoder_calls"]
+            )
+    return dict(counts)
 
 
 def main() -> None:
@@ -104,13 +128,9 @@ def main() -> None:
         raise FileExistsError(args.output)
     prefix = args.prefix
     manifest = json.loads((args.bundle / "manifest.json").read_text())
-    graphs = sorted(
-        set(manifest["files"].values()) | set(manifest["decoder_partitions"])
-    )
+    graphs = sorted(set(manifest["files"].values()) | set(manifest["decoder_partitions"]))
     graph_names = {
-        Path(graph).stem
-        for graph in graphs
-        if Path(graph).suffix in (".mlpackage", ".mlmodelc")
+        Path(graph).stem for graph in graphs if Path(graph).suffix in (".mlpackage", ".mlmodelc")
     }
     placement = {}
     for name in sorted(graph_names):
@@ -130,11 +150,7 @@ def main() -> None:
                 if device != "ane"
             ),
             "unknown_operator_types": sorted(
-                {
-                    row["operator"]
-                    for row in report["operations"]
-                    if row["preferred_device"] is None
-                }
+                {row["operator"] for row in report["operations"] if row["preferred_device"] is None}
             ),
         }
     placement_summary = {
@@ -145,23 +161,31 @@ def main() -> None:
             item["known_cost_not_ane"] == 0 for item in placement.values()
         ),
     }
-    summary_path = args.placement_dir / "summary.json"
+    # Keep the original placement evidence intact; this sidecar belongs to this trace.
+    summary_path = args.output.with_suffix(".placement.json")
+    if summary_path.exists():
+        raise FileExistsError(summary_path)
     summary_path.write_text(json.dumps(placement_summary, indent=2) + "\n")
-    per_model, total_rows, unmatched = prediction_rows(
-        Path(f"{prefix}-ane-hw-intervals.xml")
-    )
+    per_model, total_rows, unmatched = prediction_rows(Path(f"{prefix}-ane-hw-intervals.xml"))
     candidate_models = []
+    normalized = {name: name.replace("-", "_") for name in graph_names}
+    if len(set(normalized.values())) != len(normalized):
+        raise ValueError("Ambiguous compiled model label names")
     for name in sorted(graph_names):
         entry = per_model.pop(name, None)
+        if entry is None and normalized[name] != name:
+            entry = per_model.pop(normalized[name], None)
         if entry is None:
             raise RuntimeError(f"No ANE prediction rows for graph {name}")
         candidate_models.append({"model": name, **entry})
     workload_path = Path(f"{prefix}-workload.jsonl")
-    workload = [
-        json.loads(line)
-        for line in workload_path.read_text().splitlines()
-        if line.strip()
-    ]
+    workload = [json.loads(line) for line in workload_path.read_text().splitlines() if line.strip()]
+    expected = expected_prediction_counts(manifest, workload)
+    observed = {entry["model"]: entry["prediction_count"] for entry in candidate_models}
+    if expected != observed:
+        raise RuntimeError(
+            f"ANE prediction call-count closure failed: expected={expected}, observed={observed}"
+        )
     wall = sum(row["seconds"] for row in workload if row.get("phase") == "measured")
     trace_files = tree_manifest(Path(f"{prefix}.trace"))
     # The target process is recorded once in the trace table of contents as
@@ -186,9 +210,9 @@ def main() -> None:
         "target_exit_status": target.get("return-exit-status"),
         "attribution_method": "isolated_workload_exact_model_labels_and_call_count_closure",
         "candidate_models": candidate_models,
-        "candidate_prediction_count": sum(
-            item["prediction_count"] for item in candidate_models
-        ),
+        "expected_prediction_counts": expected,
+        "call_count_closure_verified": True,
+        "candidate_prediction_count": sum(item["prediction_count"] for item in candidate_models),
         "candidate_prediction_duration_sum_ns": prediction_total,
         "ane_hardware_rows_total": total_rows,
         "unattributed_or_background_prediction_count": len(unmatched)
@@ -196,7 +220,7 @@ def main() -> None:
         "background_prediction_models": sorted(per_model),
         "workload_measured_wall_seconds": wall,
         "ane_active_share_of_measured_wall": prediction_total / 1e9 / wall
-        if wall
+        if wall and not any(row.get("phase") == "warmup" for row in workload)
         else None,
         "limitations": [
             "ANE hardware rows carry no PID; attribution uses exact compiled labels and the call-count closure.",

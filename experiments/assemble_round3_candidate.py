@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from std_qwen3asr_ane.bundle import clone, digest, language_head_output
+from std_qwen3asr_ane.bundle import clone, digest, language_head_output, validate_bundle_paths
 
 
 def main():
@@ -20,6 +20,9 @@ def main():
     if args.output.exists():
         raise FileExistsError(args.output)
     manifest = json.loads((args.base / "manifest.json").read_text())
+    validate_bundle_paths(
+        args.base.resolve(), set(manifest["files"].values()) | set(manifest["decoder_partitions"])
+    )
     sources = {role: args.base / relative for role, relative in manifest["files"].items()}
     components = {
         "base": {"path": str(args.base), "manifest_sha256": digest(args.base / "manifest.json")}
@@ -28,6 +31,7 @@ def main():
         if bundle is None:
             continue
         component = json.loads((bundle / "manifest.json").read_text())
+        validate_bundle_paths(bundle.resolve(), set(component["files"].values()))
         if component["source_revision"] != manifest["source_revision"]:
             raise ValueError("Component source revision differs from base")
         settings = component["audio_candidate"]
@@ -60,6 +64,7 @@ def main():
         if list(original.shape) != quantization["shape"]:
             raise ValueError("Quantized embedding shape differs from base")
         files = quantization["files"]
+        validate_bundle_paths(args.embedding.resolve(), set(files.values()))
         scale_key = "embedding_scales" if "embedding_scales" in files else "scales"
         sources["embedding"] = args.embedding / files["embedding"]
         sources["embedding_scales"] = args.embedding / files[scale_key]

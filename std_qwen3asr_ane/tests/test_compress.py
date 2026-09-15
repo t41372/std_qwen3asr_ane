@@ -186,11 +186,15 @@ def test_compress_bundle_refuses_unsafe_or_repeated_inputs(bundle: Path, tmp_pat
 def test_optional_encoder_and_int8_embedding_export(bundle, tmp_path):
     before = _digest_tree(bundle)
     output = tmp_path / "audio-and-embedding"
-    manifest = compress_bundle(bundle, output, roles=("encoder",), int8_embedding=True)
+    manifest = compress_bundle(
+        bundle, output, roles=("encoder",), int8_embedding=True, encoder_group_size=16
+    )
     assert _digest_tree(bundle) == before
     assert manifest["schema_version"] == 3
     assert manifest["head_output"] == {"kind": "logits", "token_batch_size": 1}
     assert manifest["embedding_quantization"]["scheme"] == "symmetric_int8_per_row"
+    assert manifest["weight_compression"]["group_size"] == 32
+    assert manifest["weight_compression"]["role_overrides"]["encoder"]["group_size"] == 16
     assert not (output / "embedding.npy").exists()
     assert np.load(output / manifest["files"]["embedding"]).dtype == np.int8
     assert np.load(output / manifest["files"]["embedding_scales"]).dtype == np.float32

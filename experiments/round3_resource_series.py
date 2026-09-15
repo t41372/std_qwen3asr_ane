@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +25,9 @@ def main():
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     paths = {"baseline": args.baseline, "candidate": args.candidate}
+    utterances = sum(bool(line.strip()) for line in args.manifest.read_text().splitlines())
+    if not utterances:
+        parser.error("Energy/memory manifest must not be empty")
     report = {
         "complete": False,
         "energy": [],
@@ -35,6 +39,7 @@ def main():
         if args.baseline_source
         else None,
         "energy_measurement": "uncalibrated whole-machine PSTR, not per-device attribution",
+        "memory_protocol": "five independent pairs; first pair includes at least 100 requests; others use two passes; warm deltas sampled after request 2",
     }
 
     def run(label, script, options, *, baseline=False):
@@ -98,7 +103,7 @@ def main():
                             "--output",
                             str(destination),
                             "--passes",
-                            "100" if pair == 0 else "2",
+                            str(max(2, math.ceil(100 / utterances))) if pair == 0 else "2",
                             *shared,
                         ],
                         baseline=name == "baseline",
@@ -168,6 +173,32 @@ def main():
                 )
                 for name in paths
             }
+            changes = []
+            for group in range(5):
+                values = {
+                    name: float(
+                        np.mean(
+                            [
+                                row["joules_per_audio_second"]
+                                for row in report["energy"]
+                                if row["group"] == group and row["mode"] == name
+                            ]
+                        )
+                    )
+                    for name in paths
+                }
+                changes.append(values["candidate"] / values["baseline"] - 1)
+            bootstrap = np.random.default_rng(20260916).choice(
+                changes, size=(10000, 5), replace=True
+            )
+            report["paired_energy_relative_changes"] = changes
+            report["paired_energy_median_relative_change"] = float(np.median(changes))
+            report["paired_energy_median_ci95"] = np.percentile(
+                np.median(bootstrap, axis=1), [2.5, 97.5]
+            ).tolist()
+            report["energy_interval_unit"] = (
+                "five complete ABBA/BAAB groups; exploratory uncalibrated estimate"
+            )
         report["complete"] = True
     except Exception as error:
         report["error"] = f"{type(error).__name__}: {error}"

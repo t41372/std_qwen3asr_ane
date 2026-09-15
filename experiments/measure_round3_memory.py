@@ -49,6 +49,7 @@ def main():
         "pid": os.getpid(),
         "sampler_sha256": digest(args.sampler),
         "passes": args.passes,
+        "utterances_per_pass": len(inputs),
         "snapshots": [],
         "max_new_tokens": args.max_new_tokens,
     }
@@ -75,11 +76,13 @@ def main():
         sample("before_load")
         runtime = CoreMLRuntime(args.bundle)
         sample("after_load")
-        for repeat in range(args.passes):
+        completed = 0
+        for _ in range(args.passes):
             for audio in inputs:
                 runtime.transcribe(audio, language=None, max_new_tokens=args.max_new_tokens)
-            if repeat < 2 or repeat + 1 == args.passes:
-                sample(f"after_pass_{repeat + 1}")
+                completed += 1
+                if completed in (1, 2) or completed == args.passes * len(inputs):
+                    sample(f"after_request_{completed}")
         runtime.close()
         runtime = None
         gc.collect()

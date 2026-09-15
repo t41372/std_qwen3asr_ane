@@ -239,6 +239,7 @@ def compress_bundle(
     group_size: int = 32,
     roles: tuple[str, ...] = COMPRESSIBLE_ROLES,
     int8_embedding: bool = False,
+    encoder_group_size: int | None = None,
 ) -> dict:
     """Write a compressed copy of an uncompiled bundle; the source is never modified."""
     source, output = source.resolve(), output.resolve()
@@ -250,6 +251,10 @@ def compress_bundle(
     if not set(roles) <= set(SUPPORTED_COMPRESSIBLE_ROLES) or not roles:
         raise ValueError(f"roles must be a nonempty subset of {SUPPORTED_COMPRESSIBLE_ROLES}")
     validate_settings(scheme, bits, group_size)
+    if encoder_group_size is not None:
+        if "encoder" not in roles:
+            raise ValueError("encoder_group_size requires the encoder role")
+        validate_settings(scheme, bits, encoder_group_size)
     files, partitions = manifest.get("files"), manifest.get("decoder_partitions")
     if not isinstance(files, dict) or not isinstance(partitions, list) or "lm_head" not in files:
         raise ValueError("The bundle manifest must list files, lm_head and decoder_partitions")
@@ -276,9 +281,15 @@ def compress_bundle(
         options = (
             {"preserve_activation_expressions": True} if relative == files.get("encoder") else {}
         )
-        counts = compress_model(path, destination, scheme, bits, group_size, **options)
+        effective_group = (
+            encoder_group_size
+            if relative == files.get("encoder") and encoder_group_size is not None
+            else group_size
+        )
+        counts = compress_model(path, destination, scheme, bits, effective_group, **options)
         record = {
             "file": relative,
+            "group_size": effective_group,
             "seconds": perf_counter() - started,
             "source_weight_bytes": weight_bytes(path),
             "compressed_weight_bytes": weight_bytes(destination),
@@ -310,6 +321,10 @@ def compress_bundle(
         "created_at": datetime.now(UTC).isoformat(),
         "versions": {name: importlib.metadata.version(name) for name in ("coremltools", "numpy")},
     }
+    if encoder_group_size is not None:
+        manifest["weight_compression"]["role_overrides"] = {
+            "encoder": {"group_size": encoder_group_size, **granularity(scheme, encoder_group_size)}
+        }
     if int8_embedding:
         from .embedding import write_int8_embedding
 

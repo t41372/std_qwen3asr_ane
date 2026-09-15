@@ -62,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         choices=("decoder", "lm_head", "encoder"),
         default=["decoder", "lm_head"],
     )
+    compress.add_argument("--encoder-group-size", type=int, choices=(8, 16, 32), default=None)
     compile_command = commands.add_parser(
         "compile", help="Prepare a separate host-compiled bundle for faster subsequent loads"
     )
@@ -135,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
             group_size=args.group_size,
             roles=tuple(args.roles),
             int8_embedding=args.int8_embedding,
+            encoder_group_size=args.encoder_group_size,
         )
     elif args.command == "build-draft":
         from .conversion.draft import build_draft_bundle

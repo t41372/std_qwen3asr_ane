@@ -42,5 +42,35 @@ Baseline tests: 371 passed natively. All raw baseline evidence is retained under
   INT8 embedding arrays, with vectorized text embedding gather, legacy support,
   complete model close and artifact checks. Build/compress options are exposed;
   default acquisition recipes have NOT changed pending final promotion gates.
-- Latest full native suite: 481 passed. A frozen copy of the entire `92810d7`
+- Latest full native suite: 482 passed. A frozen copy of the entire `92810d7`
   package supports comparisons against original code as well as original weights.
+
+## Cache256 decision
+
+The candidate passes the latency and tested-output checks:
+
+- Eligible EN/ZH 95: p50 379.18 -> 353.25 ms (-6.84%); p95 591.83 -> 542.82 ms
+  (-8.28%), three alternating attempts per utterance.
+- Natural short multilingual 270: p50 417.58 -> 384.57 ms; p95 602.05 -> 553.25 ms.
+- Tokens/EOS match in the above sets and five eligible robustness cases.
+- Eight-language prefill diagnostics have identical hidden values and all used KV.
+- Five process-memory pairs: median peak footprint 665.41 -> 562.49 MiB. System
+  wired deltas vary substantially with background activity; do not equate them
+  with a guaranteed model allocation reduction.
+
+Five randomized ABBA/BAAB energy groups give a median paired relative change of
+-2.57%, with exploratory bootstrap interval [-8.16%, +3.20%]. This fails the
+preregistered requirement that voice energy improvement have an upper bound below
+zero. **Do not register a public voice-command preset in this round.** Keep the
+immutable candidate and construction script for further work, without a stable
+energy-saving claim. Group-level medians and medians pooled across blocks differ;
+the preregistered paired-group statistic governs this decision.
+
+The isolated trace closes all 1,402 candidate prediction calls across the five
+graphs; known-cost operations prefer ANE. No GPU rows identify the target PID;
+two GPU rows have unknown process identity. The trace is diagnostic evidence,
+not a substitute for the failed stable-energy-improvement gate.
+
+Audio encoder LUT8 g16 and g8 also fail their regression gates (ZH CER +0.04054
+and +0.05405 pp respectively). No audio encoder compression becomes a default.
+All decoder fusion probes remain below the 8% local-gain gate; no full export.
