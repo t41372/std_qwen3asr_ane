@@ -44,12 +44,13 @@ def main():
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repeats", type=int, default=60)
+    parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--device", choices=("cpu", "mps"), default="cpu")
     parser.add_argument(
         "--dtype", choices=("float32", "bfloat16", "float16"), default="float32"
     )
     args = parser.parse_args()
-    if args.repeats < 1 or args.output.exists():
+    if args.repeats < 1 or args.max_new_tokens < 1 or args.output.exists():
         parser.error("Require positive repeats and a fresh output directory")
     args.output.mkdir(parents=True)
     inputs = []
@@ -65,7 +66,7 @@ def main():
         predict, _ = load_backend(args.model_dir.resolve(), 20260912)
 
         def transcribe(samples):
-            return predict(samples, None, 256)["hypothesis"]
+            return predict(samples, None, args.max_new_tokens)["hypothesis"]
     elif args.backend == "specdraft":
         from std_qwen3asr_ane.draft import DraftRuntime
         from std_qwen3asr_ane.runtime import CoreMLRuntime
@@ -82,7 +83,7 @@ def main():
                 samples,
                 draft,
                 language=None,
-                max_new_tokens=256,
+                max_new_tokens=args.max_new_tokens,
                 lookahead=args.lookahead,
             ).text
     elif args.backend == "official":
@@ -96,7 +97,7 @@ def main():
             device_map=args.device,
             attn_implementation="sdpa" if args.device == "mps" else "eager",
             max_inference_batch_size=1,
-            max_new_tokens=256,
+            max_new_tokens=args.max_new_tokens,
             local_files_only=True,
         )
         model.model.eval()
@@ -114,7 +115,9 @@ def main():
         close = runtime.close
 
         def transcribe(samples):
-            return runtime.transcribe(samples, language=None, max_new_tokens=256).text
+            return runtime.transcribe(
+                samples, language=None, max_new_tokens=args.max_new_tokens
+            ).text
 
     load_seconds = time.monotonic() - started
     collector = None
@@ -147,6 +150,12 @@ def main():
         "load_seconds": load_seconds,
         "manifest_sha256": hashlib.sha256(args.manifest.read_bytes()).hexdigest(),
         "repeats": args.repeats,
+        "max_new_tokens": args.max_new_tokens,
+        "model_manifest_sha256": hashlib.sha256(
+            (args.model_dir / "manifest.json").read_bytes()
+        ).hexdigest()
+        if (args.model_dir / "manifest.json").is_file()
+        else None,
     }
     try:
         expected = [transcribe(samples) for _, samples, _ in inputs]

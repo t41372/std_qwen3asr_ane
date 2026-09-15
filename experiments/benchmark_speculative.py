@@ -51,25 +51,41 @@ def validate_state_transfer(source, destination):
         raise ValueError(
             "Prefill and generation must use byte-identical decoder weights"
         )
+    # Resolve the destination state contract once, outside measured requests.
+    # Reading every empty destination KV tensor per request needlessly repeats
+    # device-to-host transfers just to recover shapes that cannot change.
+    destination._transfer_layout = []
+    for model in destination.decoders:
+        state = model.make_state()
+        layout = {}
+        for layer in range(28 // len(destination.decoders)):
+            for kind in ("key", "value"):
+                name = f"{kind}_{layer}"
+                value = state.read_state(name)
+                layout[name] = (value.shape, value.dtype)
+        destination._transfer_layout.append(layout)
 
 
 def transfer_prompt(prepared, destination):
     """Use public MLState read/write; never pass state handles between models."""
     states = tuple(model.make_state() for model in destination.decoders)
-    layers = 28 // len(states)
-    for source, target in zip(prepared.states, states, strict=True):
-        for layer in range(layers):
-            for kind in ("key", "value"):
-                name = f"{kind}_{layer}"
-                value = source.read_state(name)
-                if (
-                    value.shape != target.read_state(name).shape
-                    or not np.isfinite(value).all()
-                ):
-                    raise ValueError(
-                        "State shape differs or prefill cache contains non-finite values"
-                    )
-                target.write_state(name, value)
+    for source, target, layout in zip(
+        prepared.states, states, destination._transfer_layout, strict=True
+    ):
+        for name, (shape, dtype) in layout.items():
+            value = source.read_state(name)
+            if value.shape != shape or value.dtype != dtype:
+                raise ValueError(
+                    "State shape or dtype differs from the validated contract"
+                )
+            valid = value[..., : len(prepared.token_ids)]
+            if not np.isfinite(valid).all():
+                raise ValueError("Prefill cache contains non-finite values")
+            # Only prompt positions have semantic content. Clear the unconsumed
+            # suffix explicitly: even masked NaNs could poison later attention.
+            copied = np.zeros(shape, dtype=dtype)
+            copied[..., : len(prepared.token_ids)] = valid
+            target.write_state(name, copied)
     return replace(prepared, states=states)
 
 

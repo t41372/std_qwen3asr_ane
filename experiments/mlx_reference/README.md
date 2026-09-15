@@ -23,7 +23,7 @@ Run all commands from the workspace root:
 ```bash
 UV_CACHE_DIR="$PWD/.cache/uv" HF_HOME="$PWD/.cache/huggingface" \
   uv sync --frozen --project experiments/mlx_reference \
-  --python "$PWD/std_qwen3asr_ane/.venv/bin/python"
+  --python "$PWD/.venv/bin/python"
 
 # Host-only tests; no MLX imports or model execution.
 experiments/mlx_reference/.venv/bin/python -m unittest discover \

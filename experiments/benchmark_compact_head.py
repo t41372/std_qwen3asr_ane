@@ -30,9 +30,18 @@ def main():
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
+        "--token-batch-size", type=int, default=None, help="Required for compiled heads"
+    )
+    parser.add_argument(
         "--bundle", type=Path, default=Path("artifacts/qwen3-asr-1.7b-compiled")
     )
     args = parser.parse_args()
+    if args.model.suffix == ".mlmodelc" and (
+        args.token_batch_size is None or args.token_batch_size < 1
+    ):
+        parser.error("Compiled heads require a positive --token-batch-size")
+    if args.output.exists():
+        parser.error("Use a fresh output")
     runtime = CoreMLRuntime(args.bundle)
     recorder = RecordingHead(runtime.lm_head)
     runtime.lm_head = recorder
@@ -45,9 +54,16 @@ def main():
             )
             runtime.transcribe(samples, language=None, max_new_tokens=256)
         compact = PersistentInputModel(
-            ct.models.MLModel(str(args.model), compute_units=ct.ComputeUnit.CPU_AND_NE)
+            (
+                ct.models.CompiledMLModel
+                if args.model.suffix == ".mlmodelc"
+                else ct.models.MLModel
+            )(str(args.model), compute_units=ct.ComputeUnit.CPU_AND_NE)
         )
-        width = compact.get_spec().description.input[0].type.multiArrayType.shape[-1]
+        width = (
+            args.token_batch_size
+            or compact.get_spec().description.input[0].type.multiArrayType.shape[-1]
+        )
         elapsed, mismatches = {"original": [], "compact": []}, []
         expected_tokens = []
         chunk_size = None

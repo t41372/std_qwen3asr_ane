@@ -201,7 +201,7 @@ def main() -> None:
         "limitations": [
             "ANE hardware rows carry no PID; attribution uses exact compiled labels and the call-count closure.",
             "Shares are Instruments ANE-active intervals over transcribe() wall time, not FLOPs, energy or CPU utilization.",
-            "Two warm short utterances, batch path, 1024-position cache; streaming, long audio and cold start are untraced.",
+            f"Recorded batch workload only; bundle cache has {manifest['max_sequence_length']} positions. Do not generalize to streaming or unrecorded shapes.",
         ],
     }
     sidecar["run_fingerprint_sha256"] = canonical_sha256(

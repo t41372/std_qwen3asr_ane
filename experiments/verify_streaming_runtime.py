@@ -11,6 +11,7 @@ from evaluate import audio_samples
 from standard_asr import discover_models
 from standard_asr.compliance import check_event_sequence, check_transcription_result
 from standard_asr.engine import AudioFormat, RuntimeParams
+from std_qwen3asr_ane.profiles import PROFILES
 
 
 async def stream(engine, samples, *, realtime):
@@ -68,14 +69,18 @@ def main():
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--audio", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--profile", choices=PROFILES, default="general")
     parser.add_argument("--realtime", action="store_true")
     parser.add_argument("--silence", action="store_true")
     parser.add_argument("--chunk-seconds", type=float, default=1.0)
     parser.add_argument("--max-new-tokens", type=int, default=256)
     args = parser.parse_args()
+    if args.output.exists():
+        parser.error("Use a fresh output path")
     engine = discover_models(strict=True).create(
         "std-qwen3asr-ane/1.7b",
         model_dir=args.model_dir,
+        profile=args.profile,
         stream_chunk_seconds=args.chunk_seconds,
         max_new_tokens=args.max_new_tokens,
     )
@@ -86,13 +91,19 @@ def main():
         loaded = perf_counter() - started
         samples, digest = audio_samples(args.audio)
         report = asyncio.run(stream(engine, samples, realtime=args.realtime))
-        report.update(model_load_seconds=loaded, audio_sha256=digest)
+        report.update(
+            model_load_seconds=loaded, audio_sha256=digest, profile=args.profile
+        )
         batch = engine.transcribe((samples, 16000))
         report["batch_result"] = batch.model_dump(mode="json")
         report["stream_matches_batch"] = report["result"]["text"] == batch.text
         if args.silence:
             report["silence"] = []
-            for seconds in (0.1, 0.5, 5.0, 29.99):
+            manifest = json.loads((args.model_dir / "manifest.json").read_text())
+            limit = min(
+                PROFILES[args.profile].max_audio_seconds, manifest["max_audio_seconds"]
+            )
+            for seconds in (0.1, 0.5, 5.0, limit - 0.01):
                 result = engine.transcribe(
                     (np.zeros(round(seconds * 16000), np.float32), 16000)
                 )

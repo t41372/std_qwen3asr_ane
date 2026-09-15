@@ -25,6 +25,7 @@ from typing import Any
 import jiwer
 import numpy as np
 import soundfile as sf
+from latency import compare_latency, summarize_latency
 from scipy.signal import resample_poly
 
 NORMALIZER = "nfkc_casefold_unicode_punctuation_to_space_v1"
@@ -144,7 +145,9 @@ def compute_label(args: argparse.Namespace) -> str:
     if args.backend == "standard":
         return "plugin_managed"
     if args.backend == "coreml":
-        return args.compute_units + ("+gpu_draft" if getattr(args, "draft_dir", None) else "")
+        return args.compute_units + (
+            "+gpu_draft" if getattr(args, "draft_dir", None) else ""
+        )
     return f"{args.device}_{DTYPE_LABELS[args.dtype]}"
 
 
@@ -175,9 +178,21 @@ def make_backend(args: argparse.Namespace) -> Backend:
     if args.backend == "coreml":
         from std_qwen3asr_ane.runtime import CoreMLRuntime
 
-        runtime = CoreMLRuntime(
-            args.model_dir.resolve(), compute_units=args.compute_units
-        )
+        if getattr(args, "prefill_model_dir", None) is not None:
+            from benchmark_dualwidth_greedy import PrefillComparisonRuntime
+
+            if args.compute_units != "cpu_and_ne" or getattr(args, "draft_dir", None):
+                raise ValueError(
+                    "Dual-width evaluation requires CPU_AND_NE without a draft"
+                )
+            runtime = PrefillComparisonRuntime(
+                args.model_dir.resolve(), args.prefill_model_dir.resolve()
+            )
+            runtime.use_wide_prefill = True
+        else:
+            runtime = CoreMLRuntime(
+                args.model_dir.resolve(), compute_units=args.compute_units
+            )
         draft = None
         if getattr(args, "draft_dir", None):
             from std_qwen3asr_ane.draft import DraftRuntime
@@ -201,7 +216,10 @@ def make_backend(args: argparse.Namespace) -> Backend:
                 result = runtime.transcribe(
                     audio, language=language, max_new_tokens=args.max_new_tokens
                 )
-            return result.text, result.language, getattr(result, "timings", None)
+            timings = getattr(result, "timings", None)
+            if isinstance(timings, dict) and hasattr(result, "token_ids"):
+                timings = {**timings, "token_ids": list(result.token_ids)}
+            return result.text, result.language, timings
 
         def close():
             if draft is not None:
@@ -322,7 +340,9 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "total_audio_seconds": durations,
             "corpus_rtf": sum(times) / durations if durations else None,
             "median_seconds": float(np.median(times)) if times else None,
+            "p90_seconds": float(np.percentile(times, 90)) if times else None,
             "p95_seconds": float(np.percentile(times, 95)) if times else None,
+            **summarize_latency(successful),
         },
         "energy": {"measured": False, "joules": None},
     }
@@ -469,6 +489,9 @@ def run(args: argparse.Namespace) -> int:
                                 scores=score(item["reference"], hypothesis),
                             )
                             if isinstance(timings, dict):
+                                timings = dict(timings)
+                                if "token_ids" in timings:
+                                    record["token_ids"] = timings.pop("token_ids")
                                 record["backend_timings"] = timings
                         except Exception as exc:  # noqa: BLE001 — backend failures are benchmark data.
                             record["seconds"] = time.perf_counter() - begin
@@ -524,6 +547,10 @@ def run(args: argparse.Namespace) -> int:
         "environment": environment(),
         **aggregate(results),
     }
+    if getattr(args, "prefill_model_dir", None) is not None:
+        summary["prefill_model_dir"] = str(args.prefill_model_dir.resolve())
+        summary["prefill_model_metadata"] = model_metadata(args.prefill_model_dir)
+        summary["state_transfer"] = "public_read_write_copy"
     if args.backend == "standard":
         summary["model_key"] = args.model_key
         summary["engine_create_seconds"] = load_seconds
@@ -593,9 +620,11 @@ def paired_bootstrap(
 def compare(args: argparse.Namespace) -> int:
     paths = [p.resolve() for p in args.compare]
     runs = []
+    attempts = []
     reliability_problems = []
     for path in paths:
         all_rows = read_jsonl(path)
+        attempts.append(all_rows)
         rows = [
             r for r in all_rows if r.get("phase") == "measured" and r.get("repeat") == 0
         ]
@@ -681,6 +710,57 @@ def compare(args: argparse.Namespace) -> int:
         "problems": problems,
     }
     if not problems:
+        report["latency"] = compare_latency(*attempts)
+        token_runs = [
+            {
+                (row["id"], row["repeat"]): row.get("token_ids")
+                for row in run
+                if row.get("phase") == "measured"
+            }
+            for run in attempts
+        ]
+        tokens_available = (
+            all(
+                isinstance(tokens, list)
+                for run in token_runs
+                for tokens in run.values()
+            )
+            and token_runs[0].keys() == token_runs[1].keys()
+        )
+        mismatches = (
+            [key for key in token_runs[0] if token_runs[0][key] != token_runs[1][key]]
+            if tokens_available
+            else []
+        )
+        report["token_parity"] = {
+            "available": tokens_available,
+            "all_equal": not mismatches if tokens_available else None,
+            "mismatched_attempts": mismatches,
+        }
+        eos_runs = [
+            {
+                (row["id"], row["repeat"]): (row.get("backend_timings") or {}).get(
+                    "eos_token_id"
+                )
+                for row in run
+                if row.get("phase") == "measured"
+            }
+            for run in attempts
+        ]
+        eos_available = (
+            all(type(token) is int for run in eos_runs for token in run.values())
+            and eos_runs[0].keys() == eos_runs[1].keys()
+        )
+        eos_mismatches = (
+            [key for key in eos_runs[0] if eos_runs[0][key] != eos_runs[1][key]]
+            if eos_available
+            else []
+        )
+        report["eos_parity"] = {
+            "available": eos_available,
+            "all_equal": not eos_mismatches if eos_available else None,
+            "mismatched_attempts": eos_mismatches,
+        }
         a, b = ([mapping[i] for i in common] for mapping in runs)
         report["quality"] = {
             m: paired_bootstrap(
@@ -731,6 +811,12 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--backend", choices=("coreml", "official", "standard"))
     result.add_argument("--manifest", type=Path)
     result.add_argument("--model-dir", type=Path)
+    result.add_argument(
+        "--prefill-model-dir",
+        type=Path,
+        default=None,
+        help="coreml experiment: compatible wide prefill bundle with public KV copying",
+    )
     result.add_argument(
         "--draft-dir",
         type=Path,
@@ -783,6 +869,8 @@ def main() -> int:
     if not 100 <= args.bootstrap_samples <= 100000:
         cli.error("bootstrap-samples must be between 100 and 100000")
     if not args.compare:
+        if args.prefill_model_dir is not None and args.backend != "coreml":
+            cli.error("--prefill-model-dir requires the coreml backend")
         if not all((args.backend, args.manifest)):
             cli.error("run mode requires --backend and --manifest")
         if args.backend == "standard":

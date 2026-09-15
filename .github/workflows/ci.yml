@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: macOS / Python ${{ matrix.python }}
+    runs-on: macos-15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    env:
+      STANDARD_ASR_ALLOW_DOWNLOAD: "0"
+      STANDARD_ASR_MODEL_DIR: ${{ runner.temp }}/asr-models
+      UV_TOOL_DIR: ${{ runner.temp }}/asr-tools
+      UV_TOOL_BIN_DIR: ${{ runner.temp }}/asr-bin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.13"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked test dependencies
+        run: uv sync --locked --python '${{ matrix.python }}' --group convert
+      - name: Lint and test
+        run: |
+          uv run --no-sync ruff check std_qwen3asr_ane/src std_qwen3asr_ane/tests
+          uv run --no-sync pytest -q
+          for workflow in experiments/workflows/*.sh; do bash -n "$workflow"; done
+      - name: Build wheel from source distribution
+        run: uv build
+      - name: Test ordinary wheel installation
+        run: |
+          uv tool install --python '${{ matrix.python }}' dist/*.whl
+          "$UV_TOOL_BIN_DIR/standard-asr" list
+          "$UV_TOOL_BIN_DIR/standard-asr" compliance run
+          "$UV_TOOL_BIN_DIR/standard-asr" status std-qwen3asr-ane/1.7b --json > status.json
+          uv run --no-sync python -c 'import json, os; from pathlib import Path; r=json.load(open("status.json")); assert r["readiness"] == "unavailable"; assert r["requirements"][0]["acquisition_blocker"] == "downloads_disabled"; assert not Path(os.environ["STANDARD_ASR_MODEL_DIR"]).exists()'

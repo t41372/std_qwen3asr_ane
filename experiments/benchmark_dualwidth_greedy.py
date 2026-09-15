@@ -2,7 +2,8 @@
 
 Both modes use the production greedy loop and the same generation model handles.
 Only prompt preparation changes. There is no draft model or oracle transcript.
-State sharing remains an experiment on these validated, compatible artifacts.
+The default transfers KV values with public read/write APIs. Direct handle
+sharing is an explicitly selected diagnostic, never a production assumption.
 """
 
 from __future__ import annotations
@@ -11,10 +12,11 @@ import argparse
 import hashlib
 import json
 import statistics
+from dataclasses import replace
 from pathlib import Path
 from time import perf_counter
 
-from benchmark_speculative import validate_state_transfer
+from benchmark_speculative import transfer_prompt, validate_state_transfer
 from evaluate import audio_samples, manifest_rows
 from std_qwen3asr_ane.diagnostics import inspect_environment
 from std_qwen3asr_ane.runtime import CoreMLRuntime
@@ -23,7 +25,12 @@ from std_qwen3asr_ane.runtime import CoreMLRuntime
 class PrefillComparisonRuntime(CoreMLRuntime):
     """Route batch prompt preparation while retaining the normal greedy loop."""
 
-    def __init__(self, generation_dir: Path, prefill_dir: Path):
+    def __init__(
+        self, generation_dir: Path, prefill_dir: Path, *, state_transfer="copy"
+    ):
+        if state_transfer not in {"copy", "shared"}:
+            raise ValueError("state_transfer must be copy or shared")
+        self.state_transfer = state_transfer
         started = perf_counter()
         super().__init__(generation_dir)
         self.generation_load_seconds = perf_counter() - started
@@ -45,7 +52,17 @@ class PrefillComparisonRuntime(CoreMLRuntime):
                 "This experiment covers batch decoding, not streaming contexts"
             )
         if self.use_wide_prefill:
-            return self.wide_prefill.prepare_prompt(*args, **kwargs)
+            prepared = self.wide_prefill.prepare_prompt(*args, **kwargs)
+            started = perf_counter()
+            if self.state_transfer == "copy":
+                prepared = transfer_prompt(prepared, self)
+            return replace(
+                prepared,
+                timings={
+                    **prepared.timings,
+                    "state_transfer_seconds": perf_counter() - started,
+                },
+            )
         return super().prepare_prompt(*args, **kwargs)
 
     def close(self, *, timeout=5.0):
@@ -55,17 +72,16 @@ class PrefillComparisonRuntime(CoreMLRuntime):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--generation", type=Path, default=Path("artifacts/qwen3-asr-1.7b-compiled")
-    )
+    parser.add_argument("--generation", type=Path, required=True)
     parser.add_argument(
         "--prefill",
         type=Path,
-        default=Path("artifacts/qwen3-asr-1.7b-prefill64-compiled"),
+        required=True,
     )
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--state-transfer", choices=("copy", "shared"), default="copy")
     args = parser.parse_args()
     if args.repeats < 1 or args.output.exists():
         parser.error("Use positive repeats and a fresh output path")
@@ -74,12 +90,20 @@ def main():
         for row in manifest_rows(args.manifest)
     ]
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    runtime = PrefillComparisonRuntime(args.generation, args.prefill)
+    runtime = PrefillComparisonRuntime(
+        args.generation, args.prefill, state_transfer=args.state_transfer
+    )
     records = []
     summary = {
         "purpose": "ordinary Qwen3-ASR-1.7B greedy decoding; no draft model",
+        "state_transfer": args.state_transfer,
+        "generation_path": str(args.generation.resolve()),
+        "prefill_path": str(args.prefill.resolve()),
         "environment": inspect_environment(),
         "script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "state_transfer_script_sha256": hashlib.sha256(
+            Path(__file__).with_name("benchmark_speculative.py").read_bytes()
+        ).hexdigest(),
         "runtime_sha256": hashlib.sha256(
             Path(__file__)
             .parents[1]

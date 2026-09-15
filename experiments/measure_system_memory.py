@@ -49,6 +49,7 @@ def main() -> None:
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument(
         "--draft-dir",
         type=Path,
@@ -57,6 +58,8 @@ def main() -> None:
     )
     parser.add_argument("--draft-bits", type=int, choices=(4, 8), default=4)
     args = parser.parse_args()
+    if args.output.exists() or args.max_new_tokens < 1:
+        parser.error("Use a fresh output and positive token budget")
     inputs = [
         audio_samples(Path(row["audio_path"]))[0]
         for row in manifest_rows(args.manifest)
@@ -70,6 +73,7 @@ def main() -> None:
         "model_dir": str(args.model_dir),
         "draft_dir": None if args.draft_dir is None else str(args.draft_dir),
         "idle_drift_mib": delta(before, idle_start),
+        "max_new_tokens": args.max_new_tokens,
     }
     if args.backend == "coreml":
         from std_qwen3asr_ane.runtime import CoreMLRuntime
@@ -81,7 +85,11 @@ def main() -> None:
             draft = DraftRuntime(args.draft_dir, runtime, quantize_bits=args.draft_bits)
             transcribe = lambda s: (
                 runtime.transcribe_speculative(
-                    s, draft, language=None, max_new_tokens=256, lookahead=15
+                    s,
+                    draft,
+                    language=None,
+                    max_new_tokens=args.max_new_tokens,
+                    lookahead=15,
                 ).text
             )
 
@@ -90,7 +98,9 @@ def main() -> None:
                 runtime.close()
         else:
             transcribe = lambda s: (
-                runtime.transcribe(s, language=None, max_new_tokens=256).text
+                runtime.transcribe(
+                    s, language=None, max_new_tokens=args.max_new_tokens
+                ).text
             )
             close = runtime.close
     else:
@@ -98,7 +108,7 @@ def main() -> None:
 
         configure_local_caches()
         predict, _ = load_backend(args.model_dir.resolve(), 20260912)
-        transcribe = lambda s: predict(s, None, 256)["hypothesis"]
+        transcribe = lambda s: predict(s, None, args.max_new_tokens)["hypothesis"]
         close = None
     loaded = vm_stat()
     report["after_load_mib"] = delta(loaded, before)

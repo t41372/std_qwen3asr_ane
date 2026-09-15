@@ -109,6 +109,10 @@ def main():
         shared_immutable_weight_files=shared,
     )
     snapshot = output / "conversion-source-v2"
+    # The new directory is our clone, and may contain its parent's snapshot.
+    # Replace only that copied provenance, never files in the source bundle.
+    if snapshot.exists():
+        shutil.rmtree(snapshot)
     shutil.copytree(
         Path(__file__).parents[1] / "std_qwen3asr_ane/src/std_qwen3asr_ane/conversion",
         snapshot,
