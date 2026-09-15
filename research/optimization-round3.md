@@ -88,3 +88,68 @@ directory, checking IDs AND audio hashes against historical evaluation rows.
 Next: finish head sweep; create fresh corpus; run instrumentation overhead pairing;
 build/test INT8 embedding, audio B4/B8 and encoder B2/LUT8; bounded decoder fusion;
 cache256; final combined validation/integration. No candidate is promoted.
+
+## Continuation checkpoint (2026-09-15 UTC)
+
+Committed foundation/probes as `01dd553`; current branch is
+`feat/ane-round3-audio`. User README/AGENTS/brief remain untouched/uncommitted.
+The preceding "Next" paragraph is superseded by this checkpoint.
+
+- Head sweep completed: 2048/4096/6144 slower by 32.6%/13.3%/4.0%; retain 8192.
+- INT8 table built at `artifacts/evaluation/round3/int8-embedding/table`;
+  310,557,056 bytes saved, selection EN/ZH normalized score deltas zero, four
+  punctuation/sentence/case changes reviewed. Do not yet promote.
+- Fresh held-out frozen at `round3/corpus-freeze-v3/heldout-200.jsonl`, hash
+  `2a2abc11f14b8075ad02c0240ead0411942a63a58abf0dd123f77806f1a503f9`.
+  Offsets 500:600 of cached EN/ZH corpus; no candidate evaluated on it yet.
+- Audio inventory: frontend 12,017,280 parameters / 24,034,560 FP16 bytes;
+  encoder 305,460,224 parameters / 610,920,448 FP16 bytes.
+- Initial frontend B4/B8 tracing failed on Torch dynamic shape -> int conversion.
+  Fixed by explicit static batch size in `BatchedFrontend`; no SDK patch.
+- Encoder B2 micro: exactly equal output but 34.7% slower; stop batching encoder.
+- Initial audio LUT8 builds correctly failed the native-GELU guard. SDK public
+  compression helpers rerun default passes. Added opt-in
+  `preserve_activation_expressions` to `compress_model`: same compression pass,
+  request pymil before reconversion, then use protected conversion pipeline.
+  Two focused tests pass, checking compression, exact GELU and IO/state contract.
+- New immutable v2 audio candidates live at
+  `artifacts/qwen3-asr-1.7b-r3-{frontend-b4,frontend-b8,encoder-g32,encoder-g16,encoder-g8}-v2`.
+  Logs/results under `artifacts/evaluation/round3/audio-v2`.
+  Frontend B4 is 21.5% faster per four chunks, exact output; B8 only 9.3% faster,
+  so retain B4 for corpus testing. Known-cost operations prefer ANE.
+  Encoder g32/g16/g8 component speed is roughly unchanged (1.3%/1.0%/0.1% gain);
+  pursue memory/quality, not a latency headline. g32 max abs embedding error .0083.
+- `round3_quality.sh` is currently running sequential native model work (tool
+  session 67501): frontend B4 regression400/multilingual300/robustness12, then
+  INT8 same sets, then encoder g32 selection/regression/multilingual/robustness.
+  Each stage is bounded; score failures stop that candidate. Look at each
+  candidate's `summary.json` and `*-command/stdout.log`. Do NOT launch another
+  model workload until it finishes. Historic target transcript controls are used
+  ONLY for screening quality, never for latency claims; provenance is in
+  `round3/quality-controls`. Final performance must be freshly paired.
+- `review_transcript_changes.py` produces manual raw-text review queues; it does
+  not claim automatic entity or punctuation correctness from unpunctuated refs.
+- Added `audio_batch.py` production helper but it is NOT wired into runtime yet.
+  It has boundary/order/mask tests prepared. Existing default still B1/copy.
+- Added memory sampler C source + Python stage sampler; compile C before use:
+  `xcrun clang -O2 -Wall -Wextra -Werror experiments/process_memory.c -o artifacts/evaluation/round3/process-memory`.
+- `probe_round3_fusion.py` and `build_voice_command.py` are ready but NOT run.
+  Fusion uses real first-four-layer T16 KV fixture, reinitializes state outside
+  timed calls, retains hidden/KV differences, and requires >=8% local benefit.
+  Voice candidate is cache256, 6 s, budget64; `prepare_voice_corpus.py` determines
+  eligibility from inputs/capacity only. No public voice profile exists yet.
+
+Remaining implementation/validation:
+1. Inspect ongoing quality gates and manually review text differences. Try g16/g8
+   only if g32 quality fails and alternate quantization is worth evaluating.
+2. Measure instrumentation overhead via identical bundle clone and
+   `round3_runtime.py --profile --candidate-only <clone> -- benchmark_paired_corpus.py ...`.
+3. Run bounded fusion probes and cache256 candidate; stop under thresholds.
+4. Integrate passing candidates (frontend runtime/conversion/artifact recipe;
+   INT8 versioned format/gather if it passes; optional audio compression recipe;
+   voice profile only if speed/energy/quality pass). No unvalidated default change.
+5. Freeze combined artifact and source, three-repeat paired corpus, fresh held-out
+   once, multilingual/raw/robustness/streaming, five independent memory runs,
+   five randomized ABBA energy series, isolated Instruments call closure.
+6. Update evidence collector/docs, run full tests/compliance, conventional commits.
+   Re-read the original user brief after compaction before continuing.

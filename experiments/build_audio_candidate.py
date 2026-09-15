@@ -22,11 +22,15 @@ from std_qwen3asr_ane.conversion.passes import ane_pass_pipeline, verify_activat
 
 
 class BatchedFrontend(AudioFrontend):
+    def __init__(self, config, batch_size):
+        super().__init__(config)
+        self.batch_size = batch_size
+
     def forward(self, mel_features, conv1_mask, conv2_mask):
         x = exact_gelu(self.conv2d1(mel_features)) * conv1_mask
         x = exact_gelu(self.conv2d2(x)) * conv2_mask
         x = exact_gelu(self.conv2d3(x))
-        x = x.reshape(mel_features.shape[0], self.flattened_channels, 1, -1)
+        x = x.reshape(self.batch_size, self.flattened_channels, 1, -1)
         return self.conv_out(x) + self.positions
 
 
@@ -53,7 +57,7 @@ def main():
     torch.set_num_threads(4)
     config = json.loads((args.source / "config.json").read_text())["thinker_config"]["audio_config"]
     if args.role == "frontend":
-        module = BatchedFrontend(config).eval()
+        module = BatchedFrontend(config, args.batch).eval()
         shapes = {
             "mel_features": (args.batch, 1, 128, 100),
             "conv1_mask": (args.batch, 1, 1, 50),
@@ -91,7 +95,14 @@ def main():
     counts = None
     if args.lut8_group:
         compressed = args.output / f"{stem}-lut8-g{args.lut8_group}.mlpackage"
-        counts = compress_model(package, compressed, "palette", 8, args.lut8_group)
+        counts = compress_model(
+            package,
+            compressed,
+            "palette",
+            8,
+            args.lut8_group,
+            preserve_activation_expressions=True,
+        )
         package = compressed
     compiled = args.output / f"{package.stem}.mlmodelc"
     shutil.copytree(ct.models.utils.compile_model(str(package)), compiled)

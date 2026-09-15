@@ -266,6 +266,44 @@ def test_invalid_manifest(bundle: Path, change: dict, expected: str) -> None:
     assert report.requirements[0].state == expected
 
 
+def test_batched_frontend_requires_its_additional_asset(bundle):
+    path = bundle / "manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["frontend"] = {"offline_batch_size": 4}
+    path.write_text(json.dumps(manifest))
+    engine = create_engine(model_dir=bundle)
+    assert engine.artifact_status().requirements[0].state == "incomplete"
+    shutil.copytree(bundle / "frontend.mlpackage", bundle / "frontend_batched.mlpackage")
+    manifest["files"]["frontend_batched"] = "frontend_batched.mlpackage"
+    path.write_text(json.dumps(manifest))
+    assert engine.artifact_status().requirements[0].state == "ready"
+    manifest["frontend"]["offline_batch_size"] = True
+    path.write_text(json.dumps(manifest))
+    assert engine.artifact_status().requirements[0].state == "corrupt"
+
+
+def test_schema_three_requires_embedding_scales(bundle):
+    path = bundle / "manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest.update(
+        schema_version=3,
+        head_output={"kind": "logits", "token_batch_size": 1},
+        embedding_quantization={
+            "scheme": "symmetric_int8_per_row",
+            "axis": 0,
+            "scale_dtype": "float32",
+            "shape": [4, 8],
+        },
+    )
+    path.write_text(json.dumps(manifest))
+    engine = create_engine(model_dir=bundle)
+    assert engine.artifact_status().requirements[0].state == "incomplete"
+    np.save(bundle / "scales.npy", np.ones(4, np.float32))
+    manifest["files"]["embedding_scales"] = "scales.npy"
+    path.write_text(json.dumps(manifest))
+    assert engine.artifact_status().requirements[0].state == "ready"
+
+
 def test_corrupt_json_and_missing_payload(bundle: Path) -> None:
     engine = create_engine(model_dir=bundle)
     (bundle / "embedding.npy").unlink()

@@ -68,8 +68,11 @@ def audio_token_count(frame_count: int) -> int:
 
 
 class AudioFrontend(nn.Module):
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any], *, batch_size: int = 1):
         super().__init__()
+        if type(batch_size) is not int or batch_size < 1:
+            raise ValueError("Frontend batch size must be a positive integer")
+        self.batch_size = batch_size
         self.chunk_frames = config["n_window"] * 2
         channels = config["downsample_hidden_size"]
         self.conv2d1 = nn.Conv2d(1, channels, 3, 2, padding=1)
@@ -94,7 +97,7 @@ class AudioFrontend(nn.Module):
         x = exact_gelu(self.conv2d1(mel_features)) * conv1_mask
         x = exact_gelu(self.conv2d2(x)) * conv2_mask
         x = exact_gelu(self.conv2d3(x))
-        x = x.reshape(1, self.flattened_channels, 1, -1)
+        x = x.reshape(self.batch_size, self.flattened_channels, 1, -1)
         return self.conv_out(x) + self.positions
 
 
@@ -174,13 +177,17 @@ def load_encoder_weights(module: nn.Module, source_dir: Path) -> None:
     module.load_state_dict(loaded, strict=True)
 
 
-def build_encoder(source_dir: str | Path, output_dir: str | Path) -> dict[str, Any]:
+def build_encoder(
+    source_dir: str | Path, output_dir: str | Path, *, frontend_batch_size: int = 1
+) -> dict[str, Any]:
     """Export the frontend and one masked attention window; return bundle metadata."""
     import coremltools as ct
 
     from .passes import ane_pass_pipeline, verify_activation_operators
 
     source_dir, output_dir = Path(source_dir), Path(output_dir)
+    if type(frontend_batch_size) is not int or frontend_batch_size not in (1, 4):
+        raise ValueError("Supported offline frontend batches are 1 and 4")
     config = json.loads((source_dir / "config.json").read_text())["thinker_config"]["audio_config"]
     if config["n_window"] != 50 or config["n_window_infer"] != 800:
         raise ValueError("This export targets Qwen3-ASR's 100-frame chunks and 800-frame windows")
@@ -211,6 +218,19 @@ def build_encoder(source_dir: str | Path, output_dir: str | Path) -> dict[str, A
             "audio_embeddings",
         ),
     ]
+    if frontend_batch_size > 1:
+        graphs.append(
+            (
+                "frontend_batched",
+                lambda config: AudioFrontend(config, batch_size=frontend_batch_size),
+                {
+                    "mel_features": (frontend_batch_size, 1, config["num_mel_bins"], chunk_frames),
+                    "conv1_mask": (frontend_batch_size, 1, 1, (chunk_frames + 1) // 2),
+                    "conv2_mask": (frontend_batch_size, 1, 1, (chunk_frames + 3) // 4),
+                },
+                "chunk_embeddings",
+            )
+        )
     files = []
     for role, module_type, inputs, output_name in graphs:
         module = module_type(config).eval()
@@ -245,6 +265,7 @@ def build_encoder(source_dir: str | Path, output_dir: str | Path) -> dict[str, A
             "channels": config["d_model"],
             "layout": "BCHW",
             "short_clip_masks": True,
+            **({"offline_batch_size": frontend_batch_size} if frontend_batch_size > 1 else {}),
         },
         "encoder": {
             "window_tokens": window_tokens,

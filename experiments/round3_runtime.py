@@ -70,6 +70,15 @@ class ExperimentalRuntime(runtime_module.CoreMLRuntime):
         self.audio_batches = self.manifest.get("round3_audio_batch", {})
         self.batched_models = {}
         self.audio_call_counts = {}
+        self.experiment_identity = {
+            "borrowed_head": self.borrowed_head,
+            "embedding_manifest_sha256": digest(self.int8_directory / "manifest.json")
+            if self.int8_directory is not None
+            else None,
+            "audio_batches": self.audio_batches,
+            "profile": self.profile,
+            "runtime_source_sha256": digest(Path(__file__)),
+        }
         if self.audio_batches:
             import coremltools as ct
 
@@ -93,6 +102,7 @@ class ExperimentalRuntime(runtime_module.CoreMLRuntime):
             }
             for name, metric in (
                 ("_embedding", "embedding_gather_seconds"),
+                ("_embedding_rows", "embedding_gather_seconds"),
                 ("_select_token", "head_argmax_seconds"),
             ):
                 original = getattr(self, name)
@@ -110,13 +120,17 @@ class ExperimentalRuntime(runtime_module.CoreMLRuntime):
         self.measurements.clear()
         result = super().transcribe(*args, **kwargs)
         return replace(
-            result, timings={**result.timings, **self.measurements, **self.audio_call_counts}
+            result,
+            timings={
+                **result.timings,
+                **self.measurements,
+                **self.audio_call_counts,
+                "experiment": self.experiment_identity,
+            },
         )
 
-    def close(self, *, timeout=5.0):
-        for model in self.batched_models.values():
-            model.close(timeout=timeout)
-        super().close(timeout=timeout)
+    def _prediction_models(self):
+        return (*super()._prediction_models(), *self.batched_models.values())
 
     def _encode_audio(self, features, *, audio_context=None):
         self.audio_call_counts = {}

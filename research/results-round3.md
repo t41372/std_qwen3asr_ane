@@ -26,3 +26,21 @@ Baseline tests: 371 passed natively. All raw baseline evidence is retained under
   `2a2abc11f14b8075ad02c0240ead0411942a63a58abf0dd123f77806f1a503f9`.
   It uses unused offsets 500:600 of the pinned balanced EN/ZH corpora.
 - Full native suite after the initial implementation/probes: 452 passed.
+
+## Integration checkpoint
+
+- Frontend B4 passes regression400, multilingual300 and robustness12 with no
+  token, raw text or language differences. Its measured component gain is 21.5%;
+  end-to-end/resource promotion remains pending.
+- INT8 embedding passes all three score gates. Four punctuation changes and one
+  Japanese title-character deletion are retained in the raw review. The Japanese
+  CER decrease is not claimed as semantic improvement; both title renderings
+  differ from the reference. No number/acronym changes were found for this candidate.
+- Audio encoder g32 is rejected: regression EN WER +0.02234 percentage points,
+  despite passing selection. g16/g8 have been built but need full quality screening.
+- Production runtime now supports optional B4 frontend metadata and schema-3
+  INT8 embedding arrays, with vectorized text embedding gather, legacy support,
+  complete model close and artifact checks. Build/compress options are exposed;
+  default acquisition recipes have NOT changed pending final promotion gates.
+- Latest full native suite: 481 passed. A frozen copy of the entire `92810d7`
+  package supports comparisons against original code as well as original weights.

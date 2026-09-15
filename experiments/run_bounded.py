@@ -1,6 +1,7 @@
 """Run one experiment with a process-group timeout and retained command/log evidence."""
 
 import argparse
+import hashlib
 import json
 import os
 import signal
@@ -27,6 +28,19 @@ def main():
         "started_at": datetime.now(UTC).isoformat(),
         "complete": False,
     }
+    report["git_commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    report["source_sha256"] = {}
+    for root in ("std_qwen3asr_ane/src", "experiments"):
+        for directory, directories, files in os.walk(root):
+            directories[:] = [
+                name for name in directories if name not in (".venv", "__pycache__", ".cache")
+            ]
+            for name in files:
+                path = Path(directory) / name
+                if path.suffix in (".py", ".sh", ".c"):
+                    report["source_sha256"][str(path)] = hashlib.sha256(
+                        path.read_bytes()
+                    ).hexdigest()
     started = time.monotonic()
     with (
         (args.output / "stdout.log").open("x") as stdout,
@@ -49,7 +63,10 @@ def main():
         finally:
             report["elapsed_seconds"] = time.monotonic() - started
             (args.output / "command.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(json.dumps(report), flush=True)
+    print(
+        json.dumps({key: value for key, value in report.items() if key != "source_sha256"}),
+        flush=True,
+    )
     return 0 if report["complete"] else 1
 
 

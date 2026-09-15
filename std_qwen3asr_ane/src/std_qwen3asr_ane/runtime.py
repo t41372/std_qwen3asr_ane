@@ -24,11 +24,12 @@ from .audio import (
     MIN_SAMPLES,
     SAMPLE_RATE,
     audio_token_count,
-    convolution_masks,
     log_mel_spectrogram,
 )
+from .audio_batch import encode_frontend_chunks
 from .audio_context import AudioPrefixContext
-from .bundle import digest, language_head_output
+from .bundle import digest, language_head_output, offline_frontend_batch_size
+from .embedding import Int8EmbeddingTable, embedding_quantization
 from .errors import ModelLimitError
 from .languages import LANGUAGE_NAMES, normalize_model_language
 from .speculative import greedy_speculative_decode
@@ -308,6 +309,9 @@ class CoreMLRuntime:
     calls, including model initialization. Direct users must do the same.
     """
 
+    frontend_batch_size = 1
+    frontend_batched = None
+
     def __init__(
         self,
         model_dir: Path,
@@ -323,13 +327,27 @@ class CoreMLRuntime:
         self.manifest = json.loads((self.model_dir / "manifest.json").read_text())
         if (
             type(self.manifest.get("schema_version")) is not int
-            or self.manifest.get("schema_version") not in (1, 2)
+            or self.manifest.get("schema_version") not in (1, 2, 3)
             or self.manifest.get("model_id") != model_id
         ):
             raise ValueError("Unsupported model bundle identity or schema")
         self.head_output = language_head_output(self.manifest)
         files = self.manifest["files"]
-        self.embeddings = np.load(self._path(files["embedding"]), mmap_mode="r", allow_pickle=False)
+        quantization = embedding_quantization(self.manifest)
+        if quantization is None:
+            self.embeddings = np.load(
+                self._path(files["embedding"]), mmap_mode="r", allow_pickle=False
+            )
+            if not np.issubdtype(self.embeddings.dtype, np.floating):
+                raise ValueError("Integer embedding tables require explicit quantization metadata")
+        else:
+            if "embedding_scales" not in files:
+                raise ValueError("Quantized embeddings require a scale array")
+            self.embeddings = Int8EmbeddingTable(
+                self._path(files["embedding"]),
+                self._path(files["embedding_scales"]),
+                shape=tuple(quantization["shape"]),
+            )
         if self.embeddings.ndim != 2:
             raise ValueError("Embedding table must have shape [vocabulary, hidden size]")
         self.mel_filters = np.load(self._path(files["mel_filters"]), allow_pickle=False)
@@ -364,6 +382,10 @@ class CoreMLRuntime:
         ):
             raise ValueError("Model scale, RoPE theta, and audio limit must be positive and finite")
         self.chunk_frames = int(self.manifest.get("frontend", {}).get("chunk_frames", 100))
+        self.frontend_batch_size = offline_frontend_batch_size(self.manifest)
+        if self.frontend_batch_size > 1 and "frontend_batched" not in files:
+            raise ValueError("Offline frontend batching requires its declared graph")
+        self._frontend_calls = 0
         self.window_tokens = int(self.manifest.get("encoder", {}).get("window_tokens", 104))
         if self.chunk_frames != 100 or self.window_tokens != 104:
             raise ValueError("This runtime supports 100-frame chunks and 104-token encoder windows")
@@ -386,6 +408,8 @@ class CoreMLRuntime:
             return PersistentInputModel(model_type(str(path), compute_units=unit))
 
         self.frontend = load(files["frontend"])
+        if self.frontend_batch_size > 1:
+            self.frontend_batched = load(files["frontend_batched"])
         self.encoder = load(files["encoder"])
         partitions = self.manifest["decoder_partitions"]
         if not isinstance(partitions, list) or not partitions:
@@ -405,8 +429,11 @@ class CoreMLRuntime:
         Direct callers must serialize this with inference, just like transcribe.
         A timeout is a failed close; retained buffers are not released early.
         """
-        for model in [self.frontend, self.encoder, *self.decoders, self.lm_head]:
-            model.close(timeout=timeout)
+        PersistentInputModel.close_many(self._prediction_models(), timeout=timeout)
+
+    def _prediction_models(self) -> tuple[PersistentInputModel, ...]:
+        models = (self.frontend, self.encoder, *self.decoders, self.lm_head)
+        return models + ((self.frontend_batched,) if self.frontend_batched is not None else ())
 
     def _path(self, relative: str) -> Path:
         if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
@@ -423,25 +450,12 @@ class CoreMLRuntime:
             return audio_context.encode(
                 features, owner=self, frontend=self.frontend, encoder=self.encoder
             )
-        frames = features.shape[1]
-        masks = convolution_masks(frames, self.chunk_frames)
-        chunks = []
-        for offset in range(0, frames, self.chunk_frames):
-            chunk = features[:, offset : offset + self.chunk_frames]
-            padded = np.zeros((1, 1, 128, self.chunk_frames), dtype=np.float32)
-            padded[0, 0, :, : chunk.shape[1]] = chunk
-            output = self.frontend.predict(
-                {
-                    "mel_features": padded,
-                    "conv1_mask": masks[0],
-                    "conv2_mask": masks[1],
-                }
-            )["chunk_embeddings"]
-            valid_tokens = (chunk.shape[1] + 7) // 8
-            chunks.append(np.asarray(output, dtype=np.float32)[..., :valid_tokens])
-        hidden = np.concatenate(chunks, axis=-1)
-        if hidden.shape[-1] != audio_token_count(frames):
-            raise RuntimeError("Frontend produced an unexpected audio token count")
+        hidden, self._frontend_calls = encode_frontend_chunks(
+            features,
+            self.frontend,
+            batched_frontend=self.frontend_batched,
+            batch_size=self.frontend_batch_size,
+        )
         encoded = []
         for offset in range(0, hidden.shape[-1], self.window_tokens):
             window = hidden[..., offset : offset + self.window_tokens]
@@ -529,6 +543,13 @@ class CoreMLRuntime:
             / self.residual_scale
         )
 
+    def _embedding_rows(self, tokens: Sequence[int]) -> np.ndarray:
+        """Gather/dequantize just the prompt's text rows in one operation."""
+        indices = np.asarray(tokens, dtype=np.int64)
+        if indices.ndim != 1 or np.any(indices < 0) or np.any(indices >= self.embeddings.shape[0]):
+            raise ValueError("Tokenizer emitted an ID outside the model vocabulary")
+        return np.asarray(self.embeddings[indices], dtype=np.float32) / self.residual_scale
+
     def new_decoder_context(self) -> DecoderPrefixContext:
         """Allocate private partition states for one serialized streaming utterance."""
         return DecoderPrefixContext(
@@ -590,18 +611,14 @@ class CoreMLRuntime:
         prompt_done = perf_counter()
         audio = self._encode_audio(features, audio_context=audio_context) / self.residual_scale
         encoder_done = perf_counter()
-        audio_index = 0
-        prompt_embeddings = []
-        for token in prompt:
-            if token == self.audio_token_id:
-                embedding = audio[..., audio_index : audio_index + 1]
-                audio_index += 1
-            else:
-                embedding = self._embedding(token)
-            prompt_embeddings.append(embedding)
-        if audio_index != audio.shape[-1] or not prompt_embeddings:
+        prompt_ids = np.asarray(prompt, dtype=np.int64)
+        audio_rows = prompt_ids == self.audio_token_id
+        if int(audio_rows.sum()) != audio.shape[-1] or not prompt:
             raise RuntimeError("Prompt placeholders do not match encoded audio")
-        embeddings = np.concatenate(prompt_embeddings, axis=-1)
+        rows = np.empty((len(prompt), self.embeddings.shape[1]), dtype=np.float32)
+        rows[audio_rows] = audio[0, :, 0, :].T
+        rows[~audio_rows] = self._embedding_rows(prompt_ids[~audio_rows])
+        embeddings = np.ascontiguousarray(rows.T)[None, :, None, :]
         assembly_done = perf_counter()
         reused_tokens = 0
         if decoder_context is None:
@@ -637,8 +654,7 @@ class CoreMLRuntime:
                     audio_context.timings
                     if audio_context is not None
                     else {
-                        "frontend_calls": (features.shape[1] + self.chunk_frames - 1)
-                        // self.chunk_frames,
+                        "frontend_calls": self._frontend_calls,
                         "encoder_calls": (audio.shape[-1] + self.window_tokens - 1)
                         // self.window_tokens,
                         "reused_frontend_chunks": 0,

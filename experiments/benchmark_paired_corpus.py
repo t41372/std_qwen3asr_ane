@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from time import perf_counter
 
+from baseline_runtime import load_baseline_runtime, prediction_models
 from evaluate import (
     NORMALIZER,
     aggregate,
@@ -13,6 +14,7 @@ from evaluate import (
     manifest_rows,
     score,
 )
+
 from std_qwen3asr_ane.bundle import digest
 from std_qwen3asr_ane.runtime import CoreMLRuntime, PersistentInputModel
 
@@ -25,18 +27,28 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--max-new-tokens", type=int, default=256)
+    parser.add_argument(
+        "--baseline-source",
+        type=Path,
+        help="Immutable package directory for measuring source changes as well as artifacts",
+    )
     args = parser.parse_args()
     if args.output.exists() or min(args.repeats, args.max_new_tokens) < 1:
         parser.error("Use a fresh output and positive repetitions/token budget")
     args.output.mkdir(parents=True)
     inputs = [
-        (row, *audio_samples(Path(row["audio_path"])))
-        for row in manifest_rows(args.manifest)
+        (row, *audio_samples(Path(row["audio_path"]))) for row in manifest_rows(args.manifest)
     ]
     for row, _, audio_hash in inputs:
         if row.get("audio_sha256") != audio_hash:
             raise ValueError("Manifest audio identity changed")
     runtimes, streams, records = {}, {}, {"baseline": [], "candidate": []}
+    factories = {
+        "baseline": load_baseline_runtime(args.baseline_source)
+        if args.baseline_source
+        else CoreMLRuntime,
+        "candidate": CoreMLRuntime,
+    }
     report = {
         "complete": False,
         "close_succeeded": False,
@@ -45,6 +57,9 @@ def main():
         "environment": environment(),
         "repeats": args.repeats,
         "max_new_tokens": args.max_new_tokens,
+        "baseline_runtime_sha256": digest(args.baseline_source / "runtime.py")
+        if args.baseline_source
+        else None,
         "models": {
             name: {
                 "path": str(path.resolve()),
@@ -58,7 +73,7 @@ def main():
     }
     try:
         for name, path in (("baseline", args.baseline), ("candidate", args.candidate)):
-            runtimes[name] = CoreMLRuntime(path)
+            runtimes[name] = factories[name](path)
             streams[name] = (args.output / f"{name}.jsonl").open("x")
             warmed = set()
             for row, audio, _ in inputs:
@@ -126,22 +141,13 @@ def main():
                 ),
                 flush=True,
             )
-        report["complete"] = all(
-            not row["error"] for rows in records.values() for row in rows
-        )
+        report["complete"] = all(not row["error"] for rows in records.values() for row in rows)
     finally:
         for stream in streams.values():
             stream.close()
         try:
             models = [
-                model
-                for runtime in runtimes.values()
-                for model in [
-                    runtime.frontend,
-                    runtime.encoder,
-                    *runtime.decoders,
-                    runtime.lm_head,
-                ]
+                model for runtime in runtimes.values() for model in prediction_models(runtime)
             ]
             PersistentInputModel.close_many(models)
             report["close_succeeded"] = True
@@ -151,9 +157,7 @@ def main():
                     (args.output / f"{name}.summary.json").write_text(
                         json.dumps(aggregate(rows), indent=2) + "\n"
                     )
-            (args.output / "summary.json").write_text(
-                json.dumps(report, indent=2) + "\n"
-            )
+            (args.output / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
     return 0 if report["complete"] else 1
 
 

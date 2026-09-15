@@ -23,6 +23,7 @@ def build_bundle(
     token_batch_size=None,
     layers_per_partition=4,
     profile: ProfileName | None = None,
+    frontend_batch_size: int | None = None,
 ):
     import numpy as np
     import torch
@@ -32,6 +33,10 @@ def build_bundle(
     from .encoder import build_encoder
 
     settings = PROFILES[profile] if profile is not None else None
+    if frontend_batch_size is not None and (
+        type(frontend_batch_size) is not int or frontend_batch_size not in (1, 4)
+    ):
+        raise ValueError("Supported offline frontend batches are 1 and 4")
     if cache_length is None:
         cache_length = settings.cache_length if settings else 1024
     if settings is not None and cache_length != settings.cache_length:
@@ -54,8 +59,17 @@ def build_bundle(
         raise FileExistsError(f"A completed bundle already exists at {output}; use a new directory")
     if reuse_encoder:
         encoder = json.loads((output / "encoder-manifest.json").read_text())
+        if (
+            frontend_batch_size is not None
+            and encoder["frontend"].get("offline_batch_size", 1) != frontend_batch_size
+        ):
+            raise ValueError("Reused frontend batch differs from the requested batch")
     else:
-        encoder = build_encoder(source, output)
+        encoder = build_encoder(
+            source,
+            output,
+            frontend_batch_size=1 if frontend_batch_size is None else frontend_batch_size,
+        )
     decoder = build_decoder(
         source,
         output,

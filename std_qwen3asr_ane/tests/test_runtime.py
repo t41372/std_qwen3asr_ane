@@ -94,8 +94,9 @@ def fake_coreml(monkeypatch: pytest.MonkeyPatch, bundle: Path):
 
         def predict(self, data, *, state=None):
             self.calls.append(({name: value.copy() for name, value in data.items()}, state))
-            if self.role == "frontend":
-                return {"chunk_embeddings": np.ones((1, 4, 1, 13), dtype=np.float32) * 2}
+            if self.role in ("frontend", "frontend_batched"):
+                batch = data["mel_features"].shape[0]
+                return {"chunk_embeddings": np.ones((batch, 4, 1, 13), dtype=np.float32) * 2}
             if self.role == "encoder":
                 return {"audio_embeddings": np.ones((1, 8, 1, 104), dtype=np.float32) * 64}
             if self.role.startswith("decoder_"):
@@ -123,6 +124,53 @@ def test_runtime_import_does_not_load_conversion_or_model_frameworks() -> None:
         "assert not {'torch','transformers','coremltools'} & sys.modules.keys()"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_manifest_frontend_batch_is_offline_only(bundle, fake_coreml):
+    path = bundle / "manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["frontend"] = {"offline_batch_size": 4}
+    manifest["files"]["frontend_batched"] = "frontend_batched.mlpackage"
+    path.write_text(json.dumps(manifest))
+    runtime = CoreMLRuntime(bundle)
+    try:
+        result = runtime.transcribe(np.zeros(67200, np.float32), language=None, max_new_tokens=8)
+        batch = next(model for model in fake_coreml if model.role == "frontend_batched")
+        single = next(model for model in fake_coreml if model.role == "frontend")
+        assert len(batch.calls) == 1 and len(single.calls) == 1
+        assert result.timings["frontend_calls"] == 2
+        context = runtime.new_audio_context()
+        runtime._encode_audio(np.ones((128, 420), np.float32), audio_context=context)
+        assert len(batch.calls) == 1 and len(single.calls) == 6
+    finally:
+        runtime.close()
+
+
+def test_schema_three_loads_quantized_embedding_rows(bundle, fake_coreml):
+    from std_qwen3asr_ane.conversion.embedding import write_int8_embedding
+    from std_qwen3asr_ane.embedding import Int8EmbeddingTable
+
+    path = bundle / "manifest.json"
+    manifest = json.loads(path.read_text())
+    descriptor = write_int8_embedding(bundle / "embedding.npy", bundle)
+    manifest["files"].update(descriptor.pop("files"))
+    manifest.update(
+        schema_version=3,
+        embedding_quantization=descriptor,
+        head_output={"kind": "logits", "token_batch_size": 1},
+    )
+    path.write_text(json.dumps(manifest))
+    runtime = CoreMLRuntime(bundle)
+    try:
+        assert isinstance(runtime.embeddings, Int8EmbeddingTable)
+        np.testing.assert_array_equal(
+            runtime._embedding_rows([1, 2]),
+            np.stack([runtime._embedding(token).ravel() for token in (1, 2)]),
+        )
+        result = runtime.transcribe(np.zeros(8000, np.float32), language=None, max_new_tokens=8)
+        assert result.text == "hello"
+    finally:
+        runtime.close()
 
 
 def test_compiled_artifacts_use_compiled_loader(bundle: Path, fake_coreml) -> None:

@@ -165,7 +165,7 @@ def test_compress_bundle_refuses_unsafe_or_repeated_inputs(bundle: Path, tmp_pat
     pytest.importorskip("coremltools")
     output = tmp_path / "out"
     with pytest.raises(ValueError):
-        compress_bundle(bundle, output, roles=("encoder",))
+        compress_bundle(bundle, output, roles=("frontend",))
     with pytest.raises(ValueError):
         compress_bundle(bundle, output, scheme="linear", bits=6)
     assert not output.exists()
@@ -181,3 +181,24 @@ def test_compress_bundle_refuses_unsafe_or_repeated_inputs(bundle: Path, tmp_pat
     (bundle / "manifest.json").write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match="uncompiled"):
         compress_bundle(bundle, tmp_path / "compiled-source")
+
+
+def test_optional_encoder_and_int8_embedding_export(bundle, tmp_path):
+    before = _digest_tree(bundle)
+    output = tmp_path / "audio-and-embedding"
+    manifest = compress_bundle(bundle, output, roles=("encoder",), int8_embedding=True)
+    assert _digest_tree(bundle) == before
+    assert manifest["schema_version"] == 3
+    assert manifest["head_output"] == {"kind": "logits", "token_batch_size": 1}
+    assert manifest["embedding_quantization"]["scheme"] == "symmetric_int8_per_row"
+    assert not (output / "embedding.npy").exists()
+    assert np.load(output / manifest["files"]["embedding"]).dtype == np.int8
+    assert np.load(output / manifest["files"]["embedding_scales"]).dtype == np.float32
+    assert weight_bytes(output / "encoder.mlpackage") < weight_bytes(bundle / "encoder.mlpackage")
+    for name in (
+        "frontend.mlpackage",
+        "decoder_00.mlpackage",
+        "decoder_04.mlpackage",
+        "lm_head.mlpackage",
+    ):
+        assert _digest_tree(output / name) == _digest_tree(bundle / name)

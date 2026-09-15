@@ -9,6 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "experiments"))
 from round3_runtime import ExperimentalRuntime
 
+from std_qwen3asr_ane.audio_batch import encode_frontend_chunks
 from std_qwen3asr_ane.runtime import CoreMLRuntime
 
 
@@ -69,3 +70,24 @@ def test_streaming_keeps_context_owned_b1_path():
 
     assert candidate._encode_audio(features, audio_context=Context()) is sentinel
     assert candidate.audio_call_counts == {}
+
+
+@pytest.mark.parametrize(
+    "frames", [1, 49, 99, 100, 101, 399, 400, 401, 799, 800, 801, 1599, 1600, 1601, 3000]
+)
+def test_production_frontend_helper_matches_existing_serial_path(frames):
+    baseline = runtime(CoreMLRuntime)
+
+    class IdentityEncoder:
+        def predict(self, data):
+            return {"audio_embeddings": data["hidden_states"]}
+
+    baseline.encoder = IdentityEncoder()
+    features = np.broadcast_to(np.arange(frames, dtype=np.float32)[None], (128, frames))
+    expected = baseline._encode_audio(features)
+    actual, calls = encode_frontend_chunks(
+        features, Frontend(), batched_frontend=Frontend(), batch_size=4
+    )
+    np.testing.assert_array_equal(actual, expected)
+    chunks = (frames + 99) // 100
+    assert calls == chunks // 4 + chunks % 4

@@ -23,6 +23,11 @@ def main():
     manifest = json.loads(manifest_path.read_text())
     packages = [
         manifest["files"]["frontend"],
+        *(
+            [manifest["files"]["frontend_batched"]]
+            if "frontend_batched" in manifest["files"]
+            else []
+        ),
         manifest["files"]["encoder"],
         *manifest["decoder_partitions"],
         manifest["files"]["lm_head"],
@@ -56,9 +61,7 @@ def main():
         destination = args.output / f"{name}.json"
         destination.write_text(json.dumps(plan, indent=2, allow_nan=False) + "\n")
         unknown = Counter(
-            row["operator"]
-            for row in plan["operations"]
-            if row["preferred_device"] is None
+            row["operator"] for row in plan["operations"] if row["preferred_device"] is None
         )
         non_ane = Counter(
             row["operator"]
