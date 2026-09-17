@@ -13,7 +13,9 @@ from std_qwen3asr_ane.conversion.decoder import DecoderPartition, StableRMSNorm,
 
 @pytest.mark.parametrize("width", [1, 4])
 @pytest.mark.parametrize("fused", [False, True])
-@pytest.mark.parametrize("fuse_projections", [False, True])
+@pytest.mark.parametrize(
+    "fuse_projections", [(False, False), (True, False), (False, True), (True, True)]
+)
 def test_grouped_attention_preserves_causal_outputs_and_kv_states(width, fused, fuse_projections):
     torch.manual_seed(17)
     config = Qwen3ASRTextConfig(
@@ -29,8 +31,8 @@ def test_grouped_attention_preserves_causal_outputs_and_kv_states(width, fused, 
     for layer in grouped.layers:
         layer.enable_grouped_attention()
         layer.fused_attention = fused
-        if fuse_projections:
-            layer.fuse_projections()
+        for _ in range(2):
+            layer.fuse_projections(attention=fuse_projections[0], mlp=fuse_projections[1])
     with torch.inference_mode():
         for position in (0, width, 2 * width, width):
             x = torch.randn(1, 64, 1, width)
@@ -45,6 +47,37 @@ def test_grouped_attention_preserves_causal_outputs_and_kv_states(width, fused, 
                 reference.named_buffers(), grouped.named_buffers(), strict=True
             ):
                 torch.testing.assert_close(actual, expected, atol=2e-6, rtol=2e-6)
+
+
+def test_head_reorder_only_requires_unfused_attention_projections():
+    torch.manual_seed(3)
+    config = Qwen3ASRTextConfig(
+        hidden_size=32,
+        intermediate_size=64,
+        num_hidden_layers=1,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=8,
+    ).to_dict()
+    reference = DecoderPartition(config, 1, 8).eval()
+    mlp_first = copy.deepcopy(reference)
+    layer = mlp_first.layers[0]
+    layer.fuse_projections(attention=False, mlp=True)
+    layer.enable_grouped_attention()
+    assert layer.grouped_attention and layer.fused_gate_up and not layer.fused_qkv
+    attention_first = copy.deepcopy(reference).layers[0]
+    attention_first.fuse_projections(attention=True, mlp=False)
+    with pytest.raises(RuntimeError, match="attention projections"):
+        attention_first.enable_grouped_attention()
+    with torch.inference_mode():
+        x = torch.randn(1, 32, 1, 1)
+        phase = torch.zeros(4)
+        mask = torch.full((1, 1, 1, 8), -10000.0)
+        mask[..., 0] = 0
+        update = torch.zeros_like(mask)
+        update[..., 0] = 1
+        inputs = (x, phase.cos().reshape(1, 4, 1, 1), phase.sin().reshape(1, 4, 1, 1), mask, update)
+        torch.testing.assert_close(mlp_first(*inputs), reference(*inputs), atol=2e-6, rtol=2e-6)
 
 
 def test_stable_silu_preserves_reference_across_activation_range():

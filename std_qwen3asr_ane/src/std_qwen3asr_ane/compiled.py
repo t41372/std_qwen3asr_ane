@@ -53,12 +53,20 @@ def compile_bundle(source: Path, output: Path) -> dict:
                 for name, value in hashes.items()
                 if name.endswith("/weight.bin") and value == compiled_digest
             ]
-            if len(originals) == 1:
-                # Models are immutable artifacts. Share only payloads proven
-                # byte-identical, never compiler metadata or specialization data.
-                binary.unlink()
-                os.link(path / originals[0], binary)
-                shared.append(str(binary.relative_to(destination)))
+            if len(originals) != 1:
+                continue
+            # Models are immutable artifacts. Share only payloads proven
+            # byte-identical, never compiler metadata or specialization data.
+            # Link beside the compiled copy first: across volumes, or on a file
+            # system without hard links, the compiled copy must survive.
+            linked = binary.with_name(binary.name + ".shared")
+            try:
+                os.link(path / originals[0], linked)
+                linked.replace(binary)
+            except OSError:
+                linked.unlink(missing_ok=True)
+                continue
+            shared.append(str(binary.relative_to(destination)))
         record = {
             "source": relative,
             "compiled": compiled,

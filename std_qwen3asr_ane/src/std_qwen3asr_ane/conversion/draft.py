@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 
-from ..bundle import clone, digest
+from ..bundle import SUPPORTED_SCHEMA_VERSIONS, clone, digest, lm_head_compression
 from ..draft import DRAFT_BUNDLE_KIND, DRAFT_MODEL_ID, DRAFT_REVISION, weight_digests
 
 
@@ -74,7 +74,7 @@ def build_draft_bundle(
         raise FileExistsError("Use a new directory to preserve previous artifacts")
     manifest = json.loads((target / "manifest.json").read_text())
     if (
-        manifest.get("schema_version") not in (1, 2)
+        manifest.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS
         or manifest.get("model_id") != "Qwen/Qwen3-ASR-1.7B"
     ):
         raise ValueError("The target must be a Qwen3-ASR 1.7B bundle")
@@ -87,10 +87,9 @@ def build_draft_bundle(
     width = int(manifest.get("token_batch_size", 1))
     if width < 2:
         raise ValueError("The target must use a token batch size above 1 to verify proposals")
-    compression = manifest.get("weight_compression")
     # The head must mirror lm_head exactly: compressed only if lm_head was.
-    if compression is not None and "lm_head" not in compression.get("roles", []):
-        compression = None
+    compression = lm_head_compression(manifest)
+    compressed_head = compression["scheme"] is not None
     lm_head = target / manifest["files"]["lm_head"]
     if lm_head.suffix != ".mlmodelc":
         raise ValueError("The target must be a compiled bundle (qwen3-asr-ane compile)")
@@ -111,7 +110,7 @@ def build_draft_bundle(
         token_batch_size=width,
         residual_scale=float(manifest.get("residual_scale", 1.0)),
     )
-    if compression is None:
+    if not compressed_head:
         package = fp16
         counts = None
     else:
@@ -140,9 +139,7 @@ def build_draft_bundle(
             "path": compiled.name,
             "token_batch_size": width,
             **head,
-            "weight_compression": None
-            if compression is None
-            else {key: compression[key] for key in ("scheme", "bits", "group_size")},
+            "weight_compression": compression if compressed_head else None,
             "compressed_weight_counts": counts,
             "weight_bytes": weight_bytes(compiled),
             "weight_sha256": digests,
@@ -153,10 +150,7 @@ def build_draft_bundle(
             "source_revision": manifest["source_revision"],
             "token_batch_size": width,
             "tokenizer_sha256": digest(tokenizer),
-            "weight_compression": {
-                key: (None if compression is None else compression.get(key))
-                for key in ("scheme", "bits", "group_size")
-            },
+            "weight_compression": compression,
             "manifest_sha256": digest(target / "manifest.json"),
         },
         "versions": {

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from .audio import MIN_SAMPLES
-from .bundle import digest
+from .bundle import digest, lm_head_compression
 
 if TYPE_CHECKING:
     from .runtime import CoreMLRuntime
@@ -58,15 +58,12 @@ def check_draft_target(manifest: dict, target: CoreMLRuntime, root: Path | None 
     if draft.get("model_id") != DRAFT_MODEL_ID or draft.get("revision") != DRAFT_REVISION:
         raise ValueError(f"Draft checkpoint must be {DRAFT_MODEL_ID}@{DRAFT_REVISION}")
     expected = manifest["target"]
-    compression = target.manifest.get("weight_compression") or {}
     actual = {
         "model_id": target.manifest["model_id"],
         "source_revision": target.manifest["source_revision"],
         "token_batch_size": target.token_batch_size,
         "tokenizer_sha256": target.tokenizer_sha256,
-        "weight_compression": {
-            key: compression.get(key) for key in ("scheme", "bits", "group_size")
-        },
+        "weight_compression": lm_head_compression(target.manifest),
     }
     for key, value in actual.items():
         if expected.get(key) != value:

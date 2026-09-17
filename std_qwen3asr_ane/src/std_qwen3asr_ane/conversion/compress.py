@@ -1,9 +1,9 @@
 """Weight-only compression of a built bundle into a new, immutable bundle.
 
-Only the decoder partitions and the vocabulary head are compressed: they hold
-all but a few percent of the bytes read per generated token. The audio graphs
-stay FP16. Activations, KV caches, normalization and the numerically verified
-activation expressions are unchanged, so the runtime contract is identical.
+By default only decoder partitions and the vocabulary head are compressed.
+The optional encoder role also compresses audio projection weights, preserving
+the verified GELU expression through the SDK's post-training conversion pass.
+Activations, KV caches and normalization remain unchanged.
 
 Two schemes are offered. Palettization (a per-group lookup table) is the
 compression the ANE decompresses natively on macOS 15+. Linear per-block
@@ -22,9 +22,11 @@ from time import perf_counter
 
 import numpy as np
 
-from ..bundle import clone, digest, validate_bundle_paths
+from ..bundle import clone, digest, language_head_output, validate_bundle_paths
+from .embedding import open_fp16_embedding, write_int8_embedding
 
 COMPRESSIBLE_ROLES = ("decoder", "lm_head")
+SUPPORTED_COMPRESSIBLE_ROLES = (*COMPRESSIBLE_ROLES, "encoder")
 PALETTE_BITS = (4, 6, 8)
 LINEAR_BITS = (4, 8)
 ALGORITHM = "full_fp16_histogram_weighted_lloyd_v1"
@@ -177,15 +179,45 @@ def verify_compressed_weights(model, scheme: str) -> dict[str, int]:
     return counts
 
 
-def compress_model(source: Path, destination: Path, scheme: str, bits: int, group_size: int):
+def compress_model(
+    source: Path,
+    destination: Path,
+    scheme: str,
+    bits: int,
+    group_size: int,
+    *,
+    preserve_activation_expressions: bool = False,
+):
     import coremltools as ct
     import coremltools.optimize.coreml as optimization
 
-    from .passes import verify_activation_operators
+    from .passes import ane_pass_pipeline, verify_activation_operators
 
     model = ct.models.MLModel(str(source), skip_model_load=True)
     config = compression_config(scheme, bits, group_size)
-    if scheme == "palette":
+    if preserve_activation_expressions:
+        from coremltools.converters.mil.mil.passes.graph_pass import PassOption
+        from coremltools.converters.mil.mil.passes.pass_registry import PASS_REGISTRY
+
+        # SDK 9's public PTQ helpers rerun the default conversion pipeline,
+        # which fuses our exact GELU back into the inaccurate native operator.
+        # Stop after the same compression pass, then use our verified pipeline.
+        name = "palettize_weights" if scheme == "palette" else "linear_quantize_weights"
+        graph_pass = PASS_REGISTRY[f"compression::{name}"]
+        graph_pass.set_options(
+            [PassOption("config", config), PassOption("joint_compression", False)]
+        )
+        program = ct.models.utils._apply_graph_pass(model, graph_pass, return_pymil_prog=True)
+        compressed = ct.convert(
+            program,
+            convert_to="mlprogram",
+            minimum_deployment_target=ct.target.macOS15,
+            compute_precision=ct.precision.FLOAT16,
+            compute_units=ct.ComputeUnit.CPU_AND_NE,
+            skip_model_load=True,
+            pass_pipeline=ane_pass_pipeline(),
+        )
+    elif scheme == "palette":
         compressed = optimization.palettize_weights(model, config=config)
     else:
         compressed = optimization.linear_quantize_weights(model, config=config)
@@ -207,6 +239,8 @@ def compress_bundle(
     bits: int = 8,
     group_size: int = 32,
     roles: tuple[str, ...] = COMPRESSIBLE_ROLES,
+    int8_embedding: bool = False,
+    encoder_group_size: int | None = None,
 ) -> dict:
     """Write a compressed copy of an uncompiled bundle; the source is never modified."""
     source, output = source.resolve(), output.resolve()
@@ -215,31 +249,57 @@ def compress_bundle(
     manifest = json.loads((source / "manifest.json").read_text())
     if manifest.get("schema_version") != 1 or "weight_compression" in manifest:
         raise ValueError("Compression requires an uncompressed schema-1 bundle")
-    if not set(roles) <= set(COMPRESSIBLE_ROLES) or not roles:
-        raise ValueError(f"roles must be a nonempty subset of {COMPRESSIBLE_ROLES}")
+    if not set(roles) <= set(SUPPORTED_COMPRESSIBLE_ROLES) or not roles:
+        raise ValueError(f"roles must be a nonempty subset of {SUPPORTED_COMPRESSIBLE_ROLES}")
     validate_settings(scheme, bits, group_size)
+    if encoder_group_size is not None:
+        if "encoder" not in roles:
+            raise ValueError("encoder_group_size requires the encoder role")
+        validate_settings(scheme, bits, encoder_group_size)
     files, partitions = manifest.get("files"), manifest.get("decoder_partitions")
     if not isinstance(files, dict) or not isinstance(partitions, list) or "lm_head" not in files:
         raise ValueError("The bundle manifest must list files, lm_head and decoder_partitions")
     targets = set(partitions) if "decoder" in roles else set()
     if "lm_head" in roles:
         targets.add(files["lm_head"])
+    if "encoder" in roles:
+        if "encoder" not in files:
+            raise ValueError("Encoder compression requires an encoder asset")
+        targets.add(files["encoder"])
     everything = set(files.values()) | set(partitions)
     validate_bundle_paths(source, everything)
     for relative in targets:
         if Path(relative).suffix != ".mlpackage":
             raise ValueError("Compress the uncompiled .mlpackage bundle, then compile it")
+    if int8_embedding:
+        # Check the embedding contract now; failing after minutes of
+        # compression would leave a half-written output directory behind.
+        if "embedding" not in files:
+            raise ValueError("INT8 embedding storage requires an embedding asset")
+        head_output = language_head_output(manifest)
+        open_fp16_embedding(source / files["embedding"])
     output.mkdir(parents=True)
     records = []
     for relative in sorted(everything):
         path, destination = source / relative, output / relative
         if relative not in targets:
+            if int8_embedding and relative == files["embedding"]:
+                continue  # replaced by the INT8 arrays written below
             clone(path, destination)
             continue
         started = perf_counter()
-        counts = compress_model(path, destination, scheme, bits, group_size)
+        options = (
+            {"preserve_activation_expressions": True} if relative == files.get("encoder") else {}
+        )
+        effective_group = (
+            encoder_group_size
+            if relative == files.get("encoder") and encoder_group_size is not None
+            else group_size
+        )
+        counts = compress_model(path, destination, scheme, bits, effective_group, **options)
         record = {
             "file": relative,
+            "group_size": effective_group,
             "seconds": perf_counter() - started,
             "source_weight_bytes": weight_bytes(path),
             "compressed_weight_bytes": weight_bytes(destination),
@@ -271,6 +331,17 @@ def compress_bundle(
         "created_at": datetime.now(UTC).isoformat(),
         "versions": {name: importlib.metadata.version(name) for name in ("coremltools", "numpy")},
     }
+    if encoder_group_size is not None:
+        manifest["weight_compression"]["role_overrides"] = {
+            "encoder": {"group_size": encoder_group_size, **granularity(scheme, encoder_group_size)}
+        }
+    if int8_embedding:
+        quantization = write_int8_embedding(source / files["embedding"], output)
+        quantized_files = quantization.pop("files")
+        manifest["files"] = {**files, **quantized_files}
+        manifest["schema_version"] = 3
+        manifest["head_output"] = head_output
+        manifest["embedding_quantization"] = quantization
     manifest["validation_status"] = "unvalidated"
     temporary = output / "manifest.json.tmp"
     temporary.write_text(json.dumps(manifest, indent=2) + "\n")

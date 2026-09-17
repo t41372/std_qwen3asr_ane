@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from .bundle import OFFLINE_FRONTEND_BATCH_SIZES
 from .conversion.build import SOURCE_REVISION
 from .profiles import PROFILES
 
@@ -29,6 +30,9 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--profile", choices=tuple(PROFILES), default=None)
     build.add_argument("--cache-length", type=int, choices=(512, 1024, 2048), default=None)
     build.add_argument("--reuse-encoder", action="store_true")
+    build.add_argument(
+        "--frontend-batch-size", type=int, choices=OFFLINE_FRONTEND_BATCH_SIZES, default=None
+    )
     build.add_argument("--token-batch-size", type=int, choices=(1, 8, 16, 32, 64), default=None)
     build.add_argument(
         "--layers-per-partition",
@@ -45,14 +49,23 @@ def main(argv: list[str] | None = None) -> int:
     compress.add_argument("--scheme", choices=("palette", "linear"), default="palette")
     compress.add_argument("--bits", type=int, choices=(4, 6, 8), default=8)
     compress.add_argument(
+        "--int8-embedding",
+        action="store_true",
+        help="Store host embedding rows as INT8 with per-row FP32 scales",
+    )
+    compress.add_argument(
         "--group-size",
         type=int,
         default=32,
         help="palette: output channels sharing one lookup table; linear: input channels per scale",
     )
     compress.add_argument(
-        "--roles", nargs="+", choices=("decoder", "lm_head"), default=["decoder", "lm_head"]
+        "--roles",
+        nargs="+",
+        choices=("decoder", "lm_head", "encoder"),
+        default=["decoder", "lm_head"],
     )
+    compress.add_argument("--encoder-group-size", type=int, choices=(8, 16, 32), default=None)
     compile_command = commands.add_parser(
         "compile", help="Prepare a separate host-compiled bundle for faster subsequent loads"
     )
@@ -109,12 +122,17 @@ def main(argv: list[str] | None = None) -> int:
             token_batch_size=args.token_batch_size,
             layers_per_partition=args.layers_per_partition,
             profile=args.profile,
+            frontend_batch_size=args.frontend_batch_size,
         )
     elif args.command == "compress":
         from .conversion.compress import compress_bundle, validate_settings
 
+        if args.encoder_group_size is not None and "encoder" not in args.roles:
+            parser.error("--encoder-group-size requires --roles to include encoder")
         try:
             validate_settings(args.scheme, args.bits, args.group_size)
+            if args.encoder_group_size is not None:
+                validate_settings(args.scheme, args.bits, args.encoder_group_size)
         except ValueError as error:
             parser.error(str(error))
         result = compress_bundle(
@@ -124,6 +142,8 @@ def main(argv: list[str] | None = None) -> int:
             bits=args.bits,
             group_size=args.group_size,
             roles=tuple(args.roles),
+            int8_embedding=args.int8_embedding,
+            encoder_group_size=args.encoder_group_size,
         )
     elif args.command == "build-draft":
         from .conversion.draft import build_draft_bundle

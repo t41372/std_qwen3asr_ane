@@ -6,6 +6,38 @@ import hashlib
 import subprocess
 from pathlib import Path
 
+OFFLINE_FRONTEND_BATCH_SIZES = (1, 4)
+SUPPORTED_SCHEMA_VERSIONS = (1, 2, 3)
+HEAD_COMPRESSION_KEYS = ("scheme", "bits", "group_size")
+
+
+def offline_frontend_batch_size(manifest: dict) -> int:
+    """Read the optional offline optimization; legacy bundles keep their B1 graph."""
+    frontend = manifest.get("frontend", {})
+    if not isinstance(frontend, dict):
+        raise TypeError("Frontend metadata must be an object")
+    return validate_offline_frontend_batch_size(frontend.get("offline_batch_size", 1))
+
+
+def validate_offline_frontend_batch_size(size) -> int:
+    """Accept only batch sizes with an exported, measured frontend graph."""
+    if type(size) is not int or size not in OFFLINE_FRONTEND_BATCH_SIZES:
+        raise ValueError("Supported offline frontend batches are 1 and 4")
+    return size
+
+
+def lm_head_compression(manifest: dict) -> dict:
+    """Describe the weight compression the vocabulary head shares with the bundle.
+
+    A bundle compressed without the ``lm_head`` role keeps an FP16 head, so the
+    settings are reported as None. Draft verify heads are built and checked
+    against this view rather than the bundle-wide settings.
+    """
+    compression = manifest.get("weight_compression") or {}
+    if "lm_head" not in compression.get("roles", []):
+        compression = {}
+    return {key: compression.get(key) for key in HEAD_COMPRESSION_KEYS}
+
 
 def language_head_output(manifest: dict) -> dict:
     """Validate the versioned serial-head contract without loading model assets.
@@ -15,7 +47,7 @@ def language_head_output(manifest: dict) -> dict:
     rather than misinterpreting per-chunk maxima as vocabulary logits.
     """
     version = manifest.get("schema_version")
-    if type(version) is not int or version not in (1, 2):
+    if type(version) is not int or version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ValueError("Unsupported bundle schema")
     if version == 1:
         output = manifest.get("head_output", {"kind": "logits"})
@@ -24,7 +56,7 @@ def language_head_output(manifest: dict) -> dict:
         return {"kind": "logits", "token_batch_size": 1}
     output = manifest.get("head_output")
     if not isinstance(output, dict) or output.get("kind") not in ("logits", "chunk_max"):
-        raise ValueError("Schema 2 requires a supported head_output descriptor")
+        raise ValueError("Schema 2/3 requires a supported head_output descriptor")
     if type(output.get("token_batch_size")) is not int or output["token_batch_size"] != 1:
         raise ValueError("The serial language head must have token width 1")
     if output["kind"] == "chunk_max" and (

@@ -53,9 +53,10 @@ from standard_asr.engine import (
     resolve_download_root,
 )
 
-from .bundle import language_head_output
+from .bundle import language_head_output, offline_frontend_batch_size
 from .conversion.build import SOURCE_REVISION
 from .conversion.toolchain import conversion_toolchain_available as _conversion_toolchain_available
+from .embedding import embedding_quantization
 from .errors import ModelLimitError
 from .languages import LANGUAGE_NAMES, classify_model_language
 from .profiles import PROFILES, ProfileName
@@ -782,6 +783,8 @@ def _inspect_bundle(root: Path) -> tuple[str, str | None]:
         return "corrupt", None
     try:
         language_head_output(manifest)
+        batch_size = offline_frontend_batch_size(manifest)
+        quantization = embedding_quantization(manifest)
     except (ValueError, TypeError, AttributeError):
         return "corrupt", None
     if manifest.get("model_id") != MODEL_ID:
@@ -790,7 +793,10 @@ def _inspect_bundle(root: Path) -> tuple[str, str | None]:
     revision = manifest.get("source_revision")
     if not isinstance(revision, str) or not revision.strip():
         return "corrupt", None
-    if not isinstance(files, dict) or not _REQUIRED_ROLES.issubset(files):
+    required_roles = _REQUIRED_ROLES | ({"frontend_batched"} if batch_size > 1 else set())
+    if quantization is not None:
+        required_roles |= {"embedding_scales"}
+    if not isinstance(files, dict) or not required_roles.issubset(files):
         return "incomplete", revision
     for relative in files.values():
         if not isinstance(relative, str) or not relative or Path(relative).is_absolute():

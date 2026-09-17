@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 from test_runtime import bundle, fake_coreml  # noqa: F401 — shared toy runtime fixtures
 
+from std_qwen3asr_ane.bundle import SUPPORTED_SCHEMA_VERSIONS, lm_head_compression
 from std_qwen3asr_ane.draft import (
     DRAFT_BUNDLE_KIND,
     DRAFT_REVISION,
@@ -25,7 +26,6 @@ from std_qwen3asr_ane.runtime import CoreMLRuntime, TargetCursor, VerifyHead
 
 
 def draft_manifest(target: CoreMLRuntime, **overrides) -> dict:
-    compression = target.manifest.get("weight_compression") or {}
     manifest = {
         "schema_version": 1,
         "kind": DRAFT_BUNDLE_KIND,
@@ -43,9 +43,7 @@ def draft_manifest(target: CoreMLRuntime, **overrides) -> dict:
             "source_revision": target.manifest["source_revision"],
             "token_batch_size": target.token_batch_size,
             "tokenizer_sha256": target.tokenizer_sha256,
-            "weight_compression": {
-                key: compression.get(key) for key in ("scheme", "bits", "group_size")
-            },
+            "weight_compression": lm_head_compression(target.manifest),
         },
     }
     manifest["target"].update(overrides)
@@ -94,6 +92,40 @@ def test_manifest_and_target_binding(bundle: Path, fake_coreml) -> None:  # noqa
     (bundle / "manifest.json").write_text(json.dumps({"schema_version": 1, "kind": "x"}))
     with pytest.raises(ValueError, match="draft bundle"):
         load_draft_manifest(bundle)
+
+
+def test_target_binding_uses_head_compression(bundle: Path, fake_coreml) -> None:  # noqa: F811
+    manifest = json.loads((bundle / "manifest.json").read_text())
+    manifest["source_revision"] = "a" * 40
+    shared = {"scheme": "palette", "bits": 8, "group_size": 32}
+    manifest["weight_compression"] = {**shared, "roles": ["decoder", "encoder"]}
+    (bundle / "manifest.json").write_text(json.dumps(manifest))
+    target = CoreMLRuntime(bundle)
+    assert lm_head_compression(target.manifest) == {key: None for key in shared}
+    check_draft_target(draft_manifest(target), target)
+    with pytest.raises(ValueError, match="weight_compression"):
+        check_draft_target(draft_manifest(target, weight_compression=shared), target)
+    manifest["weight_compression"]["roles"].append("lm_head")
+    (bundle / "manifest.json").write_text(json.dumps(manifest))
+    target = CoreMLRuntime(bundle)
+    assert lm_head_compression(target.manifest) == shared
+    check_draft_target(draft_manifest(target, weight_compression=shared), target)
+
+
+def test_draft_builder_admits_every_supported_bundle_schema(tmp_path: Path) -> None:
+    from std_qwen3asr_ane.conversion.draft import build_draft_bundle
+
+    target = tmp_path / "target"
+    target.mkdir()
+    identity = {"model_id": "Qwen/Qwen3-ASR-1.7B", "source_revision": "a" * 40}
+    for version in SUPPORTED_SCHEMA_VERSIONS:
+        (target / "manifest.json").write_text(json.dumps({"schema_version": version, **identity}))
+        # Past the identity gate, the builder reads the source checkpoint next.
+        with pytest.raises(FileNotFoundError):
+            build_draft_bundle(target, tmp_path / "missing-source", tmp_path / f"out-{version}")
+    (target / "manifest.json").write_text(json.dumps({"schema_version": 4, **identity}))
+    with pytest.raises(ValueError, match="1.7B bundle"):
+        build_draft_bundle(target, tmp_path / "missing-source", tmp_path / "out-4")
 
 
 def test_mlx_absence_is_a_dependency_error(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

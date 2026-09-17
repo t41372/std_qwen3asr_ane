@@ -10,11 +10,12 @@ import json
 import sys
 import time
 import weakref
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Thread
 from time import perf_counter
+from typing import TypeVar
 
 import numpy as np
 from tokenizers import Tokenizer
@@ -23,11 +24,17 @@ from .audio import (
     MIN_SAMPLES,
     SAMPLE_RATE,
     audio_token_count,
-    convolution_masks,
     log_mel_spectrogram,
 )
+from .audio_batch import encode_frontend_chunks
 from .audio_context import AudioPrefixContext
-from .bundle import digest, language_head_output
+from .bundle import (
+    SUPPORTED_SCHEMA_VERSIONS,
+    digest,
+    language_head_output,
+    offline_frontend_batch_size,
+)
+from .embedding import Int8EmbeddingTable, embedding_quantization
 from .errors import ModelLimitError
 from .languages import LANGUAGE_NAMES, normalize_model_language
 from .speculative import greedy_speculative_decode
@@ -36,6 +43,7 @@ from .streaming_context import DecoderPrefixContext
 # Last-resort owners during interpreter teardown, when starting cleanup threads
 # is forbidden. Explicit close is the supported, observable shutdown path.
 _SHUTDOWN_RETAINED_RESOURCES: list[dict] = []
+_Consumed = TypeVar("_Consumed")
 
 
 def _release_model_resources(resources: dict, timeout: float | None = None) -> None:
@@ -99,6 +107,30 @@ class PersistentInputModel:
         return getattr(model, name)
 
     def predict(self, data: dict[str, np.ndarray], *, state=None) -> dict[str, np.ndarray]:
+        output = self._predict_outputs(data, state=state)
+        # Never hand native-backed output storage to downstream model calls or
+        # retain it across idle periods. Each returned array owns its allocation.
+        return {name: np.array(value, copy=True, order="C") for name, value in output.items()}
+
+    def predict_consumed(
+        self,
+        data: dict[str, np.ndarray],
+        consumer: Callable[[dict[str, np.ndarray]], _Consumed],
+        *,
+        state=None,
+    ) -> _Consumed:
+        """Consume native outputs synchronously without an additional deep copy.
+
+        The consumer must return only owned values and must not retain output
+        arrays, call another prediction, or close this model. The caller keeps
+        the same serial execution lane through prediction and consumption.
+        Inputs remain owned by this wrapper even when the consumer raises.
+        """
+        output = self._predict_outputs(data, state=state)
+        return consumer(output)
+
+    def _predict_outputs(self, data: dict[str, np.ndarray], *, state=None):
+        """Prepare persistent inputs and return outputs to the immediate caller."""
         model = self._resources["model"]
         if model is None:
             raise RuntimeError("Core ML model is closed")
@@ -124,12 +156,9 @@ class PersistentInputModel:
                 raise ValueError(f"Core ML integer input dtype changed for {name}")
             np.copyto(buffers[name], value)
         submitted = dict(buffers)
-        output = (
+        return (
             model.predict(submitted, state=state) if state is not None else model.predict(submitted)
         )
-        # Never hand native-backed output storage to downstream model calls or
-        # retain it across idle periods. Each returned array owns its allocation.
-        return {name: np.array(value, copy=True, order="C") for name, value in output.items()}
 
     def close(self, *, timeout: float = 5.0) -> None:
         """Stop using the model; raise while preserving buffers if borrowers remain."""
@@ -234,6 +263,25 @@ def parse_output(raw_text: str, language: str | None) -> tuple[str, str | None]:
     return text.strip(), detected
 
 
+def logits_token(outputs: dict[str, np.ndarray], *, vocabulary_size: int) -> int:
+    """Scan ordered vocabulary chunks, retaining the first maximum on ties."""
+    offset, best_id, best_value = 0, 0, -float("inf")
+    keys = sorted(outputs, key=lambda name: int(name.removeprefix("logits_")))
+    if keys != [f"logits_{index}" for index in range(len(keys))]:
+        raise RuntimeError("LM head output chunks are not contiguous")
+    for key in keys:
+        logits = np.asarray(outputs[key]).reshape(-1)
+        if logits.size == 0 or not np.isfinite(logits).all():
+            raise RuntimeError("LM head produced empty or non-finite logits")
+        index = int(np.argmax(logits))
+        if float(logits[index]) > best_value:
+            best_value, best_id = float(logits[index]), offset + index
+        offset += logits.size
+    if offset != vocabulary_size:
+        raise RuntimeError("LM head vocabulary does not match the embedding table")
+    return best_id
+
+
 def compact_token(outputs: dict[str, np.ndarray], *, vocabulary_size: int, chunk_size: int) -> int:
     """Select a serial compact-head winner with the full-logits tie convention."""
     if type(chunk_size) is not int or chunk_size < 1:
@@ -266,6 +314,9 @@ class CoreMLRuntime:
     calls, including model initialization. Direct users must do the same.
     """
 
+    frontend_batch_size = 1
+    frontend_batched = None
+
     def __init__(
         self,
         model_dir: Path,
@@ -281,13 +332,27 @@ class CoreMLRuntime:
         self.manifest = json.loads((self.model_dir / "manifest.json").read_text())
         if (
             type(self.manifest.get("schema_version")) is not int
-            or self.manifest.get("schema_version") not in (1, 2)
+            or self.manifest.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS
             or self.manifest.get("model_id") != model_id
         ):
             raise ValueError("Unsupported model bundle identity or schema")
         self.head_output = language_head_output(self.manifest)
         files = self.manifest["files"]
-        self.embeddings = np.load(self._path(files["embedding"]), mmap_mode="r", allow_pickle=False)
+        quantization = embedding_quantization(self.manifest)
+        if quantization is None:
+            self.embeddings = np.load(
+                self._path(files["embedding"]), mmap_mode="r", allow_pickle=False
+            )
+            if not np.issubdtype(self.embeddings.dtype, np.floating):
+                raise ValueError("Integer embedding tables require explicit quantization metadata")
+        else:
+            if "embedding_scales" not in files:
+                raise ValueError("Quantized embeddings require a scale array")
+            self.embeddings = Int8EmbeddingTable(
+                self._path(files["embedding"]),
+                self._path(files["embedding_scales"]),
+                shape=tuple(quantization["shape"]),
+            )
         if self.embeddings.ndim != 2:
             raise ValueError("Embedding table must have shape [vocabulary, hidden size]")
         self.mel_filters = np.load(self._path(files["mel_filters"]), allow_pickle=False)
@@ -322,6 +387,10 @@ class CoreMLRuntime:
         ):
             raise ValueError("Model scale, RoPE theta, and audio limit must be positive and finite")
         self.chunk_frames = int(self.manifest.get("frontend", {}).get("chunk_frames", 100))
+        self.frontend_batch_size = offline_frontend_batch_size(self.manifest)
+        if self.frontend_batch_size > 1 and "frontend_batched" not in files:
+            raise ValueError("Offline frontend batching requires its declared graph")
+        self._frontend_calls = 0
         self.window_tokens = int(self.manifest.get("encoder", {}).get("window_tokens", 104))
         if self.chunk_frames != 100 or self.window_tokens != 104:
             raise ValueError("This runtime supports 100-frame chunks and 104-token encoder windows")
@@ -344,6 +413,8 @@ class CoreMLRuntime:
             return PersistentInputModel(model_type(str(path), compute_units=unit))
 
         self.frontend = load(files["frontend"])
+        if self.frontend_batch_size > 1:
+            self.frontend_batched = load(files["frontend_batched"])
         self.encoder = load(files["encoder"])
         partitions = self.manifest["decoder_partitions"]
         if not isinstance(partitions, list) or not partitions:
@@ -363,8 +434,11 @@ class CoreMLRuntime:
         Direct callers must serialize this with inference, just like transcribe.
         A timeout is a failed close; retained buffers are not released early.
         """
-        for model in [self.frontend, self.encoder, *self.decoders, self.lm_head]:
-            model.close(timeout=timeout)
+        PersistentInputModel.close_many(self._prediction_models(), timeout=timeout)
+
+    def _prediction_models(self) -> tuple[PersistentInputModel, ...]:
+        models = (self.frontend, self.encoder, *self.decoders, self.lm_head)
+        return models + ((self.frontend_batched,) if self.frontend_batched is not None else ())
 
     def _path(self, relative: str) -> Path:
         if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
@@ -381,25 +455,13 @@ class CoreMLRuntime:
             return audio_context.encode(
                 features, owner=self, frontend=self.frontend, encoder=self.encoder
             )
-        frames = features.shape[1]
-        masks = convolution_masks(frames, self.chunk_frames)
-        chunks = []
-        for offset in range(0, frames, self.chunk_frames):
-            chunk = features[:, offset : offset + self.chunk_frames]
-            padded = np.zeros((1, 1, 128, self.chunk_frames), dtype=np.float32)
-            padded[0, 0, :, : chunk.shape[1]] = chunk
-            output = self.frontend.predict(
-                {
-                    "mel_features": padded,
-                    "conv1_mask": masks[0],
-                    "conv2_mask": masks[1],
-                }
-            )["chunk_embeddings"]
-            valid_tokens = (chunk.shape[1] + 7) // 8
-            chunks.append(np.asarray(output, dtype=np.float32)[..., :valid_tokens])
-        hidden = np.concatenate(chunks, axis=-1)
-        if hidden.shape[-1] != audio_token_count(frames):
-            raise RuntimeError("Frontend produced an unexpected audio token count")
+        hidden, self._frontend_calls = encode_frontend_chunks(
+            features,
+            self.frontend,
+            batched_frontend=self.frontend_batched,
+            batch_size=self.frontend_batch_size,
+            chunk_frames=self.chunk_frames,
+        )
         encoded = []
         for offset in range(0, hidden.shape[-1], self.window_tokens):
             window = hidden[..., offset : offset + self.window_tokens]
@@ -464,6 +526,10 @@ class CoreMLRuntime:
         outputs = self.lm_head.predict(
             {"hidden_states": np.ascontiguousarray(hidden, dtype=np.float16)}
         )
+        return self._select_token(outputs)
+
+    def _select_token(self, outputs: dict[str, np.ndarray]) -> int:
+        """Select an owned scalar while the head output owner is still alive."""
         head_output = self.head_output
         if head_output.get("kind") == "chunk_max":
             return compact_token(
@@ -473,29 +539,22 @@ class CoreMLRuntime:
             )
         if head_output.get("kind") != "logits":
             raise ValueError("Unsupported language head output format")
-        offset, best_id, best_value = 0, 0, -float("inf")
-        keys = sorted(outputs, key=lambda name: int(name.removeprefix("logits_")))
-        if keys != [f"logits_{index}" for index in range(len(keys))]:
-            raise RuntimeError("LM head output chunks are not contiguous")
-        for key in keys:
-            logits = np.asarray(outputs[key]).reshape(-1)
-            if logits.size == 0 or not np.isfinite(logits).all():
-                raise RuntimeError("LM head produced empty or non-finite logits")
-            index = int(np.argmax(logits))
-            if float(logits[index]) > best_value:
-                best_value, best_id = float(logits[index]), offset + index
-            offset += logits.size
-        if offset != self.embeddings.shape[0]:
-            raise RuntimeError("LM head vocabulary does not match the embedding table")
-        return best_id
+        return logits_token(outputs, vocabulary_size=self.embeddings.shape[0])
 
     def _embedding(self, token: int) -> np.ndarray:
-        if not 0 <= token < self.embeddings.shape[0]:
+        """One token's scaled embedding as a decoder input column."""
+        return self._embedding_columns([token])
+
+    def _embedding_columns(self, tokens: Sequence[int]) -> np.ndarray:
+        """Scaled embeddings for a token block, laid out as decoder input columns."""
+        return np.ascontiguousarray(self._embedding_rows(tokens).T)[None, :, None, :]
+
+    def _embedding_rows(self, tokens: Sequence[int]) -> np.ndarray:
+        """Gather/dequantize just the requested rows in one operation."""
+        indices = np.asarray(tokens, dtype=np.int64)
+        if indices.ndim != 1 or np.any(indices < 0) or np.any(indices >= self.embeddings.shape[0]):
             raise ValueError("Tokenizer emitted an ID outside the model vocabulary")
-        return (
-            np.asarray(self.embeddings[token], dtype=np.float32)[None, :, None, None]
-            / self.residual_scale
-        )
+        return np.asarray(self.embeddings[indices], dtype=np.float32) / self.residual_scale
 
     def new_decoder_context(self) -> DecoderPrefixContext:
         """Allocate private partition states for one serialized streaming utterance."""
@@ -558,18 +617,15 @@ class CoreMLRuntime:
         prompt_done = perf_counter()
         audio = self._encode_audio(features, audio_context=audio_context) / self.residual_scale
         encoder_done = perf_counter()
-        audio_index = 0
-        prompt_embeddings = []
-        for token in prompt:
-            if token == self.audio_token_id:
-                embedding = audio[..., audio_index : audio_index + 1]
-                audio_index += 1
-            else:
-                embedding = self._embedding(token)
-            prompt_embeddings.append(embedding)
-        if audio_index != audio.shape[-1] or not prompt_embeddings:
+        prompt_ids = np.asarray(prompt, dtype=np.int64)
+        audio_rows = prompt_ids == self.audio_token_id
+        if int(audio_rows.sum()) != audio.shape[-1] or not prompt:
             raise RuntimeError("Prompt placeholders do not match encoded audio")
-        embeddings = np.concatenate(prompt_embeddings, axis=-1)
+        embeddings = np.empty((1, self.embeddings.shape[1], 1, len(prompt)), dtype=np.float32)
+        columns = embeddings[0, :, 0, :]
+        columns[:, audio_rows] = audio[0, :, 0, :]
+        columns[:, ~audio_rows] = self._embedding_rows(prompt_ids[~audio_rows]).T
+        assembly_done = perf_counter()
         reused_tokens = 0
         if decoder_context is None:
             states = [model.make_state() for model in self.decoders]
@@ -592,6 +648,8 @@ class CoreMLRuntime:
                 "prompt_seconds": prompt_done - feature_done,
                 "encoder_seconds": encoder_done - prompt_done,
                 "prefill_seconds": prefill_done - encoder_done,
+                "prompt_assembly_seconds": assembly_done - encoder_done,
+                "decoder_prefill_seconds": prefill_done - assembly_done,
                 "prompt_tokens": len(prompt),
                 "prefill_tokens": len(prompt) - reused_tokens,
                 "reused_prompt_tokens": reused_tokens,
@@ -602,8 +660,7 @@ class CoreMLRuntime:
                     audio_context.timings
                     if audio_context is not None
                     else {
-                        "frontend_calls": (features.shape[1] + self.chunk_frames - 1)
-                        // self.chunk_frames,
+                        "frontend_calls": self._frontend_calls,
                         "encoder_calls": (audio.shape[-1] + self.window_tokens - 1)
                         // self.window_tokens,
                         "reused_frontend_chunks": 0,
@@ -739,6 +796,7 @@ class CoreMLRuntime:
                 **prepared.timings,
                 "generation_seconds": generation_done - generation_started,
                 "first_token_seconds": first_token_seconds,
+                "text_decode_seconds": finished - generation_done,
                 "head_seconds": head_seconds,
                 "head_calls": head_calls,
                 "generated_tokens": len(generated),
@@ -830,7 +888,7 @@ class TargetCursor:
         self.head = head
 
     def step(self, tokens, position):
-        embeddings = np.concatenate([self.runtime._embedding(token) for token in tokens], axis=-1)
+        embeddings = self.runtime._embedding_columns(tokens)
         hidden = self.runtime._decode_step(embeddings, position, self.states, all_rows=True)
         if self.head is not None:
             return self.head.choose_rows(hidden, len(tokens))

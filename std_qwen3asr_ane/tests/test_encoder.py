@@ -33,6 +33,38 @@ def copy_weights(target, source):
     target.load_state_dict(converted, strict=True)
 
 
+def test_fixed_frontend_batch_preserves_independent_clip_masks():
+    config = Qwen3ASRAudioEncoderConfig(
+        d_model=16,
+        encoder_attention_heads=4,
+        encoder_ffn_dim=32,
+        encoder_layers=2,
+        downsample_hidden_size=4,
+        output_dim=24,
+        num_mel_bins=128,
+        n_window=50,
+        n_window_infer=800,
+    ).to_dict()
+    torch.manual_seed(21)
+    serial = AudioFrontend(config).eval()
+    batched = AudioFrontend(config, batch_size=4).eval()
+    batched.load_state_dict(serial.state_dict())
+    inputs, masks1, masks2 = [], [], []
+    for length in (1, 49, 99, 100):
+        mel = torch.zeros(1, 1, 128, 100)
+        mel[..., :length] = torch.randn(1, 1, 128, length)
+        masks = convolution_masks(length)
+        inputs.append(mel)
+        masks1.append(torch.from_numpy(masks[0]))
+        masks2.append(torch.from_numpy(masks[1]))
+    with torch.inference_mode():
+        expected = torch.cat(
+            [serial(*values) for values in zip(inputs, masks1, masks2, strict=True)]
+        )
+        actual = batched(torch.cat(inputs), torch.cat(masks1), torch.cat(masks2))
+    torch.testing.assert_close(actual, expected, atol=2e-6, rtol=2e-6)
+
+
 @pytest.fixture(scope="module")
 def encoders():
     torch.manual_seed(13)

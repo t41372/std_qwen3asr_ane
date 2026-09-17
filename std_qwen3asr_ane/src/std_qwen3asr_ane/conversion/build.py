@@ -7,6 +7,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ..bundle import validate_offline_frontend_batch_size
 from ..profiles import PROFILES, ProfileName
 
 SUPPORTED_CHECKPOINTS = {"Qwen/Qwen3-ASR-1.7B", "Qwen/Qwen3-ASR-0.6B"}
@@ -23,6 +24,7 @@ def build_bundle(
     token_batch_size=None,
     layers_per_partition=4,
     profile: ProfileName | None = None,
+    frontend_batch_size: int | None = None,
 ):
     import numpy as np
     import torch
@@ -32,6 +34,8 @@ def build_bundle(
     from .encoder import build_encoder
 
     settings = PROFILES[profile] if profile is not None else None
+    if frontend_batch_size is not None:
+        validate_offline_frontend_batch_size(frontend_batch_size)
     if cache_length is None:
         cache_length = settings.cache_length if settings else 1024
     if settings is not None and cache_length != settings.cache_length:
@@ -52,10 +56,28 @@ def build_bundle(
     manifest_path = output / "manifest.json"
     if manifest_path.exists():
         raise FileExistsError(f"A completed bundle already exists at {output}; use a new directory")
+    identity = {key: provenance.get(key) for key in ("model_id", "revision")}
     if reuse_encoder:
         encoder = json.loads((output / "encoder-manifest.json").read_text())
+        # The finished manifest names one checkpoint for the whole bundle, so an
+        # encoder from another revision (or one that never recorded its source)
+        # cannot be combined with this decoder.
+        if encoder.get("source") != identity:
+            raise ValueError("Reused encoder was not built from this checkpoint; rebuild it")
+        if (
+            frontend_batch_size is not None
+            and encoder["frontend"].get("offline_batch_size", 1) != frontend_batch_size
+        ):
+            raise ValueError("Reused frontend batch differs from the requested batch")
     else:
-        encoder = build_encoder(source, output)
+        encoder = build_encoder(
+            source,
+            output,
+            frontend_batch_size=1 if frontend_batch_size is None else frontend_batch_size,
+        )
+        encoder["source"] = identity
+        # Recorded so --reuse-encoder can rebuild only the decoder later.
+        (output / "encoder-manifest.json").write_text(json.dumps(encoder, indent=2) + "\n")
     decoder = build_decoder(
         source,
         output,
