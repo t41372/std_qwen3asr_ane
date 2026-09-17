@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 from evaluate import audio_samples, manifest_rows
+
 from std_qwen3asr_ane.bundle import digest
 from std_qwen3asr_ane.runtime import CoreMLRuntime, PersistentInputModel
 
@@ -49,9 +50,7 @@ def capture(runtime, audio, budget):
                     "shape": list(value.shape),
                     "dtype": str(value.dtype),
                     "consumed_sha256": hashlib.sha256(prefix.tobytes()).hexdigest(),
-                    "unused_nonzero_elements": int(
-                        np.count_nonzero(value[..., consumed:])
-                    ),
+                    "unused_nonzero_elements": int(np.count_nonzero(value[..., consumed:])),
                 }
     return arrays, {
         "consumed_positions": consumed,
@@ -129,17 +128,13 @@ def main():
             report["cases"].append(row)
             print(
                 json.dumps(
-                    {
-                        key: row[key]
-                        for key in ("id", "exact_decisions", "exact_consumed_kv")
-                    }
+                    {key: row[key] for key in ("id", "exact_decisions", "exact_consumed_kv")}
                 ),
                 flush=True,
             )
         report["complete"] = True
         report["passed"] = all(
-            row["exact_decisions"] and row["exact_consumed_kv"]
-            for row in report["cases"]
+            row["exact_decisions"] and row["exact_consumed_kv"] for row in report["cases"]
         )
     except BaseException as error:
         report["error"] = f"{type(error).__name__}: {error}"
@@ -147,16 +142,7 @@ def main():
     finally:
         try:
             PersistentInputModel.close_many(
-                [
-                    model
-                    for runtime in runtimes
-                    for model in (
-                        runtime.frontend,
-                        runtime.encoder,
-                        *runtime.decoders,
-                        runtime.lm_head,
-                    )
-                ]
+                [model for runtime in runtimes for model in runtime._prediction_models()]
             )
             report["close_succeeded"] = True
         finally:

@@ -16,7 +16,7 @@ import sys
 import time
 from pathlib import Path
 
-from evaluate import audio_samples, manifest_rows
+from evaluate import audio_fingerprint, frozen_audio_samples, manifest_rows
 from power_v2.integrate import integrate
 
 
@@ -46,17 +46,17 @@ def main():
     parser.add_argument("--repeats", type=int, default=60)
     parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--device", choices=("cpu", "mps"), default="cpu")
-    parser.add_argument(
-        "--dtype", choices=("float32", "bfloat16", "float16"), default="float32"
-    )
+    parser.add_argument("--dtype", choices=("float32", "bfloat16", "float16"), default="float32")
     args = parser.parse_args()
     if args.repeats < 1 or args.max_new_tokens < 1 or args.output.exists():
         parser.error("Require positive repeats and a fresh output directory")
     args.output.mkdir(parents=True)
-    inputs = []
+    # Verify the frozen audio before any model loads; a rewritten WAV must fail here.
+    inputs, audio_hashes = [], {}
     for row in manifest_rows(args.manifest):
-        samples, digest = audio_samples(Path(row["audio_path"]))
+        samples, digest = frozen_audio_samples(row)
         inputs.append((row, samples, digest))
+        audio_hashes[row["id"]] = digest
     started = time.monotonic()
     close = None
     if args.backend == "mlx":
@@ -123,6 +123,8 @@ def main():
     collector = None
     report = {
         "backend": args.backend,
+        "audio_sha256": audio_hashes,
+        "audio_fingerprint": audio_fingerprint(audio_hashes),
         "device": args.device if args.backend == "official" else None,
         "dtype": args.dtype if args.backend == "official" else None,
         "draft": {

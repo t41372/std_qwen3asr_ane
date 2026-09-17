@@ -13,6 +13,7 @@ from pathlib import Path
 from time import perf_counter
 
 from evaluate import audio_samples, manifest_rows
+
 from std_qwen3asr_ane.runtime import CoreMLRuntime
 
 
@@ -26,8 +27,7 @@ def main() -> None:
     if args.repeats < 1 or args.output.exists():
         parser.error("Positive repeats and a fresh output path are required")
     inputs = [
-        (row, audio_samples(Path(row["audio_path"]))[0])
-        for row in manifest_rows(args.manifest)
+        (row, audio_samples(Path(row["audio_path"]))[0]) for row in manifest_rows(args.manifest)
     ]
     started = perf_counter()
     runtime = CoreMLRuntime(args.model_dir)
@@ -35,6 +35,11 @@ def main() -> None:
     model_calls = defaultdict(list)
     models = {
         "frontend": runtime.frontend,
+        **(
+            {"frontend_batched": runtime.frontend_batched}
+            if runtime.frontend_batched is not None
+            else {}
+        ),
         "encoder": runtime.encoder,
         **{f"decoder_{i}": model for i, model in enumerate(runtime.decoders)},
         "lm_head": runtime.lm_head,
@@ -58,9 +63,7 @@ def main() -> None:
             for row, samples in inputs:
                 for repeat in range(-1, args.repeats):
                     model_calls.clear()
-                    result = runtime.transcribe(
-                        samples, language=None, max_new_tokens=256
-                    )
+                    result = runtime.transcribe(samples, language=None, max_new_tokens=256)
                     record = {
                         "id": row["id"],
                         "repeat": repeat,

@@ -49,6 +49,16 @@ def summarize_latency(rows):
         "state_transfer_seconds",
         "prompt_tokens",
         "generated_tokens",
+        "prompt_assembly_seconds",
+        "decoder_prefill_seconds",
+        "text_decode_seconds",
+        "frontend_predict_seconds",
+        "audio_encoder_predict_seconds",
+        "decoder_predict_seconds",
+        "head_predict_seconds",
+        "head_copy_seconds",
+        "head_argmax_seconds",
+        "embedding_gather_seconds",
     ):
         values = [
             r["backend_timings"][name]

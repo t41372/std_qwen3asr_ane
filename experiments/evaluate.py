@@ -51,21 +51,15 @@ def normalize(text: str, *, characters: bool = False) -> str:
 
 
 def character_language(language: str | None) -> bool:
-    return (language or "").lower().replace("_", "-").split("-")[
-        0
-    ] in CHARACTER_LANGUAGES
+    return (language or "").lower().replace("_", "-").split("-")[0] in CHARACTER_LANGUAGES
 
 
 def score(reference: str, hypothesis: str) -> dict[str, Any]:
     result = {}
     for metric, characters in (("wer", False), ("cer", True)):
-        ref, hyp = (
-            normalize(s, characters=characters) for s in (reference, hypothesis)
-        )
+        ref, hyp = (normalize(s, characters=characters) for s in (reference, hypothesis))
         alignment = (
-            jiwer.process_characters(ref, hyp)
-            if characters
-            else jiwer.process_words(ref, hyp)
+            jiwer.process_characters(ref, hyp) if characters else jiwer.process_words(ref, hyp)
         )
         errors = alignment.substitutions + alignment.deletions + alignment.insertions
         units = alignment.hits + alignment.substitutions + alignment.deletions
@@ -124,6 +118,24 @@ def audio_samples(path: Path) -> tuple[np.ndarray, str]:
     return np.ascontiguousarray(audio, dtype=np.float32), digest
 
 
+def frozen_audio_samples(row: dict[str, Any]) -> tuple[np.ndarray, str]:
+    """Load a manifest row's audio and refuse content that differs from its frozen hash.
+
+    The manifest file's own hash does not change when a WAV it points to is
+    rewritten, so every runner must check the audio it actually read.
+    """
+    samples, audio_hash = audio_samples(Path(row["audio_path"]))
+    if row.get("audio_sha256") and row["audio_sha256"] != audio_hash:
+        raise ValueError("Audio SHA256 does not match manifest")
+    return samples, audio_hash
+
+
+def audio_fingerprint(hashes: dict[str, str]) -> str:
+    """One hash over every (id, audio sha256) pair, for comparing runs to each other."""
+    encoded = json.dumps(sorted(hashes.items()), separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
 @dataclass(frozen=True)
 class Backend:
     transcribe: Callable[[np.ndarray, str | None], tuple[str, str | None, Any]]
@@ -145,9 +157,7 @@ def compute_label(args: argparse.Namespace) -> str:
     if args.backend == "standard":
         return "plugin_managed"
     if args.backend == "coreml":
-        return args.compute_units + (
-            "+gpu_draft" if getattr(args, "draft_dir", None) else ""
-        )
+        return args.compute_units + ("+gpu_draft" if getattr(args, "draft_dir", None) else "")
     return f"{args.device}_{DTYPE_LABELS[args.dtype]}"
 
 
@@ -155,13 +165,9 @@ def make_backend(args: argparse.Namespace) -> Backend:
     if args.backend == "standard":
         from standard_asr import RuntimeParams, discover_models
 
-        engine = discover_models(strict=True).create(
-            args.model_key, **args.engine_config
-        )
+        engine = discover_models(strict=True).create(args.model_key, **args.engine_config)
 
-        def transcribe(
-            audio: np.ndarray, language: str | None
-        ) -> tuple[str, str | None, Any]:
+        def transcribe(audio: np.ndarray, language: str | None) -> tuple[str, str | None, Any]:
             result = engine.transcribe((audio, 16000), RuntimeParams(language=language))
             return result.text, result.detected_language, None
 
@@ -182,28 +188,20 @@ def make_backend(args: argparse.Namespace) -> Backend:
             from benchmark_dualwidth_greedy import PrefillComparisonRuntime
 
             if args.compute_units != "cpu_and_ne" or getattr(args, "draft_dir", None):
-                raise ValueError(
-                    "Dual-width evaluation requires CPU_AND_NE without a draft"
-                )
+                raise ValueError("Dual-width evaluation requires CPU_AND_NE without a draft")
             runtime = PrefillComparisonRuntime(
                 args.model_dir.resolve(), args.prefill_model_dir.resolve()
             )
             runtime.use_wide_prefill = True
         else:
-            runtime = CoreMLRuntime(
-                args.model_dir.resolve(), compute_units=args.compute_units
-            )
+            runtime = CoreMLRuntime(args.model_dir.resolve(), compute_units=args.compute_units)
         draft = None
         if getattr(args, "draft_dir", None):
             from std_qwen3asr_ane.draft import DraftRuntime
 
-            draft = DraftRuntime(
-                args.draft_dir.resolve(), runtime, quantize_bits=args.draft_bits
-            )
+            draft = DraftRuntime(args.draft_dir.resolve(), runtime, quantize_bits=args.draft_bits)
 
-        def transcribe(
-            audio: np.ndarray, language: str | None
-        ) -> tuple[str, str | None, Any]:
+        def transcribe(audio: np.ndarray, language: str | None) -> tuple[str, str | None, Any]:
             if draft is not None:
                 result = runtime.transcribe_speculative(
                     audio,
@@ -218,7 +216,11 @@ def make_backend(args: argparse.Namespace) -> Backend:
                 )
             timings = getattr(result, "timings", None)
             if isinstance(timings, dict) and hasattr(result, "token_ids"):
-                timings = {**timings, "token_ids": list(result.token_ids)}
+                timings = {
+                    **timings,
+                    "token_ids": list(result.token_ids),
+                    "raw_text": result.raw_text,
+                }
             return result.text, result.language, timings
 
         def close():
@@ -231,6 +233,7 @@ def make_backend(args: argparse.Namespace) -> Backend:
     # Optional baseline imports are lazy. No MLX package is installed or imported.
     import torch
     from qwen_asr import Qwen3ASRModel
+
     from std_qwen3asr_ane.languages import LANGUAGE_NAMES
 
     if args.torch_threads:
@@ -247,9 +250,7 @@ def make_backend(args: argparse.Namespace) -> Backend:
     )
     model.model.eval()
 
-    def transcribe(
-        audio: np.ndarray, language: str | None
-    ) -> tuple[str, str | None, Any]:
+    def transcribe(audio: np.ndarray, language: str | None) -> tuple[str, str | None, Any]:
         name = LANGUAGE_NAMES.get(language, language) if language else None
         with torch.inference_mode():
             result = model.transcribe(audio=(audio, 16000), language=name)[0]
@@ -277,9 +278,7 @@ def close_backend(backend: Backend | None, output: Path) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001 — a failed close is separate lifecycle evidence.
             cleanup["status"] = "failed"
             cleanup["error"] = backend_error(exc, redact=backend.redact_errors)
-            print(
-                f"Backend close failed: {cleanup['error']}", file=sys.stderr, flush=True
-            )
+            print(f"Backend close failed: {cleanup['error']}", file=sys.stderr, flush=True)
         cleanup["seconds"] = time.perf_counter() - begin
     cleanup["finished_at"] = datetime.now(UTC).isoformat()
     write_json(Path(str(output) + ".cleanup.json"), cleanup)
@@ -300,9 +299,7 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         entry = {"samples": len(group)}
         for metric in ("wer", "cer"):
             selected = [
-                r
-                for r in group
-                if metric == "cer" or not character_language(r.get("language"))
+                r for r in group if metric == "cer" or not character_language(r.get("language"))
             ]
             errors = sum(r["scores"][metric]["errors"] for r in selected)
             units = sum(r["scores"][metric]["reference_units"] for r in selected)
@@ -393,9 +390,7 @@ def model_metadata(root: Path) -> dict[str, Any]:
 
 def write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
-    )
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
 
 
 def run(args: argparse.Namespace) -> int:
@@ -433,15 +428,13 @@ def run(args: argparse.Namespace) -> int:
                 audio = None
                 audio_error = None
                 audio_hash = None
+                audio_prepare_started = time.perf_counter()
                 try:
-                    audio, audio_hash = audio_samples(Path(item["audio_path"]))
-                    if item.get("audio_sha256") and item["audio_sha256"] != audio_hash:
-                        raise ValueError("Audio SHA256 does not match manifest")
+                    audio, audio_hash = frozen_audio_samples(item)
                 except Exception as exc:  # noqa: BLE001 — malformed audio must remain in results.
                     audio_error = f"{type(exc).__name__}: {exc}"
-                language = (
-                    item.get("language") if args.language_mode == "manifest" else None
-                )
+                audio_prepare_seconds = time.perf_counter() - audio_prepare_started
+                language = item.get("language") if args.language_mode == "manifest" else None
                 for index in range(-args.warmups, args.repeats):
                     record = {
                         "id": item["id"],
@@ -452,9 +445,8 @@ def run(args: argparse.Namespace) -> int:
                         "language_mode": args.language_mode,
                         "audio_path": item["audio_path"],
                         "audio_sha256": audio_hash,
-                        "audio_seconds": len(audio) / 16000
-                        if audio is not None
-                        else None,
+                        "audio_prepare_seconds": audio_prepare_seconds,
+                        "audio_seconds": len(audio) / 16000 if audio is not None else None,
                         "backend": args.backend,
                         "model_dir": model_dir,
                         "compute_units": compute_label(args),
@@ -474,14 +466,10 @@ def run(args: argparse.Namespace) -> int:
                     if record["error"] is None:
                         begin = time.perf_counter()
                         try:
-                            hypothesis, detected, timings = backend.transcribe(
-                                audio, language
-                            )
+                            hypothesis, detected, timings = backend.transcribe(audio, language)
                             record["seconds"] = time.perf_counter() - begin
                             if not isinstance(hypothesis, str):
-                                raise TypeError(
-                                    "Backend returned non-string hypothesis"
-                                )
+                                raise TypeError("Backend returned non-string hypothesis")
                             record.update(
                                 hypothesis=hypothesis,
                                 detected_language=detected,
@@ -492,15 +480,13 @@ def run(args: argparse.Namespace) -> int:
                                 timings = dict(timings)
                                 if "token_ids" in timings:
                                     record["token_ids"] = timings.pop("token_ids")
+                                if "raw_text" in timings:
+                                    record["raw_text"] = timings.pop("raw_text")
                                 record["backend_timings"] = timings
                         except Exception as exc:  # noqa: BLE001 — backend failures are benchmark data.
                             record["seconds"] = time.perf_counter() - begin
-                            record["error"] = backend_error(
-                                exc, redact=args.backend == "standard"
-                            )
-                    output.write(
-                        json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n"
-                    )
+                            record["error"] = backend_error(exc, redact=args.backend == "standard")
+                    output.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
                     output.flush()
                     results.append(record)
                     print(
@@ -537,9 +523,7 @@ def run(args: argparse.Namespace) -> int:
             "max_new_tokens": token_budget,
             "language_mode": args.language_mode,
             "seed": None if args.backend == "standard" else args.seed,
-            "torch_threads_requested": None
-            if args.backend == "standard"
-            else args.torch_threads,
+            "torch_threads_requested": None if args.backend == "standard" else args.torch_threads,
             "torch_threads_effective": sys.modules["torch"].get_num_threads()
             if args.backend == "official" and "torch" in sys.modules
             else None,
@@ -555,9 +539,7 @@ def run(args: argparse.Namespace) -> int:
         summary["model_key"] = args.model_key
         summary["engine_create_seconds"] = load_seconds
         summary["configuration"]["language_resolution"] = (
-            "manifest_override"
-            if args.language_mode == "manifest"
-            else "plugin_default"
+            "manifest_override" if args.language_mode == "manifest" else "plugin_default"
         )
     write_json(Path(str(args.output) + ".summary.json"), summary)
     return 1 if cleanup["error"] or any(r["error"] for r in results) else 0
@@ -625,9 +607,7 @@ def compare(args: argparse.Namespace) -> int:
     for path in paths:
         all_rows = read_jsonl(path)
         attempts.append(all_rows)
-        rows = [
-            r for r in all_rows if r.get("phase") == "measured" and r.get("repeat") == 0
-        ]
+        rows = [r for r in all_rows if r.get("phase") == "measured" and r.get("repeat") == 0]
         mapping = {r["id"]: r for r in rows}
         if not mapping or len(mapping) != len(rows):
             raise ValueError(f"{path}: missing or duplicate repeat-zero measured rows")
@@ -693,13 +673,9 @@ def compare(args: argparse.Namespace) -> int:
             or not isinstance(a.get("hypothesis"), str)
             or not isinstance(b.get("hypothesis"), str)
         ):
-            problems.append(
-                {"id": sample_id, "invalid_audio_identity_or_hypothesis": True}
-            )
+            problems.append({"id": sample_id, "invalid_audio_identity_or_hypothesis": True})
         if a.get("normalizer") != NORMALIZER:
-            problems.append(
-                {"id": sample_id, "unsupported_normalizer": a.get("normalizer")}
-            )
+            problems.append({"id": sample_id, "unsupported_normalizer": a.get("normalizer")})
     report = {
         "baseline": str(paths[0]),
         "candidate": str(paths[1]),
@@ -720,11 +696,7 @@ def compare(args: argparse.Namespace) -> int:
             for run in attempts
         ]
         tokens_available = (
-            all(
-                isinstance(tokens, list)
-                for run in token_runs
-                for tokens in run.values()
-            )
+            all(isinstance(tokens, list) for run in token_runs for tokens in run.values())
             and token_runs[0].keys() == token_runs[1].keys()
         )
         mismatches = (
@@ -739,9 +711,7 @@ def compare(args: argparse.Namespace) -> int:
         }
         eos_runs = [
             {
-                (row["id"], row["repeat"]): (row.get("backend_timings") or {}).get(
-                    "eos_token_id"
-                )
+                (row["id"], row["repeat"]): (row.get("backend_timings") or {}).get("eos_token_id")
                 for row in run
                 if row.get("phase") == "measured"
             }
@@ -763,17 +733,13 @@ def compare(args: argparse.Namespace) -> int:
         }
         a, b = ([mapping[i] for i in common] for mapping in runs)
         report["quality"] = {
-            m: paired_bootstrap(
-                a, b, metric=m, samples=args.bootstrap_samples, seed=args.seed
-            )
+            m: paired_bootstrap(a, b, metric=m, samples=args.bootstrap_samples, seed=args.seed)
             for m in ("wer", "cer")
         }
         report["by_language"] = {}
         for language in sorted({row.get("language") or "unspecified" for row in a}):
             indices = [
-                i
-                for i, row in enumerate(a)
-                if (row.get("language") or "unspecified") == language
+                i for i, row in enumerate(a) if (row.get("language") or "unspecified") == language
             ]
             report["by_language"][language] = {
                 metric: paired_bootstrap(
@@ -798,9 +764,7 @@ def engine_config_json(value: str) -> dict[str, Any]:
     try:
         config = json.loads(value)
     except (ValueError, TypeError):
-        raise argparse.ArgumentTypeError(
-            "Engine configuration must be a JSON object."
-        ) from None
+        raise argparse.ArgumentTypeError("Engine configuration must be a JSON object.") from None
     if not isinstance(config, dict):
         raise argparse.ArgumentTypeError("Engine configuration must be a JSON object.")
     return config
@@ -833,9 +797,7 @@ def parser() -> argparse.ArgumentParser:
         help="JSON object passed to the standard plugin's typed config; only public_dump is recorded.",
     )
     result.add_argument("--output", type=Path, required=True)
-    result.add_argument(
-        "--compute-units", choices=("cpu_and_ne", "cpu_only"), default="cpu_and_ne"
-    )
+    result.add_argument("--compute-units", choices=("cpu_and_ne", "cpu_only"), default="cpu_and_ne")
     result.add_argument("--repeats", type=int, default=1)
     result.add_argument("--warmups", type=int, default=1)
     result.add_argument("--max-new-tokens", type=int, default=256)
@@ -843,9 +805,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--torch-threads", type=int, default=0)
     result.add_argument("--device", choices=("cpu", "mps"), default="cpu")
     result.add_argument("--dtype", choices=tuple(DTYPE_LABELS), default="float32")
-    result.add_argument(
-        "--attn-implementation", choices=("eager", "sdpa"), default="eager"
-    )
+    result.add_argument("--attn-implementation", choices=("eager", "sdpa"), default="eager")
     result.add_argument("--seed", type=int, default=20260912)
     result.add_argument(
         "--compare", nargs=2, type=Path, metavar=("BASELINE_JSONL", "CANDIDATE_JSONL")
@@ -857,15 +817,8 @@ def parser() -> argparse.ArgumentParser:
 def main() -> int:
     cli = parser()
     args = cli.parse_args()
-    if (
-        args.repeats < 1
-        or args.warmups < 0
-        or args.max_new_tokens < 1
-        or args.torch_threads < 0
-    ):
-        cli.error(
-            "repeats/max-new-tokens must be positive; warmups/torch-threads nonnegative"
-        )
+    if args.repeats < 1 or args.warmups < 0 or args.max_new_tokens < 1 or args.torch_threads < 0:
+        cli.error("repeats/max-new-tokens must be positive; warmups/torch-threads nonnegative")
     if not 100 <= args.bootstrap_samples <= 100000:
         cli.error("bootstrap-samples must be between 100 and 100000")
     if not args.compare:
