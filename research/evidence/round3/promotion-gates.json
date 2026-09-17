@@ -1,0 +1,26 @@
+{
+  "quality": {
+    "per_language_wer_cer_point_delta_max": 0.0,
+    "paired_bootstrap_upper_max": 0.01,
+    "coverage_required": 1.0,
+    "raw_text_review_required": true,
+    "systematic_number_entity_language_regression_allowed": false
+  },
+  "head_minimum_relative_gain": 0.05,
+  "frontend_minimum_component_gain": 0.15,
+  "frontend_maximum_wired_growth_mib": 100,
+  "embedding_minimum_table_saving_mib": 280,
+  "embedding_maximum_latency_regression": 0.02,
+  "fusion_minimum_local_gain": 0.08,
+  "voice_minimum_p50_and_p95_gain": 0.05,
+  "each_language_maximum_p95_regression": 0.05,
+  "energy": {
+    "groups": 5,
+    "order": "randomized ABBA or BAAB per group",
+    "minimum_block_seconds": 60,
+    "relative_change": "candidate / baseline - 1",
+    "repeatable_regression": "paired group-median bootstrap 95% lower bound > 0",
+    "voice_improvement_required": "paired group-median bootstrap 95% upper bound < 0",
+    "interpretation": "Engineering evidence from whole-machine PSTR; not calibrated or per-device energy. Intervals overlapping zero mean inconclusive difference, not proven equivalence."
+  }
+}

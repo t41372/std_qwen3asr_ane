@@ -1,0 +1,148 @@
+[
+  {
+    "language": "ja",
+    "dataset": "cv17",
+    "license": "cc0-1.0",
+    "repository": "fixie-ai/common_voice_17_0",
+    "revision": "34f78a43893414e7b6e271ba94c1d5e05f18b239",
+    "path": "ja/test-00000-of-00008.parquet",
+    "sha256": "585ce53cf79b92f1702eda87ecafc58121af26fa9017ddbb1f91f3892e63ce11",
+    "bytes": 24824778,
+    "url": "https://huggingface.co/datasets/fixie-ai/common_voice_17_0/resolve/34f78a43893414e7b6e271ba94c1d5e05f18b239/ja/test-00000-of-00008.parquet"
+  },
+  {
+    "language": "es",
+    "dataset": "cv17",
+    "license": "cc0-1.0",
+    "repository": "fixie-ai/common_voice_17_0",
+    "revision": "34f78a43893414e7b6e271ba94c1d5e05f18b239",
+    "path": "es/test-00000-of-00008.parquet",
+    "sha256": "2a5ba13faab38966feecb4557afe7c7de819388f9e03e93d62e3913538b3dcb9",
+    "bytes": 92945371,
+    "url": "https://huggingface.co/datasets/fixie-ai/common_voice_17_0/resolve/34f78a43893414e7b6e271ba94c1d5e05f18b239/es/test-00000-of-00008.parquet"
+  },
+  {
+    "language": "de",
+    "dataset": "cv17",
+    "license": "cc0-1.0",
+    "repository": "fixie-ai/common_voice_17_0",
+    "revision": "34f78a43893414e7b6e271ba94c1d5e05f18b239",
+    "path": "de/test-00000-of-00008.parquet",
+    "sha256": "c05cce3c7d77f1c27a132029ddf8410303f9018ea833eac1a7570768d80a0192",
+    "bytes": 87140618,
+    "url": "https://huggingface.co/datasets/fixie-ai/common_voice_17_0/resolve/34f78a43893414e7b6e271ba94c1d5e05f18b239/de/test-00000-of-00008.parquet"
+  },
+  {
+    "language": "fr",
+    "dataset": "cv17",
+    "license": "cc0-1.0",
+    "repository": "fixie-ai/common_voice_17_0",
+    "revision": "34f78a43893414e7b6e271ba94c1d5e05f18b239",
+    "path": "fr/test-00000-of-00008.parquet",
+    "sha256": "b7b18f248c329b08ef7c3783e9104352e2d2a44f3d6751c022b3e9c381cdd612",
+    "bytes": 84180234,
+    "url": "https://huggingface.co/datasets/fixie-ai/common_voice_17_0/resolve/34f78a43893414e7b6e271ba94c1d5e05f18b239/fr/test-00000-of-00008.parquet"
+  },
+  {
+    "language": "ko",
+    "dataset": "cv17",
+    "license": "cc0-1.0",
+    "repository": "fixie-ai/common_voice_17_0",
+    "revision": "34f78a43893414e7b6e271ba94c1d5e05f18b239",
+    "path": "ko/test/chunk-range-000000000-000000339/test-00000-of-00008.parquet",
+    "sha256": "42c7272859d73a35084d0b7aa9de589b534a072a798a3acc6220e8460d8886d8",
+    "bytes": 1353723,
+    "url": "https://huggingface.co/datasets/fixie-ai/common_voice_17_0/resolve/34f78a43893414e7b6e271ba94c1d5e05f18b239/ko/test/chunk-range-000000000-000000339/test-00000-of-00008.parquet"
+  },
+  {
+    "language": "ko",
+    "dataset": "cv17",
+    "license": "cc0-1.0",
+    "repository": "fixie-ai/common_voice_17_0",
+    "revision": "34f78a43893414e7b6e271ba94c1d5e05f18b239",
+    "path": "ko/test/chunk-range-000000000-000000339/test-00001-of-00008.parquet",
+    "sha256": "2070a93f054c0915cd741eee3a0b1964aa47b5ea2f799fc6d45f8d7bbdebda84",
+    "bytes": 1521685,
+    "url": "https://huggingface.co/datasets/fixie-ai/common_voice_17_0/resolve/34f78a43893414e7b6e271ba94c1d5e05f18b239/ko/test/chunk-range-000000000-000000339/test-00001-of-00008.parquet"
+  },
+  {
+    "language": "ko",
+    "dataset": "cv17",
+    "license": "cc0-1.0",
+    "repository": "fixie-ai/common_voice_17_0",
+    "revision": "34f78a43893414e7b6e271ba94c1d5e05f18b239",
+    "path": "ko/test/chunk-range-000000000-000000339/test-00002-of-00008.parquet",
+    "sha256": "1f7bbd077bf1a26d5bec0ca126c623158012ef7ec86e10d93ff728909b5027c4",
+    "bytes": 1348922,
+    "url": "https://huggingface.co/datasets/fixie-ai/common_voice_17_0/resolve/34f78a43893414e7b6e271ba94c1d5e05f18b239/ko/test/chunk-range-000000000-000000339/test-00002-of-00008.parquet"
+  },
+  {
+    "language": "ko",
+    "dataset": "cv17",
+    "license": "cc0-1.0",
+    "repository": "fixie-ai/common_voice_17_0",
+    "revision": "34f78a43893414e7b6e271ba94c1d5e05f18b239",
+    "path": "ko/test/chunk-range-000000000-000000339/test-00003-of-00008.parquet",
+    "sha256": "7d0474f34a90146932a42d02169ad3d3e2798377069300ee0bf127b5b72e3fb2",
+    "bytes": 1428846,
+    "url": "https://huggingface.co/datasets/fixie-ai/common_voice_17_0/resolve/34f78a43893414e7b6e271ba94c1d5e05f18b239/ko/test/chunk-range-000000000-000000339/test-00003-of-00008.parquet"
+  },
+  {
+    "language": "ko",
+    "dataset": "cv17",
+    "license": "cc0-1.0",
+    "repository": "fixie-ai/common_voice_17_0",
+    "revision": "34f78a43893414e7b6e271ba94c1d5e05f18b239",
+    "path": "ko/test/chunk-range-000000000-000000339/test-00004-of-00008.parquet",
+    "sha256": "875a75d4df589709b4ef4a7c97f066d39448b908aa260ac84c62155c55a360dd",
+    "bytes": 1271945,
+    "url": "https://huggingface.co/datasets/fixie-ai/common_voice_17_0/resolve/34f78a43893414e7b6e271ba94c1d5e05f18b239/ko/test/chunk-range-000000000-000000339/test-00004-of-00008.parquet"
+  },
+  {
+    "language": "ko",
+    "dataset": "cv17",
+    "license": "cc0-1.0",
+    "repository": "fixie-ai/common_voice_17_0",
+    "revision": "34f78a43893414e7b6e271ba94c1d5e05f18b239",
+    "path": "ko/test/chunk-range-000000000-000000339/test-00005-of-00008.parquet",
+    "sha256": "1f02c8a4085aa695347b857a3c0f7f88786fb83254c7d1fd543cbeb637c8b24e",
+    "bytes": 1102912,
+    "url": "https://huggingface.co/datasets/fixie-ai/common_voice_17_0/resolve/34f78a43893414e7b6e271ba94c1d5e05f18b239/ko/test/chunk-range-000000000-000000339/test-00005-of-00008.parquet"
+  },
+  {
+    "language": "ko",
+    "dataset": "cv17",
+    "license": "cc0-1.0",
+    "repository": "fixie-ai/common_voice_17_0",
+    "revision": "34f78a43893414e7b6e271ba94c1d5e05f18b239",
+    "path": "ko/test/chunk-range-000000000-000000339/test-00006-of-00008.parquet",
+    "sha256": "ab84a0b62fe99f6d18e0beac71d62fdfa23ce4f35c0a032610606fcfc372c2ae",
+    "bytes": 1442500,
+    "url": "https://huggingface.co/datasets/fixie-ai/common_voice_17_0/resolve/34f78a43893414e7b6e271ba94c1d5e05f18b239/ko/test/chunk-range-000000000-000000339/test-00006-of-00008.parquet"
+  },
+  {
+    "language": "ko",
+    "dataset": "cv17",
+    "license": "cc0-1.0",
+    "repository": "fixie-ai/common_voice_17_0",
+    "revision": "34f78a43893414e7b6e271ba94c1d5e05f18b239",
+    "path": "ko/test/chunk-range-000000000-000000339/test-00007-of-00008.parquet",
+    "sha256": "904829bb82767b70e882fab35ae9a78ad7d77498f1c8e07483ffc8e4f4435ba8",
+    "bytes": 1240580,
+    "url": "https://huggingface.co/datasets/fixie-ai/common_voice_17_0/resolve/34f78a43893414e7b6e271ba94c1d5e05f18b239/ko/test/chunk-range-000000000-000000339/test-00007-of-00008.parquet"
+  },
+  {
+    "language": "yue",
+    "config": "yue_hant_hk",
+    "revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+    "path": "parquet-data/yue_hant_hk/test-00000-of-00001.parquet",
+    "bytes": 610288065,
+    "sha256": "48e9772174c16500920b8dca35e9c4073831c337a3490c442070a0902a86e553",
+    "url": "https://huggingface.co/datasets/google/fleurs/resolve/70bb2e84b976b7e960aa89f1c648e09c59f894dd/parquet-data/yue_hant_hk/test-00000-of-00001.parquet",
+    "dataset": "fleurs",
+    "license": "cc-by-4.0",
+    "reference_field": "raw_transcription",
+    "count": 20,
+    "local_path": "artifacts/evaluation/sources/fleurs-yue_hant_hk-70bb2e84b976b7e960aa89f1c648e09c59f894dd.parquet"
+  }
+]

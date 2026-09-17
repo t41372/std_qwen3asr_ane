@@ -8,7 +8,7 @@ A [Standard ASR](https://github.com/standard-voice/standard_asr) plugin for Qwen
 
 Measured on a MacBook Pro M5 Max (64 GB, macOS 27.0).
 
-| Path | EN 15 s | ZH 4 s | J per audio second | Wired memory | Error rate vs official (pp) |
+| Path | EN 15 s | ZH 4 s | Energy (J) per audio second | Wired memory | Error rate vs official (pp) |
 |---|---:|---:|---:|---:|---|
 | Neural Engine, FP16 (uncompressed) | 2.06 s | 0.50 s | 3.29 | 4.2 GB | −0.24 to +0.05 |
 | **Neural Engine, 8-bit (default)** | **1.43 s** | **0.35 s** | **2.30** | **2.5 GB** | −0.46 to −0.08 |
@@ -28,7 +28,7 @@ Negative point estimates are not evidence that quantization improves the model.
 
 What the numbers say:
 
-- On this machine every GPU path is faster than the Neural Engine path, and the closest measured 8-bit comparison also favors the GPU on total energy: MLX 8-bit needs 1.54 J per second of audio, the Neural Engine 8-bit bundle 2.30 J. The Neural Engine draws about a third of the GPU paths' average power (25 W against 70 to 79 W), keeps the CPU nearly idle (0.05 cores against 0.6), adds little to the Python process's memory, and leaves the GPU free; it does not win on energy per utterance.
+- On this machine every GPU path is faster than the Neural Engine path, and the closest measured 8-bit comparison also favors the GPU on total energy: MLX 8-bit needs 1.54 J per second of audio, the Neural Engine 8-bit bundle 2.30 J. The Neural Engine draws about a third of the GPU paths' average power (25 W against 70 to 79 W), keeps the calling Python process's own CPU time low (about 0.05 cores against 0.6; that figure counts only this process, not Core ML's separate service processes or other system work, so it is not whole-machine CPU use), adds little to the Python process's memory, and leaves the GPU free; it does not win on energy per utterance.
 - Relative to the FP16 Neural Engine bundle, the 8-bit bundle's gains come from weight compression (27% faster, 27% less energy) and from splitting the decoder into 2 Core ML files instead of 7 (about 5%). Among the serial default-path candidates measured in that study, these produced repeatable end-to-end gains. Similar LUT4/LUT8 probe times are consistent with a bit-width-independent compute/decompression floor; they do not uniquely identify its cause. The subsequent graph-shape, cache and activation-quantization experiments are reported in [round 2 results](research/results-round2.md).
 - The optional draft path doubles speed and cuts energy by 39% relative to the serial ANE default without changing output: a 0.6B model on the GPU proposes 15 tokens, the 1.7B model on the Neural Engine verifies them in one call and keeps only the prefix it would have produced itself. Every emitted token is the 1.7B model's own choice; on 400 evaluation sentences the text was identical to the serial path. Its 1.41 J estimate differs from MLX 8-bit by about 8%, which this measurement method does not establish as an energy advantage. Cost: a second model in memory and a busy GPU.
 - The closest practical quality-matched comparison is Neural Engine 8-bit against MLX 8-bit. The ANE bundle uses palettized weights (a lookup table per 32 output channels) for the decoder and output layer; the MLX 8-bit reference uses affine quantization of the decoder only (group 64). Their quantizers, kernels and prefill/generation shapes differ. MLX 4-bit is the fastest path but loses 0.5 to 1.0 percentage points of Chinese character accuracy, the same trade this project rejected for its own 4-bit bundle.
