@@ -1,37 +1,39 @@
-"""Standard ASR 0.2 batch and bounded streaming adapter for local Qwen3-ASR."""
+"""Standard ASR batch and streaming adapter for local Qwen3-ASR."""
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shlex
-import sys
-import tempfile
 from collections.abc import Mapping
-from contextlib import redirect_stdout
 from pathlib import Path
-from threading import Lock
+from threading import Lock, RLock
 from typing import TYPE_CHECKING, ClassVar, Literal, Self
 
 from pydantic import Field, TypeAdapter, model_validator
 from standard_asr.contract.exceptions import (
     ArtifactAcquisitionError,
     ArtifactUnavailableError,
+    AudioProcessingError,
     ConfigError,
+    StructuredError,
     TranscriptionError,
+    UnsupportedFeatureError,
 )
 from standard_asr.engine import (
-    ArtifactAction,
     ArtifactContext,
     ArtifactDeclaration,
-    ArtifactProgress,
-    ArtifactRequirement,
     AudioFormat,
     BaseConfig,
     BaseProperties,
     BatchCapabilities,
+    CandidateLanguagesCap,
+    CandidateLanguagesConstraints,
     DeclaredCapabilities,
     DeclaredEngineMetadata,
     Diagnostic,
+    DiarizationCap,
+    DiarizationConstraints,
     DownloadConfigMixin,
     EngineBase,
     FinalityCap,
@@ -40,26 +42,35 @@ from standard_asr.engine import (
     InputKind,
     LanguageCaps,
     LanguageConfigMixin,
+    PhraseHintsCap,
+    PhraseHintsConstraints,
     PreparedAudio,
     PromptCap,
     PromptConstraints,
     ProviderParams,
     RuntimeParams,
+    Segment,
     StreamingCapabilities,
     StreamingGuidanceCaps,
+    StreamTimestampsCap,
     TranscriptionResult,
     TranscriptionSession,
-    allow_downloads,
+    WordTimestampsCap,
     resolve_download_root,
 )
 
-from .bundle import language_head_output, offline_frontend_batch_size
-from .conversion.build import SOURCE_REVISION
-from .conversion.toolchain import conversion_toolchain_available as _conversion_toolchain_available
-from .embedding import embedding_quantization
-from .errors import ModelLimitError
-from .languages import LANGUAGE_NAMES, classify_model_language
-from .profiles import PROFILES, ProfileName
+from .artifact_lifecycle import (
+    BATCH_HEAD_ARTIFACT_ID,
+    BUNDLE_ARTIFACT_ID,
+    DRAFT_ARTIFACT_ID,
+    ArtifactManager,
+)
+from .bundle import language_head_output
+from .decoding_guidance import GuidanceRequestError
+from .deployment import unsupported_host_reason
+from .errors import CancellationToken, ModelLimitError, raise_if_cancelled
+from .languages import LANGUAGE_NAMES, classify_model_language, qwen_control_language
+from .profiles import PROFILES
 
 if TYPE_CHECKING:
     from .draft import DraftRuntime
@@ -69,11 +80,6 @@ if TYPE_CHECKING:
 ENGINE_ID = "std-qwen3asr-ane"
 MODEL_ID = "Qwen/Qwen3-ASR-1.7B"
 MODEL_KEY = f"{ENGINE_ID}/1.7b"
-BUNDLE_ARTIFACT_ID = "qwen3-asr-1.7b-coreml"
-DRAFT_ARTIFACT_ID = "qwen3-asr-0.6b-gpu-draft"
-# The recipe `standard-asr pull` builds: the measured default bundle.
-BUILD_RECIPE = {"cache_length": 1024, "token_batch_size": 16, "layers_per_partition": 14}
-COMPRESS_RECIPE = {"scheme": "palette", "bits": 8, "group_size": 32}
 # The shipped bundles have a 1024-position decoder cache. Thirty seconds of audio
 # occupies 390 positions, the template about 20, the default generation budget
 # 256, and a streaming session also replays up to a transcript's worth of prefix
@@ -81,15 +87,6 @@ COMPRESS_RECIPE = {"scheme": "palette", "bits": 8, "group_size": 32}
 # enforces this bound with a word-based estimate that can under-count BPE tokens
 # of URLs and digit runs several times over, so declare well below the limit.
 PROMPT_MAX_TOKENS = 128
-_REQUIRED_ROLES = {
-    "frontend",
-    "encoder",
-    "decoder",
-    "lm_head",
-    "embedding",
-    "tokenizer",
-    "mel_filters",
-}
 
 
 class Qwen3ASRConfig(
@@ -99,7 +96,7 @@ class Qwen3ASRConfig(
 
     engine: Literal["std-qwen3asr-ane"] = ENGINE_ID
     default_language: str = "auto"
-    profile: ProfileName = "general"
+    profile: Literal["general"] = "general"
     model_dir: Path = Field(
         default_factory=lambda: resolve_download_root() / ENGINE_ID / "qwen3-asr-1.7b",
         description="Bundle path; defaults to the selected profile in the Standard ASR cache.",
@@ -135,8 +132,29 @@ class Qwen3ASRConfig(
     stream_chunk_seconds: float = Field(default=2.0, ge=0.1, le=30.0)
     stream_unfixed_chunks: int = Field(default=2, ge=0)
     stream_unfixed_tokens: int = Field(default=5, ge=0)
-    stream_max_audio_seconds: float = Field(default=180.0, gt=0, allow_inf_nan=False)
+    max_recording_seconds: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    stream_max_audio_seconds: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     stream_audio_queue_size: int = Field(default=4, ge=1, le=128)
+    use_batching: bool = Field(
+        default=False, description="Acquire a compact head for packed offline requests."
+    )
+    batch_head_dir: Path | None = Field(
+        default=None, description="Optional target-bound offline batch head."
+    )
+    use_alignment: bool = Field(
+        default=False, description="Enable explicitly acquired Qwen forced alignment on the CPU."
+    )
+    alignment_dir: Path = Field(
+        default_factory=lambda: resolve_download_root() / ENGINE_ID / "auxiliary/alignment",
+        description="Managed forced-aligner model and isolated runtime directory.",
+    )
+    use_diarization: bool = Field(
+        default=False, description="Enable explicitly acquired speaker diarization on the CPU."
+    )
+    diarization_dir: Path = Field(
+        default_factory=lambda: resolve_download_root() / ENGINE_ID / "auxiliary/diarization",
+        description="Directory containing the pinned segmentation and speaker-embedding models.",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -152,6 +170,8 @@ class Qwen3ASRConfig(
             values.setdefault("model_dir", root / name)
             values.setdefault("source_dir", root / "source/Qwen3-ASR-1.7B")
             values.setdefault("draft_source_dir", root / "source/Qwen3-ASR-0.6B")
+            values.setdefault("alignment_dir", root / "auxiliary/alignment")
+            values.setdefault("diarization_dir", root / "auxiliary/diarization")
             if short:
                 values.setdefault("max_new_tokens", PROFILES["short-dictation"].max_new_tokens)
             if (
@@ -160,6 +180,12 @@ class Qwen3ASRConfig(
             ):
                 target = TypeAdapter(Path).validate_python(values["model_dir"])
                 values["draft_dir"] = target.with_name(target.name + "-draft")
+            if (
+                TypeAdapter(bool).validate_python(values.get("use_batching", False))
+                and values.get("batch_head_dir") is None
+            ):
+                target = TypeAdapter(Path).validate_python(values["model_dir"])
+                values["batch_head_dir"] = target.with_name(target.name + "-batch-head")
         return values
 
 
@@ -167,6 +193,14 @@ class Qwen3ASRParams(ProviderParams):
     """Per-request decoding budget; omitted values use the engine's defaults."""
 
     max_new_tokens: int | None = Field(default=None, ge=1, le=4096)
+    disable_draft: bool = Field(
+        default=False,
+        description="Use the ANE target without a configured GPU draft for this request.",
+    )
+    include_metrics: bool = Field(
+        default=False,
+        description="Include native timings, token IDs and raw decoder output in result.extra.",
+    )
 
 
 class Qwen3ASREngine(EngineBase):
@@ -181,7 +215,7 @@ class Qwen3ASREngine(EngineBase):
         native_sample_rate=16000,
         accepted_sample_rates=[16000],
         required_input_sample_rate=16000,
-        max_audio_duration=30.0,
+        max_audio_duration=None,
         wire_encodings=["pcm_s16le", "pcm_f32le"],
         selectable_languages=[*LANGUAGE_NAMES, "auto"],
         detectable_languages=list(LANGUAGE_NAMES),
@@ -189,24 +223,57 @@ class Qwen3ASREngine(EngineBase):
     )
     declared_capabilities: ClassVar[DeclaredCapabilities] = DeclaredCapabilities(
         batch=BatchCapabilities(
-            language=LanguageCaps(runtime_override=FlagCap(supported=True)),
+            x_qwen3asr_multi_input={"supported": True, "constraints": {"max_group_size": 16}},
+            language=LanguageCaps(
+                runtime_override=FlagCap(supported=True),
+                candidate_languages=CandidateLanguagesCap(
+                    supported=True, constraints=CandidateLanguagesConstraints(max=8)
+                ),
+            ),
             guidance=GuidanceCaps(
                 prompt=PromptCap(
                     supported=True, constraints=PromptConstraints(max_tokens=PROMPT_MAX_TOKENS)
-                )
+                ),
+                phrase_hints=PhraseHintsCap(
+                    supported=True,
+                    constraints=PhraseHintsConstraints(max_terms=16, max_chars_per_term=128),
+                ),
+            ),
+            word_timestamps=WordTimestampsCap(
+                supported=True, granularities=["word", "segment", "char"]
+            ),
+            diarization=DiarizationCap(
+                supported=True, constraints=DiarizationConstraints(max_speakers=32)
             ),
         ),
         streaming_input=FlagCap(supported=True),
         streaming_output=FlagCap(supported=True),
         streaming=StreamingCapabilities(
-            language=LanguageCaps(runtime_override=FlagCap(supported=True)),
+            language=LanguageCaps(
+                runtime_override=FlagCap(supported=True),
+                candidate_languages=CandidateLanguagesCap(
+                    supported=True, constraints=CandidateLanguagesConstraints(max=8)
+                ),
+            ),
             guidance=StreamingGuidanceCaps(
                 prompt=PromptCap(
                     supported=True, constraints=PromptConstraints(max_tokens=PROMPT_MAX_TOKENS)
-                )
+                ),
+                phrase_hints=PhraseHintsCap(
+                    supported=True,
+                    constraints=PhraseHintsConstraints(max_terms=16, max_chars_per_term=128),
+                ),
             ),
             emits_partials=FlagCap(supported=True),
             finality_level=FinalityCap(mode="closed"),
+            audio_progress=FlagCap(supported=True),
+            word_timestamps=WordTimestampsCap(
+                supported=True, granularities=["word", "segment", "char"]
+            ),
+            timestamps=StreamTimestampsCap(mode="post_align"),
+            diarization=DiarizationCap(
+                supported=True, constraints=DiarizationConstraints(max_speakers=32)
+            ),
         ),
     )
     declared_metadata: ClassVar[DeclaredEngineMetadata] = DeclaredEngineMetadata(
@@ -218,14 +285,40 @@ class Qwen3ASREngine(EngineBase):
             may_acquire_during_inference=False,
         ),
         x_qwen3asr_streaming={
-            "algorithm": "cumulative_audio_prefix_rollback",
-            "effective_session_audio_limit": "minimum_of_configuration_and_loaded_bundle_duration",
+            "algorithm": "bounded_windows_with_low_energy_boundaries_and_prefix_rollback",
+            "effective_session_audio_limit": "configured_recording_and_streaming_limits",
             "decoder_prefix_reuse": "exact_embeddings_at_token_batch_boundaries",
             "audio_graph_reuse": "exact_padded_inputs_and_masks",
             "audio_feature_reuse": "aligned_stable_stft_and_unclipped_mel_prefix",
             "context_limits": "session_configuration_and_bundle_audio_and_decoder_token_capacity",
             "persistent_causal_encoder_state": False,
-            "segment_rollover_supported": False,
+            "segment_rollover_supported": True,
+            "native_window_seconds": PROFILES["general"].max_audio_seconds,
+        },
+        x_qwen3asr_auxiliary={
+            "compute": "cpu",
+            "alignment_languages": [
+                "zh",
+                "en",
+                "yue",
+                "fr",
+                "de",
+                "it",
+                "ja",
+                "ko",
+                "pt",
+                "ru",
+                "es",
+            ],
+            "diarization_requires_alignment": True,
+            "overlapping_word_attribution": "unassigned_when_evidence_is_ambiguous",
+        },
+        x_qwen3asr_deployment={"os": "macos", "minimum_os_major": 15, "architectures": ["arm64"]},
+        x_qwen3asr_batching={
+            "method": "transcribe_many",
+            "transport": "python",
+            "execution": "packed_target_when_eligible_otherwise_serial_target",
+            "gpu_draft_used": False,
         },
     )
     provider_params_type = Qwen3ASRParams
@@ -235,225 +328,177 @@ class Qwen3ASREngine(EngineBase):
         self.config = self.config_type.from_env(ENGINE_ID, **kwargs)
         self._runtime: CoreMLRuntime | None = None
         self._draft: DraftRuntime | None = None
+        self._batch_head = None
         self._inference_lock = Lock()
+        self._operation_lock = RLock()
+        self._auxiliary_lock = RLock()
+        self._auxiliary = None
+        self._artifacts = ArtifactManager(self.config, self.properties.model_id)
+
+    def _max_audio_duration(self, mode: str) -> float | None:
+        """Apply recording policy separately from the native decoding window."""
+        limits = [self.config.max_recording_seconds]
+        if mode == "streaming":
+            limits.append(self.config.stream_max_audio_seconds)
+        finite = [value for value in limits if value is not None]
+        return min(finite) if finite else None
+
+    @property
+    def effective_capabilities(self) -> DeclaredCapabilities:
+        """Compact vocabulary heads cannot apply token masks or score biases."""
+        capabilities = self.declared_capabilities.model_dump()
+        head = getattr(self._runtime, "head_output", None)
+        if head is None:
+            try:
+                manifest = json.loads(
+                    (self.config.model_dir.expanduser() / "manifest.json").read_text()
+                )
+                head = language_head_output(manifest)
+            except (OSError, ValueError, TypeError):
+                # A missing or broken artifact is reported by artifact_status;
+                # it does not redefine the shipped full-logits recipe.
+                head = {"kind": "logits"}
+        if head.get("kind") == "chunk_max":
+            for name in ("batch", "streaming"):
+                mode = capabilities[name]
+                mode["language"]["candidate_languages"]["supported"] = False
+                mode["guidance"]["phrase_hints"]["supported"] = False
+        alignment = self.config.use_alignment or self.config.use_diarization
+        for name in ("batch", "streaming"):
+            mode = capabilities[name]
+            mode["word_timestamps"]["supported"] = alignment
+            if not alignment:
+                mode["word_timestamps"]["granularities"] = []
+            mode["diarization"]["supported"] = self.config.use_diarization
+        if not alignment:
+            capabilities["streaming"]["timestamps"]["mode"] = "none"
+        return DeclaredCapabilities.model_validate(capabilities)
 
     def _pull_command(self) -> str:
-        command = f"standard-asr pull {self.properties.model_id}"
-        # A remedy must address this configured instance, even after changing cwd.
-        settings = {
-            "profile": self.config.profile,
-            "model_dir": self.config.model_dir.expanduser().absolute(),
-            "source_dir": self.config.source_dir.expanduser().absolute(),
-        }
-        if self.config.draft_dir is not None:
-            settings["draft_dir"] = self.config.draft_dir.expanduser().absolute()
-            settings["draft_source_dir"] = self.config.draft_source_dir.expanduser().absolute()
-        for key, value in settings.items():
-            command += " --set " + shlex.quote(f"{key}={value}")
+        command = self._artifacts.pull_command()
+        for enabled, field in (
+            (self.config.use_alignment, "alignment"),
+            (self.config.use_diarization, "diarization"),
+        ):
+            if enabled:
+                directory = getattr(self.config, f"{field}_dir").expanduser().absolute()
+                command += f" --set use_{field}=true --set " + shlex.quote(
+                    f"{field}_dir={directory}"
+                )
         return command
 
-    def _acquisition_gate(self, state: str, *, needs_draft: bool = False) -> dict:
-        """Fields describing whether `standard-asr pull` can run for one requirement."""
-        if state == "ready":
-            return {"can_acquire_now": False, "acquisition_blocker": None, "required_actions": ()}
-        if state in ("incomplete", "corrupt"):
-            # Never delete a directory the plugin did not just create.
-            return {
-                "can_acquire_now": False,
-                "acquisition_blocker": "action_required",
-                "required_actions": (
-                    ArtifactAction(
-                        kind="provide_artifacts",
-                        message=(
-                            f"The directory is {state}; move it away, then run "
-                            f"{self._pull_command()}"
-                        ),
-                    ),
-                ),
-            }
-        sources = [self.config.source_dir]
-        if needs_draft:
-            sources.append(self.config.draft_source_dir)
-        if not allow_downloads() and any(
-            not (source.expanduser() / "source.json").is_file() for source in sources
-        ):
-            return {
-                "can_acquire_now": False,
-                "acquisition_blocker": "downloads_disabled",
-                "required_actions": (),
-            }
-        return {"can_acquire_now": True, "acquisition_blocker": None, "required_actions": ()}
+    def _artifact_requirements(self, context: ArtifactContext):
+        applicable, requirements, diagnostics = self._artifacts.requirements(context)
+        if self.config.use_alignment or self.config.use_diarization:
+            requirements += self._auxiliary_models().requirements(context)
+        host_error = unsupported_host_reason()
+        if host_error is not None:
+            requirements = tuple(
+                item
+                if item.state == "ready"
+                else item.model_copy(
+                    update={
+                        "can_acquire_now": False,
+                        "acquisition_blocker": "unsupported",
+                        "required_actions": (),
+                    }
+                )
+                for item in requirements
+            )
+            diagnostics += (
+                Diagnostic(level="warning", code="unsupported_host", message=host_error),
+            )
+        return applicable, requirements, diagnostics
 
-    def _artifact_requirements(
-        self, context: ArtifactContext
-    ) -> tuple[bool, tuple[ArtifactRequirement, ...], tuple[Diagnostic, ...]]:
-        root = self.config.model_dir.expanduser().resolve()
-        state, revision = _inspect_bundle(root)
-        requirement = ArtifactRequirement(
-            artifact_id=BUNDLE_ARTIFACT_ID,
-            label="Qwen3-ASR 1.7B local Core ML bundle",
-            state=state,
-            required_for_inference=True,
-            may_acquire_during_inference=False,
-            source_is_mutable=False,
-            location=root,
-            artifact_version=revision,
-            **self._acquisition_gate(state),
-        )
-        if self.config.draft_dir is None or context.mode == "streaming":
-            return True, (requirement,), ()
-        draft_root = self.config.draft_dir.expanduser().resolve()
-        draft_state, draft_revision = _inspect_draft_bundle(draft_root)
-        draft_requirement = ArtifactRequirement(
-            artifact_id=DRAFT_ARTIFACT_ID,
-            label="Qwen3-ASR 0.6B draft checkpoint and verify head",
-            state=draft_state,
-            required_for_inference=True,
-            may_acquire_during_inference=False,
-            source_is_mutable=False,
-            location=draft_root,
-            artifact_version=draft_revision,
-            **self._acquisition_gate(draft_state, needs_draft=True),
-        )
-        return True, (requirement, draft_requirement), ()
-
-    def _acquire_artifacts(
-        self,
-        context: ArtifactContext,
-        requirements: tuple[ArtifactRequirement, ...],
-        refresh: bool,
-        progress,
-    ) -> None:
-        """Download the pinned checkpoint and run the measured conversion recipe.
-
-        The bundle is built in a private work directory next to ``model_dir``
-        and only the compiled result lands at ``model_dir``; the draft bundle is
-        built after the target it binds to. Missing or incompatible conversion
-        dependencies are supplied by a managed worker, never by inference.
-        """
-        targets = {requirement.artifact_id for requirement in requirements}
-
-        def emit(phase: str, artifact_id: str) -> None:
-            if progress is not None:
-                progress(ArtifactProgress(phase=phase, artifact_id=artifact_id))
-
+    def _acquire_artifacts(self, context, requirements, refresh, progress) -> None:
+        native_ids = {BUNDLE_ARTIFACT_ID, DRAFT_ARTIFACT_ID, BATCH_HEAD_ARTIFACT_ID}
+        native = tuple(item for item in requirements if item.artifact_id in native_ids)
+        auxiliary = {item.artifact_id for item in requirements} - native_ids
         try:
-            from .acquisition import acquisition_lock
-
-            with acquisition_lock(self.config, include_draft=DRAFT_ARTIFACT_ID in targets):
-                # Another process may have completed acquisition after preflight.
-                targets = {
-                    item.artifact_id
-                    for item in self._artifact_requirements(context)[1]
-                    if item.artifact_id in targets and item.state != "ready"
-                }
-                self._acquire_targets(targets, emit, progress)
+            if native:
+                self._artifacts.acquire(context, native, refresh, progress)
+            if auxiliary:
+                self._auxiliary_models().acquire(auxiliary, progress)
         except ArtifactAcquisitionError:
             raise
-        except Exception as exc:
+        except Exception as error:
             raise ArtifactAcquisitionError(
-                "Building the local model bundle failed; inspect the conversion log.",
+                "Model acquisition failed; inspect the underlying operation before retrying.",
                 reason="failed",
-                hint=f"After resolving the reported failure, retry: {self._pull_command()}",
-            ) from exc
-
-    def _acquire_targets(self, targets, emit, progress) -> None:
-        if targets:
-            if not _conversion_toolchain_available():
-                from .acquisition import acquire_in_worker
-
-                acquire_in_worker(self.config, targets, progress)
-                return
-            # Keep `standard-asr pull --json` parseable even in an application
-            # environment that already carries the conversion dependencies.
-            with redirect_stdout(sys.stderr):
-                if BUNDLE_ARTIFACT_ID in targets:
-                    self._acquire_bundle(emit)
-                if DRAFT_ARTIFACT_ID in targets:
-                    self._acquire_draft(emit)
-
-    def _ensure_source(self, emit) -> Path:
-        from .conversion.build import download_source
-
-        source = self.config.source_dir.expanduser().resolve()
-        if not (source / "source.json").is_file():
-            emit("transferring", BUNDLE_ARTIFACT_ID)
-            download_source(source, revision=SOURCE_REVISION, model_id=MODEL_ID)
-        try:
-            provenance = json.loads((source / "source.json").read_text())
-        except (ValueError, OSError) as exc:
-            raise ArtifactAcquisitionError(
-                "Cannot read the source checkpoint's provenance. Select a valid source_dir.",
-                reason="action_required",
-            ) from exc
-        if provenance != {"model_id": MODEL_ID, "revision": SOURCE_REVISION}:
-            raise ArtifactAcquisitionError(
-                "source_dir does not contain the pinned Qwen3-ASR 1.7B checkpoint. "
-                "Select a matching source_dir or a new directory for acquisition.",
-                reason="action_required",
-            )
-        return source
+                hint=self._pull_command(),
+            ) from error
 
     def _acquire_bundle(self, emit) -> None:
-        from .compiled import compile_bundle
-        from .conversion.build import build_bundle
-        from .conversion.compress import compress_bundle
-
-        target = self.config.model_dir.expanduser().resolve()
-        if target.exists():
-            raise ArtifactAcquisitionError(
-                f"{target} already exists; move it away before pulling.",
-                reason="action_required",
-            )
-        source = self._ensure_source(emit)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix=f".{target.name}-", dir=target.parent) as directory:
-            work = Path(directory)
-            emit("converting", BUNDLE_ARTIFACT_ID)
-            recipe = dict(BUILD_RECIPE)
-            if self.config.profile != "general":
-                recipe.update(
-                    profile=self.config.profile,
-                    cache_length=PROFILES[self.config.profile].cache_length,
-                )
-            build_bundle(source, work / "fp16", **recipe)
-            compress_bundle(work / "fp16", work / "lut8", **COMPRESS_RECIPE)
-            emit("verifying", BUNDLE_ARTIFACT_ID)
-            compile_bundle(work / "lut8", work / "compiled")
-            (work / "compiled").rename(target)
+        # The worker already runs under the parent acquisition lock.
+        self._artifacts.acquire_bundle(emit)
 
     def _acquire_draft(self, emit) -> None:
-        from .conversion.draft import build_draft_bundle
+        self._artifacts.acquire_draft(emit)
 
-        draft = self.config.draft_dir.expanduser().resolve()
-        if draft.exists():
-            raise ArtifactAcquisitionError(
-                f"{draft} already exists; move it away before pulling.",
+    def _acquire_batch_head(self, emit) -> None:
+        self._artifacts.acquire_batch_head(emit)
+
+    def _auxiliary_models(self):
+        with self._auxiliary_lock:
+            if self._auxiliary is None:
+                from .auxiliary import AuxiliaryModels
+
+                self._auxiliary = AuxiliaryModels(self.config)
+            return self._auxiliary
+
+    def _require_request_artifacts(self, params: RuntimeParams, *, mode: str) -> None:
+        draft_needed = mode == "batch" and self._draft_requested(params)
+        auxiliary_needed = params.word_timestamps is not None or params.diarization is not None
+        if (
+            self._runtime is not None
+            and not auxiliary_needed
+            and (not draft_needed or self._draft is not None)
+        ):
+            return
+        report = self.artifact_status(ArtifactContext(mode=mode, params=params))
+        loaded = set()
+        if self._runtime is not None:
+            loaded.add(BUNDLE_ARTIFACT_ID)
+        if self._draft is not None:
+            loaded.add(DRAFT_ARTIFACT_ID)
+        if any(
+            item.required_for_inference and item.state != "ready" and item.artifact_id not in loaded
+            for item in report.requirements
+        ):
+            raise ArtifactUnavailableError(
+                "The models required by this request are not ready.",
                 reason="action_required",
+                report=report,
+                hint=self._pull_command(),
             )
-        source = self._ensure_source(emit)
-        from .conversion.build import download_source
-        from .draft import DRAFT_MODEL_ID, DRAFT_REVISION
+        if auxiliary_needed:
+            self._auxiliary_models().validate_request(params)
+        if draft_needed and self._draft is None:
+            self._check_draft_dependencies()
 
-        draft_source = self.config.draft_source_dir.expanduser().resolve()
-        if not (draft_source / "source.json").is_file():
-            emit("transferring", DRAFT_ARTIFACT_ID)
-            download_source(draft_source, revision=DRAFT_REVISION, model_id=DRAFT_MODEL_ID)
-        emit("converting", DRAFT_ARTIFACT_ID)
-        draft.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix=f".{draft.name}-", dir=draft.parent) as directory:
-            staged = Path(directory) / "bundle"
-            build_draft_bundle(
-                self.config.model_dir.expanduser().resolve(),
-                source,
-                staged,
-                draft_source=draft_source,
+    @staticmethod
+    def _check_draft_dependencies() -> None:
+        if importlib.util.find_spec("mlx") is None or importlib.util.find_spec("mlx_audio") is None:
+            raise ConfigError(
+                "The configured GPU draft needs the gpu-draft extra.",
+                hint="Install std-qwen3asr-ane[gpu-draft], or disable the draft.",
             )
-            staged.rename(draft)
+
+    def _draft_requested(self, params: RuntimeParams) -> bool:
+        provider = params.provider_params
+        disabled = isinstance(provider, Qwen3ASRParams) and provider.disable_draft
+        return (
+            self.config.draft_dir is not None
+            and not disabled
+            and not (params.candidate_languages or params.phrase_hints)
+        )
 
     def _ensure_model_loaded(self) -> CoreMLRuntime:
         """Load once while the caller holds the inference lock; never acquire weights."""
         if self._runtime is None:
+            host_error = unsupported_host_reason()
+            if host_error is not None:
+                raise ConfigError(host_error, hint="Run the plugin on a supported Mac.")
             self._require_artifacts(include_draft=False)
             if self.config.profile == "short-dictation":
                 manifest = json.loads(
@@ -522,7 +567,12 @@ class Qwen3ASREngine(EngineBase):
         A failed close retains the runtime and its buffer owners so callers can
         retry cleanup. Do not treat an exception as successful model disposal.
         """
-        with self._inference_lock:
+        with self._operation_lock, self._inference_lock:
+            if self._auxiliary is not None:
+                self._auxiliary.close()
+            if self._batch_head is not None:
+                self._batch_head.close(timeout=timeout)
+                self._batch_head = None
             if self._draft is not None:
                 # The draft/verify head can still own target buffers after a
                 # failed close. Keep both owners intact until cleanup succeeds.
@@ -540,44 +590,76 @@ class Qwen3ASREngine(EngineBase):
         self.close()
 
     def _transcribe(self, prepared: PreparedAudio, params: RuntimeParams) -> TranscriptionResult:
+        with self._operation_lock:
+            self._require_request_artifacts(params, mode="batch")
+            return self._transcribe_recording(prepared, params)
+
+    def transcribe_many(self, recordings, params=None, *, batch_size: int = 4):
+        """Transcribe independent recordings through the standard preparation pipeline.
+
+        Returns ordered outcomes containing either a standard result or a typed
+        error. Packed execution requires an acquired batch head; unsupported
+        groups use a disclosed serial target fallback. This bulk path uses the
+        ANE target, leaving the optional GPU draft to ordinary single requests.
+        """
+        from .bulk import transcribe_many
+
+        return transcribe_many(self, recordings, params, batch_size=batch_size)
+
+    def _transcribe_recording(
+        self, prepared: PreparedAudio, params: RuntimeParams
+    ) -> TranscriptionResult:
         if prepared.array is None:
             raise TranscriptionError("Standard ASR did not supply the declared array input.")
-        language = None if params.language == "auto" else params.language
+        import numpy as np
+
+        from .longform import LongFormCoordinator
+
+        samples = prepared.array
+        if samples.ndim != 1 or not samples.size or not np.isfinite(samples).all():
+            raise AudioProcessingError("Provide nonempty, finite mono audio through Standard ASR.")
         try:
-            # Core ML stateful decoding and first-time loading share one critical section.
-            with self._inference_lock:
-                needs_draft = self.config.draft_dir is not None and self._draft is None
-                if needs_draft:
-                    self._require_artifacts(include_draft=True)
-                runtime = self._ensure_model_loaded()
-                if needs_draft:
-                    # A failed draft load leaves the valid ANE target available
-                    # to streaming and to a later explicit retry.
-                    self._draft = self._load_draft(runtime)
-                if self._draft is not None:
-                    result = runtime.transcribe_speculative(
-                        prepared.array,
-                        self._draft,
-                        language=language,
-                        max_new_tokens=self._generation_budget(params),
-                        context=params.prompt or "",
-                        lookahead=self.config.draft_lookahead,
-                    )
-                else:
-                    result = runtime.transcribe(
-                        prepared.array,
-                        language=language,
-                        max_new_tokens=self._generation_budget(params),
-                        context=params.prompt or "",
-                    )
-            detected, diagnostics = detected_language(result.language, language)
-            return TranscriptionResult(
-                text=result.text,
-                detected_language=detected,
-                duration=len(prepared.array) / prepared.sample_rate,
-                diagnostics=diagnostics,
+            window_seconds = self._stream_window_seconds()
+            tracker = self._new_speaker_tracker(params)
+            if len(samples) <= int(window_seconds * prepared.sample_rate):
+                raw = self._recognize_chunk(samples, params, use_draft=True)
+                return self._finalize_chunk(raw, samples, params, speaker_tracker=tracker)
+            coordinator = LongFormCoordinator(
+                sample_rate=prepared.sample_rate,
+                native_window_samples=int(window_seconds * prepared.sample_rate),
+                max_total_samples=None,
             )
-        except (ArtifactUnavailableError, ConfigError, TranscriptionError):
+            chunks = []
+            for span in coordinator.append(samples):
+                raw = self._recognize_chunk(span.samples, params, use_draft=True)
+                chunks.append(
+                    self._finalize_chunk(
+                        raw,
+                        span.samples,
+                        params,
+                        span.start_sample / prepared.sample_rate,
+                        speaker_tracker=tracker,
+                    )
+                )
+            tail = coordinator.finish()
+            if tail is not None:
+                raw = self._recognize_chunk(tail.samples, params, use_draft=True)
+                chunks.append(
+                    self._finalize_chunk(
+                        raw,
+                        tail.samples,
+                        params,
+                        tail.start_sample / prepared.sample_rate,
+                        speaker_tracker=tracker,
+                    )
+                )
+            return _merge_chunk_results(chunks, len(samples) / prepared.sample_rate)
+        except GuidanceRequestError as error:
+            raise UnsupportedFeatureError(
+                str(error),
+                param="phrase_hints" if params.phrase_hints else "candidate_languages",
+            ) from error
+        except StructuredError:
             raise
         except ModelLimitError as exc:
             raise TranscriptionError(
@@ -585,6 +667,125 @@ class Qwen3ASREngine(EngineBase):
             ) from exc
         except Exception as exc:
             raise TranscriptionError("Qwen3-ASR Core ML inference failed.") from exc
+
+    def _stream_window_seconds(self, *, cancel: CancellationToken | None = None) -> float:
+        """Read the loaded native window without imposing a recording-length limit."""
+        with self._inference_lock:
+            raise_if_cancelled(cancel)
+            runtime = self._ensure_model_loaded()
+            raise_if_cancelled(cancel)
+            return runtime.max_audio_seconds
+
+    def _new_stream_contexts(self, *, cancel: CancellationToken | None = None):
+        """Create decoder/audio state owned exclusively by one streaming session."""
+        with self._inference_lock:
+            raise_if_cancelled(cancel)
+            runtime = self._ensure_model_loaded()
+            return runtime.new_decoder_context(), runtime.new_audio_context()
+
+    def _recognize_chunk(
+        self,
+        samples,
+        params: RuntimeParams,
+        *,
+        prefix_text: str = "",
+        decoder_context=None,
+        audio_context=None,
+        cancel: CancellationToken | None = None,
+        use_draft: bool = False,
+    ):
+        """Run one bounded native request with shared language/guidance semantics."""
+        language = qwen_control_language(None if params.language == "auto" else params.language)
+        draft_requested = use_draft and self._draft_requested(params)
+        with self._inference_lock:
+            raise_if_cancelled(cancel)
+            if draft_requested and self._draft is None:
+                # Optional dependencies are checked before the expensive ANE load.
+                self._check_draft_dependencies()
+                self._require_artifacts(include_draft=True)
+            runtime = self._ensure_model_loaded()
+            kwargs = {
+                "language": language,
+                "max_new_tokens": self._generation_budget(params),
+                "context": params.prompt or "",
+            }
+            if cancel is not None:
+                kwargs["cancel"] = cancel
+            if draft_requested:
+                if self._draft is None:
+                    self._draft = self._load_draft(runtime)
+                return runtime.transcribe_speculative(
+                    samples, self._draft, lookahead=self.config.draft_lookahead, **kwargs
+                )
+            if prefix_text:
+                kwargs["prefix_text"] = prefix_text
+            if decoder_context is not None:
+                kwargs["decoder_context"] = decoder_context
+            if audio_context is not None:
+                kwargs["audio_context"] = audio_context
+            if params.candidate_languages:
+                kwargs["candidate_language_names"] = [
+                    LANGUAGE_NAMES[qwen_control_language(tag)] for tag in params.candidate_languages
+                ]
+            if params.phrase_hints:
+                kwargs["phrase_hints"] = params.phrase_hints
+            return runtime.transcribe(samples, **kwargs)
+
+    def _new_speaker_tracker(self, params: RuntimeParams):
+        if params.diarization is None:
+            return None
+        return self._auxiliary_models().new_speaker_tracker()
+
+    def _finalize_chunk(
+        self,
+        result,
+        samples,
+        params: RuntimeParams,
+        offset_seconds: float = 0.0,
+        *,
+        cancel: CancellationToken | None = None,
+        speaker_tracker=None,
+    ):
+        """Project one native result, keeping raw language disclosure reachable."""
+        requested = None if params.language == "auto" else params.language
+        raw_language = getattr(result, "raw_model_language", None) or result.language
+        detected, diagnostics = detected_language(raw_language, requested)
+        if self.config.draft_dir is not None and (
+            params.candidate_languages or params.phrase_hints
+        ):
+            diagnostics.append(
+                Diagnostic(
+                    code="draft_bypassed_for_guidance",
+                    message="Token-score guidance uses the target model's full vocabulary scores.",
+                )
+            )
+        projected = TranscriptionResult(
+            text=result.text,
+            detected_language=detected,
+            duration=len(samples) / 16000,
+            diagnostics=diagnostics,
+            extra={"input_start_seconds": offset_seconds},
+        )
+        if (
+            isinstance(params.provider_params, Qwen3ASRParams)
+            and params.provider_params.include_metrics
+        ):
+            projected.extra["native"] = {
+                "raw_text": getattr(result, "raw_text", result.text),
+                "token_ids": list(getattr(result, "token_ids", ())),
+                "audio_tokens": getattr(result, "audio_tokens", None),
+                "timings": getattr(result, "timings", {}),
+            }
+        if params.word_timestamps is not None or params.diarization is not None:
+            return self._auxiliary_models().annotate(
+                projected,
+                samples,
+                params,
+                offset_seconds,
+                cancel=cancel,
+                speaker_tracker=speaker_tracker,
+            )
+        return projected
 
     def _generation_budget(self, params: RuntimeParams) -> int:
         provider = params.provider_params
@@ -610,14 +811,76 @@ class ShortDictationConfig(Qwen3ASRConfig):
 
 
 class ShortDictationEngine(Qwen3ASREngine):
-    """Discoverable short-utterance preset with its own static duration boundary."""
+    """Discoverable preset using a smaller native window for short-utterance latency."""
 
     config_type = ShortDictationConfig
     properties = Qwen3ASREngine.properties.model_copy(
         update={
             "model_name": "1.7b-short-dictation",
-            "max_audio_duration": 12.0,
+            "max_audio_duration": None,
         }
+    )
+    declared_metadata = DeclaredEngineMetadata.model_validate(
+        {
+            **Qwen3ASREngine.declared_metadata.model_dump(),
+            "x_qwen3asr_streaming": {
+                **Qwen3ASREngine.declared_metadata.model_dump()["x_qwen3asr_streaming"],
+                "native_window_seconds": PROFILES["short-dictation"].max_audio_seconds,
+            },
+        }
+    )
+
+
+def _merge_chunk_results(chunks: list[TranscriptionResult], duration: float) -> TranscriptionResult:
+    """Join complete windows in input order without manufacturing speech timestamps."""
+    if len(chunks) == 1:
+        return chunks[0].model_copy(update={"duration": duration})
+    text = ""
+    for chunk in chunks:
+        if text and chunk.text and _needs_join_space(text[-1], chunk.text[0]):
+            text += " "
+        text += chunk.text
+    languages = list(
+        dict.fromkeys(chunk.detected_language for chunk in chunks if chunk.detected_language)
+    )
+    diagnostics = [item for chunk in chunks for item in chunk.diagnostics]
+    if len(languages) > 1:
+        diagnostics.append(
+            Diagnostic(
+                code="multiple_detected_languages",
+                message="Different recording windows produced different detected languages.",
+                param="language",
+                provided=languages,
+                effective=None,
+            )
+        )
+    return TranscriptionResult(
+        text=text,
+        detected_language=languages[0] if len(languages) == 1 else None,
+        duration=duration,
+        segments=[
+            segment
+            for chunk in chunks
+            for segment in (
+                chunk.segments
+                if chunk.segments is not None
+                else [Segment(text=chunk.text, start=None, end=None)]
+            )
+        ],
+        words=[word for chunk in chunks for word in chunk.words]
+        if any(chunk.words is not None for chunk in chunks)
+        else None,
+        diagnostics=diagnostics,
+        extra={"windows": [chunk.extra for chunk in chunks]},
+    )
+
+
+def _needs_join_space(left: str, right: str) -> bool:
+    """Separate whitespace-delimited words without inserting spaces into CJK text."""
+    if left.isspace() or right.isspace():
+        return False
+    return not any(
+        "\u2e80" <= char <= "\ua4cf" or "\uac00" <= char <= "\ud7af" for char in (left, right)
     )
 
 
@@ -643,178 +906,6 @@ def detected_language(
             effective=None,
         )
     ]
-
-
-def _inspect_package(package: Path) -> str:
-    """Check package-declared resources without loading Core ML or reading weights."""
-    manifest_path = package / "Manifest.json"
-    try:
-        if not manifest_path.resolve().is_relative_to(package):
-            return "corrupt"
-        if not manifest_path.is_file():
-            return "incomplete"
-        manifest = json.loads(manifest_path.read_text())
-        if not isinstance(manifest, dict):
-            return "corrupt"
-        entries = manifest.get("itemInfoEntries")
-        root_id = manifest.get("rootModelIdentifier")
-        version = manifest.get("fileFormatVersion")
-        if (
-            not isinstance(entries, dict)
-            or not entries
-            or not isinstance(root_id, str)
-            or root_id not in entries
-            or not isinstance(version, str)
-            or not version.strip()
-        ):
-            return "corrupt"
-        data_root = (package / "Data").resolve()
-        if not data_root.is_relative_to(package):
-            return "corrupt"
-        state = "ready"
-        for identifier, entry in entries.items():
-            if not isinstance(entry, dict):
-                return "corrupt"
-            relative = entry.get("path")
-            if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
-                return "corrupt"
-            payload = (data_root / relative).resolve()
-            if payload == data_root or not payload.is_relative_to(data_root):
-                return "corrupt"
-            if payload.is_file():
-                if payload.stat().st_size == 0:
-                    state = "incomplete"
-            elif payload.is_dir():
-                if identifier == root_id:
-                    return "corrupt"
-                nonempty_file = False
-                # Inspect every descendant, including symlinks, before calling
-                # the directory complete. Weight file names are not prescribed.
-                for child in payload.rglob("*"):
-                    if not child.resolve().is_relative_to(data_root):
-                        return "corrupt"
-                    if child.is_file() and child.stat().st_size > 0:
-                        nonempty_file = True
-                if not nonempty_file:
-                    state = "incomplete"
-            else:
-                state = "incomplete"
-        return state
-    except (ValueError, UnicodeError, RuntimeError):
-        return "corrupt"
-    except FileNotFoundError:
-        return "incomplete"
-
-
-def _inspect_compiled_package(package: Path) -> str:
-    """Check our compiled ML Program layout without starting device specialization."""
-    if not package.is_dir():
-        return "incomplete"
-    for child in package.rglob("*"):
-        if not child.resolve().is_relative_to(package):
-            return "corrupt"
-    # These are the Core ML compiler's ML Program metadata and executable MIL
-    # files. Our ASR graphs also all have weights; discovery remains a presence
-    # check, with binary compatibility validated by Core ML during prepare().
-    required = (package / "coremldata.bin", package / "model.mil", package / "weights/weight.bin")
-    if any(not path.is_file() or path.stat().st_size == 0 for path in required):
-        return "incomplete"
-    return "ready"
-
-
-def _inspect_draft_bundle(root: Path) -> tuple[str, str | None]:
-    """Check the draft bundle's layout without importing MLX or loading models."""
-    manifest_path = root / "manifest.json"
-    if not manifest_path.is_file():
-        return ("incomplete" if root.exists() else "missing"), None
-    try:
-        manifest = json.loads(manifest_path.read_text())
-    except (json.JSONDecodeError, UnicodeError):
-        return "corrupt", None
-    if (
-        not isinstance(manifest, dict)
-        or manifest.get("schema_version") != 1
-        or manifest.get("kind") != "qwen3-asr-ane-draft"
-        or not isinstance(manifest.get("draft"), dict)
-        or not isinstance(manifest.get("verify_head"), dict)
-    ):
-        return "corrupt", None
-    revision = manifest["draft"].get("revision")
-    if not isinstance(revision, str) or not revision.strip():
-        return "corrupt", None
-    for relative in (manifest["draft"].get("path"), manifest["verify_head"].get("path")):
-        if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
-            return "corrupt", revision
-        payload = (root / relative).resolve()
-        if not payload.is_relative_to(root) or payload == root:
-            return "corrupt", revision
-    head = (root / manifest["verify_head"]["path"]).resolve()
-    if head.suffix == ".mlmodelc":
-        state = _inspect_compiled_package(head)
-    elif head.suffix == ".mlpackage":
-        state = _inspect_package(head)
-    else:
-        return "corrupt", revision
-    if state != "ready":
-        return state, revision
-    checkpoint = (root / manifest["draft"]["path"]).resolve()
-    for name in ("config.json", "model.safetensors"):
-        path = checkpoint / name
-        if not path.is_file() or path.stat().st_size == 0:
-            return "incomplete", revision
-    return "ready", revision
-
-
-def _inspect_bundle(root: Path) -> tuple[str, str | None]:
-    """Inspect local completeness without loading models or claiming device placement.
-
-    Core ML validates its model contents when loaded. This inexpensive check verifies
-    manifest identity, safe paths and payload presence; it does not certify numerical
-    accuracy or that the operating system assigns any operation to ANE.
-    """
-    manifest_path = root / "manifest.json"
-    if not manifest_path.is_file():
-        return ("incomplete" if root.exists() else "missing"), None
-    try:
-        manifest = json.loads(manifest_path.read_text())
-    except (json.JSONDecodeError, UnicodeError):
-        return "corrupt", None
-    if not isinstance(manifest, dict):
-        return "corrupt", None
-    try:
-        language_head_output(manifest)
-        batch_size = offline_frontend_batch_size(manifest)
-        quantization = embedding_quantization(manifest)
-    except (ValueError, TypeError, AttributeError):
-        return "corrupt", None
-    if manifest.get("model_id") != MODEL_ID:
-        return "corrupt", None
-    files = manifest.get("files")
-    revision = manifest.get("source_revision")
-    if not isinstance(revision, str) or not revision.strip():
-        return "corrupt", None
-    required_roles = _REQUIRED_ROLES | ({"frontend_batched"} if batch_size > 1 else set())
-    if quantization is not None:
-        required_roles |= {"embedding_scales"}
-    if not isinstance(files, dict) or not required_roles.issubset(files):
-        return "incomplete", revision
-    for relative in files.values():
-        if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
-            return "corrupt", revision
-        payload = (root / relative).resolve()
-        if not payload.is_relative_to(root) or payload == root:
-            return "corrupt", revision
-        if payload.suffix == ".mlpackage":
-            state = _inspect_package(payload)
-            if state != "ready":
-                return state, revision
-        elif payload.suffix == ".mlmodelc":
-            state = _inspect_compiled_package(payload)
-            if state != "ready":
-                return state, revision
-        elif not payload.is_file() or payload.stat().st_size == 0:
-            return "incomplete", revision
-    return "ready", revision
 
 
 def create_engine(**kwargs: object) -> Qwen3ASREngine:

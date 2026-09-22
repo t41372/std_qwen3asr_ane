@@ -1,0 +1,255 @@
+{
+  "refinement": {
+    "runtime_language": "en-US",
+    "terminal": {
+      "type": "error",
+      "segment_id": null,
+      "text": null,
+      "stable_until": null,
+      "finality": "final",
+      "words": null,
+      "speaker": null,
+      "start": null,
+      "end": null,
+      "audio_processed_until": null,
+      "old_ids": [],
+      "new_ids": [],
+      "code": "invalid_audio_or_context",
+      "recoverable": false,
+      "retriable_after": null,
+      "reconnect": null,
+      "gap_start": null,
+      "gap_end": null,
+      "detected_language": null,
+      "extra": {
+        "message": "native language control requires a base Qwen language key"
+      }
+    },
+    "session_diagnostics": [
+      {
+        "level": "info",
+        "code": "language_refinement_accepted",
+        "message": "language 'en-US' accepted in streaming mode as a refinement of selectable 'en' (RFC 4647 lookup); the engine reduces it internally.",
+        "param": "language",
+        "provided": "en-US",
+        "effective": "en-US"
+      }
+    ],
+    "reduced_result": {
+      "text": "",
+      "detected_language": null,
+      "language_confidence": null,
+      "duration": null,
+      "segments": [],
+      "words": null,
+      "channels": null,
+      "diagnostics": [],
+      "extra": {}
+    }
+  },
+  "unmapped_auto_language": {
+    "events": [
+      {
+        "type": "partial",
+        "segment_id": "utterance-0",
+        "text": "hello",
+        "stable_until": 0,
+        "finality": "final",
+        "words": null,
+        "speaker": null,
+        "start": null,
+        "end": null,
+        "audio_processed_until": null,
+        "old_ids": [],
+        "new_ids": [],
+        "code": null,
+        "recoverable": null,
+        "retriable_after": null,
+        "reconnect": null,
+        "gap_start": null,
+        "gap_end": null,
+        "detected_language": null,
+        "extra": {
+          "audio_prefix_seconds": 0.5,
+          "unmapped_model_language": "Klingon"
+        }
+      },
+      {
+        "type": "final",
+        "segment_id": "utterance-0",
+        "text": "hello",
+        "stable_until": null,
+        "finality": "closed",
+        "words": null,
+        "speaker": null,
+        "start": null,
+        "end": null,
+        "audio_processed_until": null,
+        "old_ids": [],
+        "new_ids": [],
+        "code": null,
+        "recoverable": null,
+        "retriable_after": null,
+        "reconnect": null,
+        "gap_start": null,
+        "gap_end": null,
+        "detected_language": null,
+        "extra": {
+          "audio_prefix_seconds": 0.5,
+          "unmapped_model_language": "Klingon"
+        }
+      },
+      {
+        "type": "done",
+        "segment_id": null,
+        "text": null,
+        "stable_until": null,
+        "finality": "final",
+        "words": null,
+        "speaker": null,
+        "start": null,
+        "end": null,
+        "audio_processed_until": null,
+        "old_ids": [],
+        "new_ids": [],
+        "code": null,
+        "recoverable": null,
+        "retriable_after": null,
+        "reconnect": null,
+        "gap_start": null,
+        "gap_end": null,
+        "detected_language": null,
+        "extra": {}
+      }
+    ],
+    "session_diagnostics": [],
+    "reduced_result": {
+      "text": "hello",
+      "detected_language": null,
+      "language_confidence": null,
+      "duration": null,
+      "segments": [
+        {
+          "start": null,
+          "end": null,
+          "text": "hello",
+          "words": null,
+          "speaker": null,
+          "channel": null,
+          "avg_logprob": null,
+          "no_speech_prob": null,
+          "temperature": null,
+          "compression_ratio": null,
+          "extra": {}
+        }
+      ],
+      "words": null,
+      "channels": null,
+      "diagnostics": [
+        {
+          "level": "warning",
+          "code": "segment_timestamps_unavailable",
+          "message": "1 of 1 reduced segments lack a usable timestamp span (start and/or end is None; a start-only final keeps its real start but has no span). Do not use them for timing-sensitive output.",
+          "param": "segments",
+          "provided": null,
+          "effective": null
+        }
+      ],
+      "extra": {}
+    }
+  },
+  "batch_refinement": {
+    "runtime_language": "en-US",
+    "exception": {
+      "type": "TranscriptionError",
+      "cause_type": "ValueError"
+    }
+  },
+  "native_value_error": {
+    "terminal": {
+      "type": "error",
+      "segment_id": null,
+      "text": null,
+      "stable_until": null,
+      "finality": "final",
+      "words": null,
+      "speaker": null,
+      "start": null,
+      "end": null,
+      "audio_processed_until": null,
+      "old_ids": [],
+      "new_ids": [],
+      "code": "invalid_audio_or_context",
+      "recoverable": false,
+      "retriable_after": null,
+      "reconnect": null,
+      "gap_start": null,
+      "gap_end": null,
+      "detected_language": null,
+      "extra": {
+        "message": "native configuration failure"
+      }
+    },
+    "session_diagnostics": [],
+    "reduced_result": {
+      "text": "",
+      "detected_language": null,
+      "language_confidence": null,
+      "duration": null,
+      "segments": [],
+      "words": null,
+      "channels": null,
+      "diagnostics": [],
+      "extra": {}
+    }
+  },
+  "cancelled_native_work": {
+    "first_terminal": {
+      "type": "error",
+      "segment_id": null,
+      "text": null,
+      "stable_until": null,
+      "finality": "final",
+      "words": null,
+      "speaker": null,
+      "start": null,
+      "end": null,
+      "audio_processed_until": null,
+      "old_ids": [],
+      "new_ids": [],
+      "code": "cancelled",
+      "recoverable": false,
+      "retriable_after": null,
+      "reconnect": null,
+      "gap_start": null,
+      "gap_end": null,
+      "detected_language": null,
+      "extra": {
+        "message": "Recognition cancelled."
+      }
+    },
+    "second_native_entry_before_release": false,
+    "second_terminal": {
+      "type": "done",
+      "segment_id": null,
+      "text": null,
+      "stable_until": null,
+      "finality": "final",
+      "words": null,
+      "speaker": null,
+      "start": null,
+      "end": null,
+      "audio_processed_until": null,
+      "old_ids": [],
+      "new_ids": [],
+      "code": null,
+      "recoverable": null,
+      "retriable_after": null,
+      "reconnect": null,
+      "gap_start": null,
+      "gap_end": null,
+      "detected_language": "en",
+      "extra": {}
+    }
+  }
+}

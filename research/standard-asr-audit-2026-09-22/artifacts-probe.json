@@ -1,0 +1,34 @@
+{
+  "a1_target_and_profile": {
+    "general_status": "ready",
+    "missing_runtime_fields": [
+      "decoder_partitions",
+      "head_dim",
+      "max_audio_seconds",
+      "max_sequence_length",
+      "residual_scale",
+      "rope_theta"
+    ],
+    "short_prepare": "ConfigError",
+    "short_status": "ready"
+  },
+  "a2_draft_binding": {
+    "aggregate_status": "ready",
+    "draft_model_id": "not-the-draft-model",
+    "draft_revision": "not-the-pinned-revision",
+    "requirement_states": {
+      "qwen3-asr-0.6b-gpu-draft": "ready",
+      "qwen3-asr-1.7b-coreml": "ready"
+    },
+    "target_binding": {}
+  },
+  "a3_source_gate": {
+    "acquire_reason": "action_required",
+    "can_acquire_now": true,
+    "downloads_disabled": true,
+    "preflight_blocker": null,
+    "source_metadata": {},
+    "target_created": false
+  },
+  "boundary": "fake metadata and placeholder payloads only; no native model validation"
+}

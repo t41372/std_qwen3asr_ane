@@ -70,7 +70,10 @@ def test_short_preset_is_discoverable_and_has_its_own_limits():
     registry = discover_models()
     engine = registry.create("std-qwen3asr-ane/1.7b-short-dictation")
     assert engine.properties.model_id == "std-qwen3asr-ane/1.7b-short-dictation"
-    assert engine.properties.max_audio_duration == 12
+    # Long recordings are segmented into the bundle's native windows, so the
+    # Standard ASR request boundary is no longer the 12-second native window.
+    assert engine.properties.max_audio_duration is None
+    assert engine.config.max_recording_seconds is None
     assert engine.config.max_new_tokens == 128
     assert engine.config.profile == "short-dictation"
     assert engine.config.model_dir.name == "qwen3-asr-1.7b-short-dictation"
@@ -96,17 +99,58 @@ def test_draft_is_required_only_for_batch(bundle):
     assert len(streaming.requirements) == 1
 
 
-def test_plain_install_uses_managed_conversion_and_final_status(monkeypatch, tmp_path):
-    from std_qwen3asr_ane import acquisition
+def test_request_can_disable_draft_without_blocking_on_its_artifact(bundle):
+    engine = create_engine(model_dir=bundle, use_draft=True)
+    context = ArtifactContext(
+        mode="batch",
+        params=RuntimeParams(provider_params=Qwen3ASRParams(disable_draft=True)),
+    )
+    report = engine.artifact_status(context)
+    assert report.readiness == "ready"
+    assert [item.artifact_id for item in report.requirements] == [
+        "qwen3-asr-1.7b-coreml"
+    ]
 
-    monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: False)
+
+def test_optional_batch_head_does_not_block_serial_fallback(bundle):
+    engine = create_engine(model_dir=bundle, use_batching=True)
+    report = engine.artifact_status(ArtifactContext(mode="batch"))
+    assert report.readiness == "ready"
+    assert [(item.artifact_id, item.state, item.required_for_inference) for item in report.requirements] == [
+        ("qwen3-asr-1.7b-coreml", "ready", True),
+        ("qwen3-asr-1.7b-batch-head", "missing", False),
+    ]
+
+
+def test_batch_head_acquisition_routes_to_native_artifact_manager(monkeypatch, bundle):
+    engine = create_engine(model_dir=bundle, use_batching=True)
+    context = ArtifactContext(mode="batch")
+    batch_requirement = engine.artifact_status(context).requirements[-1]
+    calls = []
+
+    def acquire(ctx, requirements, refresh, progress):
+        calls.append((ctx, requirements, refresh, progress))
+
+    def forbidden_auxiliary():
+        raise AssertionError("batch head routed as auxiliary")
+
+    monkeypatch.setattr(engine._artifacts, "acquire", acquire)
+    monkeypatch.setattr(engine, "_auxiliary_models", forbidden_auxiliary)
+    engine._acquire_artifacts(context, (batch_requirement,), False, None)
+    assert calls == [(context, (batch_requirement,), False, None)]
+
+
+def test_plain_install_uses_managed_conversion_and_final_status(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "std_qwen3asr_ane.artifact_lifecycle.conversion_toolchain_available", lambda: False
+    )
     calls = []
 
     def worker(config, targets, progress):
         calls.append(targets)
         make_bundle(config.model_dir)
 
-    monkeypatch.setattr(acquisition, "acquire_in_worker", worker)
+    monkeypatch.setattr("std_qwen3asr_ane.artifact_lifecycle.acquire_in_worker", worker)
     engine = create_engine(model_dir=tmp_path / "model")
     assert engine.acquire_artifacts().readiness == "ready"
     assert engine.acquire_artifacts(refresh=True).readiness == "ready"
@@ -118,7 +162,20 @@ def test_offline_draft_cannot_bypass_policy_with_cached_target_source(
 ):
     source = tmp_path / "source"
     source.mkdir()
-    (source / "source.json").write_text("{}")
+    for name in (
+        "config.json",
+        "chat_template.json",
+        "generation_config.json",
+        "preprocessor_config.json",
+        "tokenizer_config.json",
+        "vocab.json",
+    ):
+        (source / name).write_text("{}")
+    (source / "merges.txt").write_text("merge")
+    (source / "model.safetensors").write_bytes(b"weights")
+    (source / "source.json").write_text(
+        '{"model_id":"Qwen/Qwen3-ASR-1.7B","revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+    )
     monkeypatch.setenv("STANDARD_ASR_ALLOW_DOWNLOAD", "0")
     engine = create_engine(model_dir=bundle, source_dir=source, use_draft=True)
     report = engine.artifact_status()
@@ -173,17 +230,31 @@ def test_conversion_failure_never_publishes_partial_target(monkeypatch, tmp_path
 
     from std_qwen3asr_ane import compiled
     from std_qwen3asr_ane.conversion import build, compress
-    from std_qwen3asr_ane.plugin import MODEL_ID, SOURCE_REVISION
+    from std_qwen3asr_ane.conversion.build import SOURCE_REVISION
+    from std_qwen3asr_ane.plugin import MODEL_ID
 
     engine = create_engine(model_dir=tmp_path / "model", source_dir=tmp_path / "source")
     engine.config.source_dir.mkdir()
+    for name in (
+        "config.json",
+        "chat_template.json",
+        "generation_config.json",
+        "preprocessor_config.json",
+        "tokenizer_config.json",
+        "vocab.json",
+    ):
+        (engine.config.source_dir / name).write_text("{}")
+    (engine.config.source_dir / "merges.txt").write_text("merge")
+    (engine.config.source_dir / "model.safetensors").write_bytes(b"weights")
     (engine.config.source_dir / "source.json").write_text(
         json.dumps({"model_id": MODEL_ID, "revision": SOURCE_REVISION})
     )
     stale = tmp_path / "model.work"
     stale.mkdir()
     (stale / "keep.txt").write_text("not owned by this acquisition")
-    monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: True)
+    monkeypatch.setattr(
+        "std_qwen3asr_ane.artifact_lifecycle.conversion_toolchain_available", lambda: True
+    )
     monkeypatch.setattr(build, "build_bundle", lambda source, output, **kw: output.mkdir())
     monkeypatch.setattr(compress, "compress_bundle", lambda source, output, **kw: output.mkdir())
 
@@ -206,10 +277,10 @@ def test_progress_observer_failure_does_not_cancel_acquisition(monkeypatch, tmp_
     from standard_asr.contract.exceptions import ArtifactProgressCallbackError
     from standard_asr.engine import ArtifactProgress
 
-    from std_qwen3asr_ane import acquisition
-
     engine = create_engine(model_dir=tmp_path / "model")
-    monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: False)
+    monkeypatch.setattr(
+        "std_qwen3asr_ane.artifact_lifecycle.conversion_toolchain_available", lambda: False
+    )
 
     def worker(config, targets, progress):
         progress(ArtifactProgress(phase="converting"))
@@ -218,7 +289,7 @@ def test_progress_observer_failure_does_not_cancel_acquisition(monkeypatch, tmp_
     def broken_observer(event):
         raise RuntimeError("observer failed")
 
-    monkeypatch.setattr(acquisition, "acquire_in_worker", worker)
+    monkeypatch.setattr("std_qwen3asr_ane.artifact_lifecycle.acquire_in_worker", worker)
     with pytest.raises(ArtifactProgressCallbackError) as caught:
         engine.acquire_artifacts(progress=broken_observer)
     assert caught.value.report.readiness == "ready"

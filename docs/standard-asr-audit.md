@@ -1,5 +1,7 @@
 # Standard ASR integration audit
 
+> Historical installation audit. The [2026-09-22 comprehensive investigation](standard-asr-comprehensive-audit-2026-09-22.md) supersedes this document's current-coverage claims. In particular, native BCP-47 refinement mapping and artifact compatibility checks have confirmed gaps despite the earlier passing tests. Preserve the results below as historical evidence.
+
 This audit covers the plugin against Standard ASR protocol 0.2 at public commit
 `8b124e8c8fbcb6b0382792262bee05595b895440`. The dependency is pinned to that commit;
 the protocol declaration remains `0.2.0`, independently of the package version.

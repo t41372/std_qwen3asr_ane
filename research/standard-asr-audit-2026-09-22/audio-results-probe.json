@@ -1,0 +1,443 @@
+{
+  "tuple_16k": {
+    "status": "ok",
+    "text": "ok",
+    "detected_language": "en",
+    "duration": 0.5,
+    "segments": null,
+    "words": null,
+    "extra": {},
+    "diagnostics": []
+  },
+  "bare_ndarray_strict": {
+    "status": "error",
+    "type": "AudioProcessingError",
+    "standard_error": true,
+    "message": "Audio array has no sample rate. Pass AudioArray(samples, sample_rate) or enable best_effort.",
+    "cause": null
+  },
+  "audio_array_8k_resample": {
+    "status": "ok",
+    "text": "ok",
+    "detected_language": "en",
+    "duration": 1.0,
+    "segments": null,
+    "words": null,
+    "extra": {},
+    "diagnostics": [
+      {
+        "level": "info",
+        "code": "resampled_with",
+        "message": "Resampled 8000 Hz -> 16000 Hz (scipy resample_poly).",
+        "param": "audio",
+        "provided": "8000->16000",
+        "effective": "scipy"
+      }
+    ]
+  },
+  "audio_bytes_decode": {
+    "status": "ok",
+    "text": "ok",
+    "detected_language": "en",
+    "duration": 1.0,
+    "segments": null,
+    "words": null,
+    "extra": {},
+    "diagnostics": [
+      {
+        "level": "info",
+        "code": "audio_conversion",
+        "message": "Decoded encoded audio to a waveform array at 8000 Hz.",
+        "param": "audio",
+        "provided": null,
+        "effective": "array"
+      },
+      {
+        "level": "info",
+        "code": "resampled_with",
+        "message": "Resampled 8000 Hz -> 16000 Hz (scipy resample_poly).",
+        "param": "audio",
+        "provided": "8000->16000",
+        "effective": "scipy"
+      }
+    ]
+  },
+  "audio_base64_decode": {
+    "status": "ok",
+    "text": "ok",
+    "detected_language": "en",
+    "duration": 1.0,
+    "segments": null,
+    "words": null,
+    "extra": {},
+    "diagnostics": [
+      {
+        "level": "info",
+        "code": "audio_conversion",
+        "message": "Decoded encoded audio to a waveform array at 8000 Hz.",
+        "param": "audio",
+        "provided": null,
+        "effective": "array"
+      },
+      {
+        "level": "info",
+        "code": "resampled_with",
+        "message": "Resampled 8000 Hz -> 16000 Hz (scipy resample_poly).",
+        "param": "audio",
+        "provided": "8000->16000",
+        "effective": "scipy"
+      }
+    ]
+  },
+  "audio_path_decode": {
+    "status": "ok",
+    "text": "ok",
+    "detected_language": "en",
+    "duration": 1.0,
+    "segments": null,
+    "words": null,
+    "extra": {},
+    "diagnostics": [
+      {
+        "level": "info",
+        "code": "audio_conversion",
+        "message": "Decoded encoded audio to a waveform array at 8000 Hz.",
+        "param": "audio",
+        "provided": null,
+        "effective": "array"
+      },
+      {
+        "level": "info",
+        "code": "resampled_with",
+        "message": "Resampled 8000 Hz -> 16000 Hz (scipy resample_poly).",
+        "param": "audio",
+        "provided": "8000->16000",
+        "effective": "scipy"
+      }
+    ]
+  },
+  "bare_path_decode": {
+    "status": "ok",
+    "text": "ok",
+    "detected_language": "en",
+    "duration": 1.0,
+    "segments": null,
+    "words": null,
+    "extra": {},
+    "diagnostics": [
+      {
+        "level": "info",
+        "code": "audio_conversion",
+        "message": "Decoded encoded audio to a waveform array at 8000 Hz.",
+        "param": "audio",
+        "provided": null,
+        "effective": "array"
+      },
+      {
+        "level": "info",
+        "code": "resampled_with",
+        "message": "Resampled 8000 Hz -> 16000 Hz (scipy resample_poly).",
+        "param": "audio",
+        "provided": "8000->16000",
+        "effective": "scipy"
+      }
+    ]
+  },
+  "stereo_array": {
+    "status": "error",
+    "type": "TranscriptionError",
+    "standard_error": true,
+    "message": "Qwen3-ASR Core ML inference failed.",
+    "cause": "ValueError"
+  },
+  "nonfinite_array": {
+    "status": "error",
+    "type": "TranscriptionError",
+    "standard_error": true,
+    "message": "Qwen3-ASR Core ML inference failed.",
+    "cause": "ValueError"
+  },
+  "empty_array": {
+    "status": "error",
+    "type": "TranscriptionError",
+    "standard_error": true,
+    "message": "Qwen3-ASR Core ML inference failed.",
+    "cause": "ValueError"
+  },
+  "out_of_range_array": {
+    "status": "ok",
+    "text": "ok",
+    "detected_language": "en",
+    "duration": 0.000125,
+    "segments": null,
+    "words": null,
+    "extra": {},
+    "diagnostics": []
+  },
+  "url": {
+    "status": "error",
+    "type": "IncompatibleAudioInputError",
+    "standard_error": true,
+    "message": "Cannot deliver AudioUrl to an engine that accepts ['array']. This engine does not fetch URLs; the standard does not fetch them either. Provide a local file via AudioPath.",
+    "cause": null
+  },
+  "storage_uri": {
+    "status": "error",
+    "type": "IncompatibleAudioInputError",
+    "standard_error": true,
+    "message": "Cannot deliver AudioStorageUri to an engine that accepts ['array']. This engine does not accept provider storage URIs (storage_uri); the standard cannot fetch cloud storage without the engine's credentials and is not an upload-broker. Use an engine that accepts storage_uri, or download the object yourself and pass it as AudioPath/AudioBytes.",
+    "cause": null
+  },
+  "over_static_duration": {
+    "status": "error",
+    "type": "AudioProcessingError",
+    "standard_error": true,
+    "message": "Audio duration is 30.000s, which exceeds the engine's max_audio_duration of 30.0s. Provide a shorter clip or use an engine without this limit.",
+    "cause": null
+  },
+  "bare_ndarray_best_effort": {
+    "status": "ok",
+    "text": "ok",
+    "detected_language": "en",
+    "duration": 0.5,
+    "segments": null,
+    "words": null,
+    "extra": {},
+    "diagnostics": [
+      {
+        "level": "warning",
+        "code": "assumed_sample_rate",
+        "message": "No sample rate provided; assumed 16000 Hz.",
+        "param": "audio",
+        "provided": null,
+        "effective": 16000
+      }
+    ]
+  },
+  "whole_input_stream_31s": {
+    "status": "error",
+    "type": "AudioProcessingError",
+    "standard_error": true,
+    "message": "Audio duration is 31.000s, which exceeds the engine's max_audio_duration of 30.0s. Provide a shorter clip or use an engine without this limit.",
+    "cause": null
+  },
+  "native_unknown_language_pipeline": {
+    "parsed_text": "hello",
+    "parser_language": null,
+    "adapter_language": null,
+    "diagnostics": []
+  },
+  "batch_render": {
+    "status": "ok",
+    "srt": "1\n00:00:00,000 --> 00:00:00,500\nok\n"
+  },
+  "stream_success": {
+    "events": [
+      {
+        "type": "partial",
+        "audio_processed_until": null,
+        "extra": {
+          "audio_prefix_seconds": 0.5
+        },
+        "code": null
+      },
+      {
+        "type": "final",
+        "audio_processed_until": null,
+        "extra": {
+          "audio_prefix_seconds": 0.5
+        },
+        "code": null
+      },
+      {
+        "type": "done",
+        "audio_processed_until": null,
+        "extra": {},
+        "code": null
+      }
+    ],
+    "result_duration": null,
+    "result_has_error_field": false,
+    "result_text": "ok",
+    "default_srt": {
+      "status": "error",
+      "type": "SubtitleRenderingError",
+      "message": "1 of 1 segments cannot render as visible subtitle cues. A segment is unrenderable when its span is unmeasured (start and/or end is None), or when it quantizes to zero milliseconds on the output grid (players silently drop a 'T --> T' cue). Rendering anyway would drop text or fabricate timing. Choose explicitly: on_unrenderable='omit' keeps only the renderable cues (their text alone reaches the file), or 'collapse' renders one whole-text cue with no per-segment timeline."
+    },
+    "collapsed_srt": {
+      "status": "ok",
+      "srt": "1\n00:00:00,000 --> 00:00:03,000\nok\n"
+    }
+  },
+  "stream_native_failure": {
+    "events": [
+      {
+        "type": "error",
+        "audio_processed_until": null,
+        "extra": {
+          "detail": "RuntimeError: native detail"
+        },
+        "code": "engine_error"
+      }
+    ],
+    "result_duration": null,
+    "result_has_error_field": false,
+    "result_text": "",
+    "default_srt": {
+      "status": "ok",
+      "srt": ""
+    },
+    "collapsed_srt": {
+      "status": "ok",
+      "srt": ""
+    }
+  },
+  "stream_capacity_failure": {
+    "events": [
+      {
+        "type": "error",
+        "audio_processed_until": null,
+        "extra": {
+          "message": "decoder KV cache exhausted",
+          "received_audio_seconds": 0.5,
+          "processed_audio_seconds": 0.0
+        },
+        "code": "bundle_capacity_exceeded"
+      }
+    ],
+    "result_duration": null,
+    "result_has_error_field": false,
+    "result_text": "",
+    "default_srt": {
+      "status": "ok",
+      "srt": ""
+    },
+    "collapsed_srt": {
+      "status": "ok",
+      "srt": ""
+    }
+  },
+  "runtime_calls": [
+    {
+      "shape": [
+        8000
+      ],
+      "dtype": "float32",
+      "sample0": -0.25,
+      "language": null,
+      "max_new_tokens": 256,
+      "context": ""
+    },
+    {
+      "shape": [
+        16000
+      ],
+      "dtype": "float32",
+      "sample0": -0.250129371881485,
+      "language": null,
+      "max_new_tokens": 256,
+      "context": ""
+    },
+    {
+      "shape": [
+        16000
+      ],
+      "dtype": "float32",
+      "sample0": -0.250129371881485,
+      "language": null,
+      "max_new_tokens": 256,
+      "context": ""
+    },
+    {
+      "shape": [
+        16000
+      ],
+      "dtype": "float32",
+      "sample0": -0.250129371881485,
+      "language": null,
+      "max_new_tokens": 256,
+      "context": ""
+    },
+    {
+      "shape": [
+        16000
+      ],
+      "dtype": "float32",
+      "sample0": -0.250129371881485,
+      "language": null,
+      "max_new_tokens": 256,
+      "context": ""
+    },
+    {
+      "shape": [
+        16000
+      ],
+      "dtype": "float32",
+      "sample0": -0.250129371881485,
+      "language": null,
+      "max_new_tokens": 256,
+      "context": ""
+    },
+    {
+      "shape": [
+        8000,
+        2
+      ],
+      "dtype": "float32",
+      "sample0": -0.25,
+      "language": null,
+      "max_new_tokens": 256,
+      "context": ""
+    },
+    {
+      "shape": [
+        2
+      ],
+      "dtype": "float32",
+      "sample0": 0.0,
+      "language": null,
+      "max_new_tokens": 256,
+      "context": ""
+    },
+    {
+      "shape": [
+        0
+      ],
+      "dtype": "float32",
+      "sample0": null,
+      "language": null,
+      "max_new_tokens": 256,
+      "context": ""
+    },
+    {
+      "shape": [
+        2
+      ],
+      "dtype": "float32",
+      "sample0": 2.0,
+      "language": null,
+      "max_new_tokens": 256,
+      "context": ""
+    },
+    {
+      "shape": [
+        8000
+      ],
+      "dtype": "float32",
+      "sample0": -0.25,
+      "language": null,
+      "max_new_tokens": 256,
+      "context": ""
+    },
+    {
+      "shape": [
+        8000
+      ],
+      "dtype": "float32",
+      "sample0": 0.0,
+      "language": null,
+      "max_new_tokens": 256,
+      "context": ""
+    }
+  ]
+}

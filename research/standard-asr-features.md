@@ -1,5 +1,7 @@
 # Standard ASR feature inventory and streaming implementation
 
+> Historical snapshot. The JSON inventory referenced below is stale and must not be used as the current capability declaration. See the [2026-09-22 comprehensive investigation](../docs/standard-asr-comprehensive-audit-2026-09-22.md) and its [source-bound declaration snapshot](standard-asr-audit-2026-09-22/snapshot.json).
+
 This inventory is generated from the installed plugin declarations in
 `standard-asr-feature-inventory.json`. The adapter targets Standard ASR protocol
 0.2.0 and the pinned `main` implementation used by this workspace.

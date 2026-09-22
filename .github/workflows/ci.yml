@@ -37,7 +37,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - name: Install locked test dependencies
-        run: uv sync --locked --python '${{ matrix.python }}' --group convert
+        run: uv sync --locked --python '${{ matrix.python }}' --group convert --group server-test
       - name: Lint and test
         run: |
           uv run --no-sync ruff check std_qwen3asr_ane/src std_qwen3asr_ane/tests
@@ -52,3 +52,38 @@ jobs:
           "$UV_TOOL_BIN_DIR/standard-asr" compliance run
           "$UV_TOOL_BIN_DIR/standard-asr" status std-qwen3asr-ane/1.7b --json > status.json
           uv run --no-sync python -c 'import json, os; from pathlib import Path; r=json.load(open("status.json")); assert r["readiness"] == "unavailable"; assert r["requirements"][0]["acquisition_blocker"] == "downloads_disabled"; assert not Path(os.environ["STANDARD_ASR_MODEL_DIR"]).exists()'
+
+  server:
+    name: Server extra / isolated integration
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      STANDARD_ASR_ALLOW_DOWNLOAD: "0"
+      STANDARD_ASR_MODEL_DIR: ${{ runner.temp }}/asr-server-models
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.13"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install server tests without conversion dependencies
+        run: uv sync --locked --python 3.12 --no-default-groups --group dev --group server-test
+      - name: Prove the server environment is isolated
+        run: |
+          uv run --no-sync python -c 'import importlib.util as i; assert i.find_spec("fastapi"); assert i.find_spec("websockets"); assert i.find_spec("qwen_asr") is None; assert i.find_spec("gradio") is None'
+          uv run --no-sync pytest -q std_qwen3asr_ane/tests/test_server_integration.py
+      - name: Build and install the server wheel extra
+        run: |
+          uv build
+          server_env="$RUNNER_TEMP/server-wheel"
+          server_python="$server_env/bin/python"
+          wheel=$(find "$PWD/dist" -name '*.whl' -print -quit)
+          test -n "$wheel"
+          uv venv --python 3.12 "$server_env"
+          uv pip install --python "$server_python" "std-qwen3asr-ane[server] @ file://$wheel"
+          "$server_python" -c 'import importlib.util as i; import fastapi, multipart, uvicorn, websockets; assert i.find_spec("qwen_asr") is None; assert i.find_spec("gradio") is None'
+          "$server_env/bin/standard-asr" list
+          "$server_env/bin/standard-asr" serve --help

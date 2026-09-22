@@ -81,6 +81,17 @@ standard-asr show std-qwen3asr-ane/1.7b
 
 Models use Standard ASR's cache policy: explicit `download_root`, then `STANDARD_ASR_MODEL_DIR`, then the Standard ASR cache (normally `~/.cache/standard-asr` on macOS). `status` reports the actual bundle path. `STANDARD_ASR_ALLOW_DOWNLOAD=0` disables network acquisition; already acquired models remain usable.
 
+Install optional features into the same tool environment:
+
+```sh
+uv tool install --reinstall 'std-qwen3asr-ane[server] @ git+https://github.com/t41372/std_qwen3asr_ane.git'
+uv tool install --reinstall 'std-qwen3asr-ane[diarization] @ git+https://github.com/t41372/std_qwen3asr_ane.git'
+# Or retain both:
+uv tool install --reinstall 'std-qwen3asr-ane[server,diarization] @ git+https://github.com/t41372/std_qwen3asr_ane.git'
+```
+
+The `server` extra supplies Standard ASR's HTTP/WebSocket dependencies. The `diarization` extra supplies the pinned `sherpa-onnx==1.13.8` runtime; model acquisition remains an explicit `standard-asr pull` operation. When reinstalling a tool, include the complete set of extras you want that environment to retain; `gpu-draft` can be combined the same way.
+
 ## Use in a Python application
 
 Install the plugin into the application's environment. A `uv tool` environment is for terminal commands; it does not add imports to an unrelated Python project.
@@ -104,7 +115,7 @@ The app uses Standard ASR's discovery, audio conversion, request parameters, res
 
 ## Models and limits
 
-| Model key | Audio limit per utterance/session | Default output budget |
+| Model key | Native recognition window | Default output budget |
 |---|---:|---:|
 | `std-qwen3asr-ane/1.7b` | 30 seconds | 256 tokens |
 | `std-qwen3asr-ane/1.7b-short-dictation` | 12 seconds | 128 tokens |
@@ -116,9 +127,33 @@ standard-asr pull std-qwen3asr-ane/1.7b-short-dictation
 standard-asr transcribe std-qwen3asr-ane/1.7b-short-dictation recording.wav
 ```
 
-Both support batch recognition, language selection, automatic language detection, context prompts, and bounded streaming with revisable partials and a final result. Standard ASR handles file/bytes/array conversion and batch resampling. Incremental streaming accepts mono 16 kHz PCM (`pcm_s16le` or `pcm_f32le`).
+Both presets automatically divide longer recordings and streams into bounded, non-overlapping native windows. `max_recording_seconds` optionally guards total batch and streaming input; `stream_max_audio_seconds` adds a streaming-only guard. Both default to `None`, so the native window size is not a total-recording limit. Window boundaries prefer low local energy without claiming silence, and every input sample belongs to exactly one window.
 
-There is no forced alignment, word/segment speech timing, diarization, hard candidate-language restriction, or automatic long-recording segmentation. Audio duration and decoder context/output limits are checked separately; exceeding either fails explicitly. Streaming does not automatically start another segment at the limit.
+Batch and streaming support language selection, automatic detection, context prompts, candidate-language restriction, phrase score hints and optional measured word, segment and character timing. Candidate lists are hard constraints on the model's language header and accept at most 8 languages. Phrase hints are bounded soft next-token score biases, at most 16 terms and 128 characters per term; they do not guarantee that a phrase appears. Both features require the target's full vocabulary logits. A target bundle built with a compact vocabulary head reports them unsupported instead of pretending to apply them; this is separate from the optional packed-batch head described below.
+
+Streaming accepts mono 16 kHz PCM (`pcm_s16le` or `pcm_f32le`). Partials are revisable. Each completed window is independently rescored from its full audio rather than being locked to provisional partial text, then emitted as a separate closed segment with an input-processing cursor. A successful final result carries the complete input duration. `word_stability`, `reconnect`, `re_segments` and mutable mid-stream guidance remain false: they are reserved Standard ASR semantics, not aliases for window rollover or revisable partials.
+
+## Optional forced alignment and speaker diarization
+
+Enable the CPU forced aligner, acquire its pinned model and isolated runtime, then request timestamps:
+
+```sh
+standard-asr pull std-qwen3asr-ane/1.7b --set use_alignment=true
+standard-asr transcribe std-qwen3asr-ane/1.7b recording.wav \
+  --set use_alignment=true --options '{"word_timestamps":"word"}'
+```
+
+The aligner adds about 1.8 GB of model weights and supports Chinese, English, Cantonese, French, German, Italian, Japanese, Korean, Portuguese, Russian and Spanish. `word`, `segment` and `char` output is based on measured alignment; the plugin does not manufacture timing from the input window.
+
+Speaker diarization requires the `diarization` install extra and implicitly requires the same alignment model:
+
+```sh
+standard-asr pull std-qwen3asr-ane/1.7b --set use_diarization=true
+standard-asr transcribe std-qwen3asr-ane/1.7b meeting.wav \
+  --set use_diarization=true --options '{"diarization":{}}'
+```
+
+The learned CPU backend preserves measured speaker turns, including overlap. Transcript units receive a speaker only when exclusive coverage is strong enough; ambiguous or unsupported units stay unattributed and carry diagnostics.
 
 ## Optional GPU draft
 
@@ -131,6 +166,37 @@ standard-asr transcribe std-qwen3asr-ane/1.7b recording.wav --set use_draft=true
 ```
 
 This adds a Qwen3-ASR 0.6B draft on the GPU and roughly 4 GB of wired memory in the measured setup. Conversion dependency isolation is handled by `pull`. `prepare()` and streaming load only the ANE target; the draft loads on the first batch request. Streaming artifact status does not require the unused draft.
+
+Candidate-language and phrase guidance bypass the draft because they need the target's full vocabulary scores. Python, CLI and wire callers can set `Qwen3ASRParams(disable_draft=True)` / `{"provider_params":{"disable_draft":true}}` for one request.
+
+## Optional packed bulk recognition
+
+`use_batching=true` makes `pull` acquire a compact head bound to the selected target bundle:
+
+```sh
+standard-asr pull std-qwen3asr-ane/1.7b --set use_batching=true
+```
+
+Python applications can then submit independent recordings through `engine.transcribe_many(...)`. It returns ordered `BulkTranscriptionOutcome` values containing `result`, `error`, `execution` and `fallback_reason`; `result_or_raise()` re-raises the original typed error for one item. Eligible groups use packed target execution and other inputs disclose their serial fallback. The Standard ASR per-file `transcribe` method and CLI remain the canonical single-recording interface.
+
+## HTTP and WebSocket server
+
+Install the `server` extra, acquire the configured artifacts, and place operator-owned settings in a JSON file:
+
+```json
+{
+  "std-qwen3asr-ane/1.7b": {
+    "use_alignment": true,
+    "model_dir": "/absolute/path/to/qwen3-asr-1.7b"
+  }
+}
+```
+
+```sh
+standard-asr serve --engine-configs engines.json
+```
+
+The reference server pools one engine per configured model, reports safe readiness at `/v1/readiness/{model}`, accepts files over REST and PCM over WebSocket, and validates `provider_params` against the selected plugin schema. The `max_new_tokens`, `disable_draft` and `include_metrics` fields are accepted in Python, CLI JSON options and both wire transports; batch results include the requested native metrics under `result.extra["native"]`.
 
 ## Existing local bundles
 
@@ -145,7 +211,8 @@ The earlier `artifacts/` location is no longer an implicit lookup relative to yo
 ## Development and evidence
 
 - [Development and manual conversion](CONTRIBUTING.md)
-- [Standard ASR contract audit](docs/standard-asr-audit.md)
+- [Release readiness ledger](docs/release-readiness-2026-09-22.md)
+- [Historical Standard ASR contract audit](docs/standard-asr-audit.md)
 - [Research results](research/results-2026-09-13.md), [round 2 evidence](research/evidence/round2/README.md), and [experiment workflows](experiments/workflows/README.md)
 
 ## License

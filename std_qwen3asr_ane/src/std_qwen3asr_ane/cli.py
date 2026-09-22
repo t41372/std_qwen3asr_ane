@@ -1,4 +1,4 @@
-"""Build, inspect, and transcribe with the local ANE engine."""
+"""Build and inspect ANE model bundles. Transcribe with standard-asr."""
 
 from __future__ import annotations
 
@@ -89,18 +89,6 @@ def main(argv: list[str] | None = None) -> int:
     inspect.add_argument(
         "--compute-units", choices=("cpu_and_ne", "cpu_only"), default="cpu_and_ne"
     )
-    transcribe = commands.add_parser(
-        "transcribe",
-        help="Transcribe one audio file with a local bundle (default artifacts/qwen3-asr-1.7b)",
-    )
-    transcribe.add_argument("audio", type=Path)
-    transcribe.add_argument("--model-dir", type=Path, default=None)
-    transcribe.add_argument("--profile", choices=tuple(PROFILES), default="general")
-    transcribe.add_argument("--language", default="auto")
-    transcribe.add_argument("--max-new-tokens", type=int, default=None)
-    transcribe.add_argument(
-        "--draft-dir", type=Path, default=None, help="Use the GPU-draft bundle at this path"
-    )
     args = parser.parse_args(argv)
     if args.command == "download":
         from .conversion.build import download_source
@@ -159,31 +147,6 @@ def main(argv: list[str] | None = None) -> int:
         from .diagnostics import inspect_compute_plan
 
         result = inspect_compute_plan(args.model, args.compute_units)
-    else:
-        from standard_asr.contract.exceptions import StructuredError
-        from standard_asr.engine import RuntimeParams
-
-        from .plugin import Qwen3ASREngine
-
-        settings = {"profile": args.profile, "draft_dir": args.draft_dir}
-        if args.model_dir is not None:
-            settings["model_dir"] = args.model_dir
-        if args.max_new_tokens is not None:
-            settings["max_new_tokens"] = args.max_new_tokens
-        engine = Qwen3ASREngine(**settings)
-        try:
-            result = engine.transcribe(
-                args.audio, RuntimeParams(language=args.language)
-            ).model_dump(mode="json")
-        except StructuredError as error:
-            # Framework errors carry the remedy; a traceback would hide it.
-            print(f"error: {error}", file=sys.stderr)
-            hint = getattr(error, "hint", None)
-            if hint:
-                print(f"hint: {hint}", file=sys.stderr)
-            return 2
-        finally:
-            engine.close()
     print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
     return 0
 

@@ -1,0 +1,20 @@
+..                                                                       [100%]
+=============================== warnings summary ===============================
+std_qwen3asr_ane/tests/test_compress.py::test_compress_bundle_compresses_only_decoder_and_head
+std_qwen3asr_ane/tests/test_compress.py::test_compress_bundle_compresses_only_decoder_and_head
+std_qwen3asr_ane/tests/test_compress.py::test_compress_bundle_compresses_only_decoder_and_head
+std_qwen3asr_ane/tests/test_compress.py::test_compress_bundle_compresses_only_decoder_and_head
+std_qwen3asr_ane/tests/test_compress.py::test_compress_bundle_compresses_only_decoder_and_head
+  /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/.venv/lib/python3.12/site-packages/torch/jit/_trace.py:1006: FutureWarning: `torch.jit.trace` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+std_qwen3asr_ane/tests/test_compress.py::test_compress_bundle_compresses_only_decoder_and_head
+std_qwen3asr_ane/tests/test_compress.py::test_compress_bundle_compresses_only_decoder_and_head
+std_qwen3asr_ane/tests/test_compress.py::test_compress_bundle_compresses_only_decoder_and_head
+std_qwen3asr_ane/tests/test_compress.py::test_compress_bundle_compresses_only_decoder_and_head
+std_qwen3asr_ane/tests/test_compress.py::test_compress_bundle_compresses_only_decoder_and_head
+  /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/.venv/lib/python3.12/site-packages/torch/jit/_trace.py:1145: FutureWarning: `torch.jit.trace_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+2 passed, 10 warnings in 3.36s

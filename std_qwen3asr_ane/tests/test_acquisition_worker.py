@@ -12,7 +12,7 @@ import pytest
 from standard_asr.contract.exceptions import ArtifactAcquisitionError
 from standard_asr.engine import ArtifactAction
 
-from std_qwen3asr_ane import acquisition, conversion_worker
+from std_qwen3asr_ane import acquisition, conversion_worker, worker_environment
 from std_qwen3asr_ane.conversion import toolchain
 from std_qwen3asr_ane.plugin import BUNDLE_ARTIFACT_ID, create_engine
 
@@ -30,6 +30,10 @@ def test_worker_metadata_and_inline_conversion_require_the_same_versions():
         for name, version in [spec.split("==")]
     }
     assert pinned == toolchain.CONVERSION_VERSIONS
+    assert acquisition.CONVERSION_WORKER_SPEC.dependencies[0] == requirements["dependencies"][0]
+    assert acquisition.CONVERSION_WORKER_SPEC.dependencies[1:] == tuple(
+        f"{name}=={version}" for name, version in toolchain.CONVERSION_VERSIONS.items()
+    )
 
 
 @pytest.mark.parametrize("changed", list(toolchain.CONVERSION_VERSIONS))
@@ -47,6 +51,27 @@ def test_missing_conversion_distribution_is_not_imported(monkeypatch):
 
     monkeypatch.setattr(toolchain, "version", absent)
     assert not toolchain.conversion_toolchain_available()
+
+
+def test_conversion_worker_root_reuses_only_matching_legacy_runtime(tmp_path):
+    engine = create_engine(download_root=tmp_path)
+    parent = engine.config.source_dir.expanduser().resolve().parent
+    legacy = parent / "conversion-worker-v1"
+    (legacy / "bin").mkdir(parents=True)
+    python = legacy / "bin/python"
+    python.write_text("#!/bin/sh\n")
+    python.chmod(0o755)
+    receipt = worker_environment._expected_receipt(acquisition.CONVERSION_WORKER_SPEC)
+    (legacy / ".std-qwen3asr-worker.json").write_text(json.dumps(receipt))
+
+    assert acquisition.conversion_worker_root(engine.config) == legacy
+
+    receipt["dependencies"] = ["different==1"]
+    (legacy / ".std-qwen3asr-worker.json").write_text(json.dumps(receipt))
+    selected = acquisition.conversion_worker_root(engine.config)
+    assert selected.parent == parent
+    assert selected.name.startswith("conversion-worker-v1-")
+    assert selected != legacy
 
 
 def test_failure_frame_preserves_operator_actions_and_retry_delay():
@@ -83,14 +108,12 @@ def test_real_worker_reports_invalid_source_as_action_required(tmp_path):
     assert result.returncode == 1
     failure = json.loads(result.stdout)["error"]
     assert failure["reason"] == "action_required"
-    assert "pinned" in failure["message"]
+    assert "source_dir" in failure["message"] and "model_id" in failure["message"]
     assert "Traceback" not in result.stderr
     assert not engine.config.model_dir.exists()
 
 
 def test_parent_retains_worker_error_reason_and_preflight_report(monkeypatch, tmp_path):
-    import uv
-
     worker = tmp_path / "fake-uv"
     worker.write_text(
         f"#!{sys.executable}\n"
@@ -100,8 +123,10 @@ def test_parent_retains_worker_error_reason_and_preflight_report(monkeypatch, tm
         "sys.exit(1)\n"
     )
     worker.chmod(0o755)
-    monkeypatch.setattr(uv, "find_uv_bin", lambda: str(worker))
-    monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: False)
+    monkeypatch.setattr(acquisition, "ensure_conversion_worker", lambda config, progress: worker)
+    monkeypatch.setattr(
+        "std_qwen3asr_ane.artifact_lifecycle.conversion_toolchain_available", lambda: False
+    )
     monkeypatch.setenv("STANDARD_ASR_ALLOW_DOWNLOAD", "1")
     engine = create_engine(download_root=tmp_path)
     with pytest.raises(ArtifactAcquisitionError) as caught:

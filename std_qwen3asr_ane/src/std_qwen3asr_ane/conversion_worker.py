@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12,<3.14"
 # dependencies = [
-#   "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@8b124e8c8fbcb6b0382792262bee05595b895440",
+#   "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@1e09da15af31657845c4b8e205f67c6855fda259",
 #   "coremltools==9.0", "torch==2.14.0", "numpy==2.5.3",
 #   "transformers==4.57.6", "huggingface-hub==0.36.2",
 #   "safetensors==0.8.0", "scipy==1.18.1", "tokenizers==0.22.2",
@@ -17,6 +17,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def main() -> int:
@@ -34,25 +35,48 @@ def main() -> int:
     from standard_asr.runtime.redaction import log_exception_safely
 
     from std_qwen3asr_ane.acquisition import AcquisitionFailure
-    from std_qwen3asr_ane.plugin import (
+    from std_qwen3asr_ane.artifact_lifecycle import (
+        BATCH_HEAD_ARTIFACT_ID,
         BUNDLE_ARTIFACT_ID,
         DRAFT_ARTIFACT_ID,
-        Qwen3ASREngine,
+        ArtifactManager,
     )
 
     request = json.loads(sys.stdin.readline())
     output = sys.stdout
 
-    def emit(phase: str, artifact_id: str) -> None:
-        print(json.dumps({"phase": phase, "artifact_id": artifact_id}), file=output, flush=True)
+    def emit(phase: str, artifact_id: str, **counts: object) -> None:
+        frame = {"phase": phase, "artifact_id": artifact_id, **counts}
+        print(json.dumps(frame), file=output, flush=True)
 
     try:
         with contextlib.redirect_stdout(sys.stderr):
-            engine = Qwen3ASREngine(**request["config"])
+            raw_config = request["config"]
+            config = SimpleNamespace(
+                profile=raw_config["profile"],
+                model_dir=Path(raw_config["model_dir"]),
+                source_dir=Path(raw_config["source_dir"]),
+                draft_dir=(
+                    Path(raw_config["draft_dir"])
+                    if raw_config.get("draft_dir") is not None
+                    else None
+                ),
+                draft_source_dir=Path(raw_config["draft_source_dir"]),
+                use_batching=bool(raw_config.get("use_batching", False)),
+                batch_head_dir=(
+                    Path(raw_config["batch_head_dir"])
+                    if raw_config.get("batch_head_dir") is not None
+                    else None
+                ),
+            )
+            model_name = "1.7b-short-dictation" if config.profile == "short-dictation" else "1.7b"
+            manager = ArtifactManager(config, f"std-qwen3asr-ane/{model_name}")
             if BUNDLE_ARTIFACT_ID in request["targets"]:
-                engine._acquire_bundle(emit)
+                manager.acquire_bundle(emit)
+            if BATCH_HEAD_ARTIFACT_ID in request["targets"]:
+                manager.acquire_batch_head(emit)
             if DRAFT_ARTIFACT_ID in request["targets"]:
-                engine._acquire_draft(emit)
+                manager.acquire_draft(emit)
     except ArtifactAcquisitionError as error:
         failure = AcquisitionFailure.from_exception(error)
     except Exception:  # noqa: BLE001 - SDK failures must cross the process boundary as data.
