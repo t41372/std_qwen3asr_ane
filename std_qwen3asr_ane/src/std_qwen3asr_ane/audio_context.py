@@ -163,8 +163,8 @@ class AudioPrefixContext:
             "reused_encoder_windows": reused_windows,
             **(
                 {
-                    "computed_feature_frames": self._mel.computed_frames,
-                    "reused_feature_frames": self._mel.reused_frames,
+                    "computed_power_frames": self._mel.computed_frames,
+                    "reused_power_frames": self._mel.reused_frames,
                 }
                 if self._mel is not None
                 else {}

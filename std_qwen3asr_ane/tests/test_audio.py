@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import std_qwen3asr_ane.audio as audio_module
 from std_qwen3asr_ane.audio import (
     MIN_SAMPLES,
     MelPrefixContext,
@@ -67,6 +68,31 @@ def test_incremental_mel_rejects_reuse_after_a_prefix_revision():
     samples[1000] *= 100
     np.testing.assert_array_equal(context.extract(samples), log_mel_spectrogram(samples, filters))
     assert context.reused_frames == 0
+
+
+def test_incremental_mel_projects_cached_power_at_the_full_offline_shape(monkeypatch):
+    """Keep projection shape identical even when earlier FFT power is reused."""
+    rng = np.random.default_rng(42)
+    filters = rng.uniform(0, 1, (201, 128)).astype(np.float32)
+    samples = rng.normal(0, 0.05, 48000).astype(np.float32)
+    context = MelPrefixContext(filters)
+    context.extract(samples[:32000])
+    expected = log_mel_spectrogram(samples, filters)
+
+    projection_shapes = []
+    original_projection = audio_module._log_mel_power
+
+    def trace_projection(power, mel_filters):
+        projection_shapes.append(power.shape)
+        return original_projection(power, mel_filters)
+
+    monkeypatch.setattr(audio_module, "_log_mel_power", trace_projection)
+    actual = context.extract(samples)
+
+    np.testing.assert_array_equal(actual, expected)
+    assert context.reused_frames == 100
+    assert context.computed_frames == 200
+    assert projection_shapes == [(300, 201)]
 
 
 @pytest.mark.parametrize(
