@@ -200,7 +200,7 @@ def test_bulk_never_leaves_a_slot_unresolved_when_native_batch_output_is_malform
     outcomes = engine.transcribe_many([audio, audio], batch_size=2)
 
     assert len(outcomes) == 2
-    assert all(outcome.execution == "not_run" for outcome in outcomes)
+    assert all(outcome.execution == "unknown" for outcome in outcomes)
     assert all(isinstance(outcome.error, TranscriptionError) for outcome in outcomes)
     assert all(isinstance(outcome.error.__cause__, RuntimeError) for outcome in outcomes)
 

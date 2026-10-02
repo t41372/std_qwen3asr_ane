@@ -31,7 +31,7 @@ class BulkTranscriptionOutcome:
     request_index: int
     result: TranscriptionResult | None
     error: Exception | None
-    execution: Literal["packed", "serial", "not_run"]
+    execution: Literal["packed", "serial", "not_run", "unknown"]
     fallback_reason: str | None = None
 
     def __post_init__(self) -> None:
@@ -92,6 +92,8 @@ def transcribe_many(
         for first in range(0, len(recordings), batch_size):
             prepared = []
             for index in range(first, min(first + batch_size, len(recordings))):
+                execution = "not_run"
+                fallback_reason = None
                 try:
                     request = engine._prepare_transcription_request(
                         recordings[index], parameters[index]
@@ -110,15 +112,23 @@ def transcribe_many(
                     engine._require_request_artifacts(request.params, mode="batch")
                     window = engine._stream_window_seconds()
                     if request.audio.array.size > int(window * request.audio.sample_rate):
+                        execution = "serial"
+                        fallback_reason = "long recording uses bounded windows"
                         result = engine._transcribe_recording(request.audio, request.params)
                         result = engine._finalize_transcription_result(result, request)
                         outcomes[index] = BulkTranscriptionOutcome(
-                            index, result, None, "serial", "long recording uses bounded windows"
+                            index, result, None, execution, fallback_reason
                         )
                     else:
                         prepared.append((index, request))
                 except Exception as error:  # noqa: BLE001 - each input has an explicit error outcome
-                    outcomes[index] = BulkTranscriptionOutcome(index, None, error, "not_run")
+                    outcomes[index] = BulkTranscriptionOutcome(
+                        index,
+                        None,
+                        _public_error(error) if execution == "serial" else error,
+                        execution,
+                        fallback_reason,
+                    )
             if not prepared:
                 continue
             native_requests = []
@@ -141,13 +151,21 @@ def transcribe_many(
                         phrase_hints=effective.phrase_hints,
                     )
                 )
+            head_error = None
+            dispatched = False
             try:
                 with engine._inference_lock:
                     runtime = engine._ensure_model_loaded()
                     if engine._batch_head is None and engine.config.batch_head_dir is not None:
                         path = engine.config.batch_head_dir.expanduser()
                         if path.exists():
-                            engine._batch_head = runtime.load_batch_head(path)
+                            try:
+                                engine._batch_head = runtime.load_batch_head(path)
+                            except Exception as error:  # noqa: BLE001 - an optional optimization
+                                # A broken optional head does not make the target unusable.
+                                # Keep the native serial path and disclose the failed load.
+                                head_error = error
+                    dispatched = True
                     decoded = runtime.transcribe_many(
                         native_requests, batch_head=engine._batch_head
                     )
@@ -173,18 +191,24 @@ def transcribe_many(
             except Exception as error:  # noqa: BLE001 - a failed native group has per-input errors
                 for index, _ in prepared:
                     outcomes[index] = BulkTranscriptionOutcome(
-                        index, None, _public_error(error), "not_run"
+                        index, None, _public_error(error), "unknown" if dispatched else "not_run"
                     )
                 continue
             for native in decoded:
                 index, request = prepared[native.request_index]
+                fallback_reason = native.fallback_reason
+                if head_error is not None:
+                    fallback_reason = (
+                        f"configured batch head could not be loaded ({type(head_error).__name__})"
+                        + (f"; {fallback_reason}" if fallback_reason else "")
+                    )
                 if native.error is not None:
                     outcomes[index] = BulkTranscriptionOutcome(
                         index,
                         None,
                         _public_error(native.error, params=request.params),
                         native.execution,
-                        native.fallback_reason,
+                        fallback_reason,
                     )
                     continue
                 try:
@@ -194,21 +218,21 @@ def transcribe_many(
                         request.params,
                         speaker_tracker=engine._new_speaker_tracker(request.params),
                     )
-                    if native.fallback_reason is not None:
+                    if fallback_reason is not None:
                         result.diagnostics.append(
                             Diagnostic(
                                 code="native_batch_serial_fallback",
                                 message="This input used the serial target decoder.",
-                                provided=native.fallback_reason,
+                                provided=fallback_reason,
                                 effective="serial",
                             )
                         )
                     result = engine._finalize_transcription_result(result, request)
                     outcomes[index] = BulkTranscriptionOutcome(
-                        index, result, None, native.execution, native.fallback_reason
+                        index, result, None, native.execution, fallback_reason
                     )
                 except Exception as error:  # noqa: BLE001 - preserve successful peers on projection failure
                     outcomes[index] = BulkTranscriptionOutcome(
-                        index, None, _public_error(error), native.execution
+                        index, None, _public_error(error), native.execution, fallback_reason
                     )
     return tuple(outcomes[index] for index in range(len(recordings)))

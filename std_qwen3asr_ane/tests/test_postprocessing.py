@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from standard_asr import Diagnostic, Segment, TranscriptionResult
+from standard_asr.contract.results import compose_segment_text
 
 from std_qwen3asr_ane.alignment import AlignmentSpan
 from std_qwen3asr_ane.diarization import SpeakerTurn
@@ -28,12 +29,13 @@ def test_english_punctuation_and_whitespace_reconstruct_exactly():
     annotated = annotate_result(source, spans, offset_seconds=4.0)
 
     assert annotated.text == source.text
-    assert "".join(segment.text for segment in annotated.segments or []) == source.text
+    assert compose_segment_text(annotated.segments or []) == source.text
     assert annotated.segments == [
         Segment(
             start=4.1,
             end=5.2,
             text="  Hello,  world!\n",
+            text_separator="",
             words=annotated.words,
             speaker=None,
             extra={"source_start": 0, "source_end": len(source.text)},
@@ -78,7 +80,7 @@ def test_chinese_text_partitions_at_measured_speaker_changes_without_loss():
         "speaker_01",
         "speaker_01",
     ]
-    assert "".join(segment.text for segment in annotated.segments or []) == source.text
+    assert compose_segment_text(annotated.segments or []) == source.text
 
 
 def test_simultaneous_speakers_are_ambiguous_instead_of_arbitrarily_selected():
@@ -165,6 +167,55 @@ def test_segment_granularity_uses_alignment_but_omits_word_details():
     assert annotated.segments[0].words is None
     assert annotated.segments[0].text == "hello world"
     assert (annotated.segments[0].start, annotated.segments[0].end) == (0.1, 1.8)
+
+
+@pytest.mark.parametrize("granularity", ["word", "char", "segment"])
+@pytest.mark.parametrize("with_diarization", [False, True])
+def test_timestamp_granularities_compose_with_optional_diarization_without_loss(
+    granularity, with_diarization
+):
+    if granularity == "char":
+        text = "甲乙"
+        spans = [
+            AlignmentSpan("甲", 0.1, 0.4, 0, 1),
+            AlignmentSpan("乙", 0.6, 0.9, 1, 2),
+        ]
+    else:
+        text = "one two"
+        spans = [
+            AlignmentSpan("one", 0.1, 0.4, 0, 3),
+            AlignmentSpan("two", 0.6, 0.9, 4, 7),
+        ]
+    turns = (
+        [
+            SpeakerTurn(2.0, 2.5, "speaker_a"),
+            SpeakerTurn(2.5, 3.0, "speaker_b"),
+        ]
+        if with_diarization
+        else None
+    )
+
+    annotated = annotate_result(
+        result(text, duration=1.0),
+        spans,
+        offset_seconds=2.0,
+        speaker_turns=turns,
+        granularity=granularity,
+    )
+
+    assert annotated.segments is not None
+    assert compose_segment_text(annotated.segments) == text
+    assert [(segment.start, segment.end) for segment in annotated.segments] == (
+        [(2.1, 2.4), (2.6, 2.9)] if with_diarization else [(2.1, 2.9)]
+    )
+    assert [segment.speaker for segment in annotated.segments] == (
+        ["speaker_a", "speaker_b"] if with_diarization else [None]
+    )
+    assert (annotated.words is not None) is (granularity in ("word", "char"))
+    if annotated.words is not None:
+        assert [word.speaker for word in annotated.words] == (
+            ["speaker_a", "speaker_b"] if with_diarization else [None, None]
+        )
 
 
 def test_no_alignment_returns_original_result_without_fabricated_spans():

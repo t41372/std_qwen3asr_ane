@@ -1106,7 +1106,6 @@ class CoreMLRuntime:
                 "prompt_tokens": len(prompt),
                 "prefill_tokens": len(prompt),
                 "reused_prompt_tokens": 0,
-                "prefill_calls": float(len(prompt)),
                 "decoder_partition_count": len(self.decoders),
                 "frontend_calls": self._frontend_calls,
                 "encoder_calls": (audio.shape[-1] + self.window_tokens - 1)
@@ -1164,6 +1163,12 @@ class CoreMLRuntime:
         raw_text = self.tokenizer.decode(list(decoded.token_ids), skip_special_tokens=True)
         parsed = parse_output_details(raw_text, prepared.request.language)
         stats = decoded.stats
+        preparation_seconds = sum(
+            value for key, value in prepared.timings.items() if key.endswith("_seconds")
+        )
+        # Packed prompt rows from every lane share decoder calls. There is no
+        # truthful per-item prefill-call count or generation duration, so keep
+        # per-item preparation separate and label shared measurements as group data.
         return OfflineRecognitionOutcome(
             prepared.request_index,
             RuntimeResult(
@@ -1174,18 +1179,14 @@ class CoreMLRuntime:
                 audio_tokens=prepared.audio_tokens,
                 timings={
                     **prepared.timings,
-                    "generation_seconds": stats.elapsed_seconds,
-                    "head_calls": stats.head_calls,
                     "generated_tokens": len(decoded.token_ids),
                     "eos_token_id": decoded.eos_token_id,
-                    "packed_decoder_calls": stats.decoder_calls,
-                    "packed_head_calls": stats.head_calls,
-                    "packed_lane_count": stats.lane_count,
-                    "packed_cache_slots": stats.reserved_cache_slots,
-                    "total_seconds": sum(
-                        value for key, value in prepared.timings.items() if key.endswith("_seconds")
-                    )
-                    + stats.elapsed_seconds,
+                    "packed_item_preparation_seconds": preparation_seconds,
+                    "packed_group_elapsed_seconds": stats.elapsed_seconds,
+                    "packed_group_decoder_calls": stats.decoder_calls,
+                    "packed_group_head_calls": stats.head_calls,
+                    "packed_group_lane_count": stats.lane_count,
+                    "packed_group_reserved_cache_slots": stats.reserved_cache_slots,
                 },
                 raw_model_language=parsed.raw_model_language,
             ),

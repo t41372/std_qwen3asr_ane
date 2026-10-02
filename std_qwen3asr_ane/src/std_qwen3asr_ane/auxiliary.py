@@ -166,17 +166,20 @@ class AuxiliaryModels:
                     hint="Install std-qwen3asr-ane[diarization] in the engine's environment.",
                 )
         if params.language not in (None, "auto"):
-            self._check_language(params.language)
+            self._check_language(
+                params.language,
+                param=("word_timestamps" if params.word_timestamps is not None else "diarization"),
+            )
 
     @staticmethod
-    def _check_language(language: str | None) -> str:
+    def _check_language(language: str | None, *, param: str) -> str:
         if (
             language is None
             or language.split("-", 1)[0].casefold() not in SUPPORTED_ALIGNMENT_LANGUAGES
         ):
             raise UnsupportedFeatureError(
                 "The auxiliary aligner cannot align this detected or requested language.",
-                param="word_timestamps",
+                param=param,
                 hint="Use one of the documented alignment languages or transcribe without auxiliary output.",
             )
         return language.split("-", 1)[0].casefold()
@@ -202,7 +205,8 @@ class AuxiliaryModels:
         if not result.text.strip():
             return result
         language = self._check_language(
-            result.detected_language if params.language in (None, "auto") else params.language
+            result.detected_language if params.language in (None, "auto") else params.language,
+            param=("word_timestamps" if params.word_timestamps is not None else "diarization"),
         )
         from .postprocessing import annotate_result
 
@@ -216,11 +220,14 @@ class AuxiliaryModels:
                         reason="action_required",
                     )
                 self._aligner = ForcedAligner(self.config.alignment_dir)
-            granularity = (
-                "char" if getattr(params.word_timestamps, "value", None) == "char" else "word"
-            )
+            requested_granularity = getattr(params.word_timestamps, "value", None)
+            alignment_granularity = "char" if requested_granularity == "char" else "word"
             spans = self._aligner.align(
-                samples, result.text, language, granularity=granularity, cancelled=cancel
+                samples,
+                result.text,
+                language,
+                granularity=alignment_granularity,
+                cancelled=cancel,
             )
             turns = None
             if params.diarization is not None:
@@ -262,7 +269,10 @@ class AuxiliaryModels:
                 spans,
                 offset_seconds=offset_seconds,
                 speaker_turns=turns,
-                granularity=getattr(params.word_timestamps, "value", "word"),
+                # Diarization needs alignment internally, but it does not grant
+                # unrequested word details. Segment output carries speaker turns
+                # without populating TranscriptionResult.words.
+                granularity=requested_granularity or "segment",
             )
 
     def close(self) -> None:

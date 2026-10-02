@@ -20,6 +20,7 @@ from standard_asr.contract.exceptions import (
     TranscriptionError,
     UnsupportedFeatureError,
 )
+from standard_asr.contract.results import compose_segment_text
 from standard_asr.engine import (
     ArtifactContext,
     ArtifactDeclaration,
@@ -71,6 +72,7 @@ from .deployment import unsupported_host_reason
 from .errors import CancellationToken, ModelLimitError, raise_if_cancelled
 from .languages import LANGUAGE_NAMES, classify_model_language, qwen_control_language
 from .profiles import PROFILES
+from .result_text import needs_join_space, shift_source_offsets
 
 if TYPE_CHECKING:
     from .draft import DraftRuntime
@@ -289,7 +291,7 @@ class Qwen3ASREngine(EngineBase):
             "effective_session_audio_limit": "configured_recording_and_streaming_limits",
             "decoder_prefix_reuse": "exact_embeddings_at_token_batch_boundaries",
             "audio_graph_reuse": "exact_padded_inputs_and_masks",
-            "audio_feature_reuse": "aligned_stable_stft_and_unclipped_mel_prefix",
+            "audio_feature_reuse": "aligned_stable_stft_power_with_full_width_mel_projection",
             "context_limits": "session_configuration_and_bundle_audio_and_decoder_token_capacity",
             "persistent_causal_encoder_state": False,
             "segment_rollover_supported": True,
@@ -376,15 +378,18 @@ class Qwen3ASREngine(EngineBase):
 
     def _pull_command(self) -> str:
         command = self._artifacts.pull_command()
+        if self.config.use_alignment or self.config.use_diarization:
+            directory = self.config.alignment_dir.expanduser().absolute()
+            command += " --set " + shlex.quote(f"alignment_dir={directory}")
         for enabled, field in (
             (self.config.use_alignment, "alignment"),
             (self.config.use_diarization, "diarization"),
         ):
             if enabled:
-                directory = getattr(self.config, f"{field}_dir").expanduser().absolute()
-                command += f" --set use_{field}=true --set " + shlex.quote(
-                    f"{field}_dir={directory}"
-                )
+                command += f" --set use_{field}=true"
+                if field == "diarization":
+                    directory = self.config.diarization_dir.expanduser().absolute()
+                    command += " --set " + shlex.quote(f"diarization_dir={directory}")
         return command
 
     def _artifact_requirements(self, context: ArtifactContext):
@@ -836,10 +841,41 @@ def _merge_chunk_results(chunks: list[TranscriptionResult], duration: float) -> 
     if len(chunks) == 1:
         return chunks[0].model_copy(update={"duration": duration})
     text = ""
+    segments = []
+    words = []
     for chunk in chunks:
-        if text and chunk.text and _needs_join_space(text[-1], chunk.text[0]):
-            text += " "
-        text += chunk.text
+        separator = (
+            " " if text and chunk.text and needs_join_space(text[-1], chunk.text[0]) else ""
+        )
+        offset = len(text) + len(separator)
+        chunk_segments = chunk.segments
+        if chunk_segments is None:
+            chunk_segments = [Segment(text=chunk.text, start=None, end=None, text_separator="")]
+        for index, segment in enumerate(chunk_segments):
+            segments.append(
+                segment.model_copy(
+                    update={
+                        "text_separator": separator if index == 0 else segment.text_separator,
+                        "extra": shift_source_offsets(segment.extra, offset),
+                        "words": [
+                            word.model_copy(
+                                update={"extra": shift_source_offsets(word.extra, offset)}
+                            )
+                            for word in segment.words
+                        ]
+                        if segment.words is not None
+                        else None,
+                    }
+                )
+            )
+        words.extend(
+            word.model_copy(update={"extra": shift_source_offsets(word.extra, offset)})
+            for word in (chunk.words or [])
+        )
+        text += separator + chunk.text
+    composed = compose_segment_text(segments)
+    if composed != text:
+        raise RuntimeError("Window segments do not preserve the complete transcript text")
     languages = list(
         dict.fromkeys(chunk.detected_language for chunk in chunks if chunk.detected_language)
     )
@@ -855,32 +891,13 @@ def _merge_chunk_results(chunks: list[TranscriptionResult], duration: float) -> 
             )
         )
     return TranscriptionResult(
-        text=text,
+        text=composed,
         detected_language=languages[0] if len(languages) == 1 else None,
         duration=duration,
-        segments=[
-            segment
-            for chunk in chunks
-            for segment in (
-                chunk.segments
-                if chunk.segments is not None
-                else [Segment(text=chunk.text, start=None, end=None)]
-            )
-        ],
-        words=[word for chunk in chunks for word in chunk.words]
-        if any(chunk.words is not None for chunk in chunks)
-        else None,
+        segments=segments,
+        words=words if any(chunk.words is not None for chunk in chunks) else None,
         diagnostics=diagnostics,
         extra={"windows": [chunk.extra for chunk in chunks]},
-    )
-
-
-def _needs_join_space(left: str, right: str) -> bool:
-    """Separate whitespace-delimited words without inserting spaces into CJK text."""
-    if left.isspace() or right.isspace():
-        return False
-    return not any(
-        "\u2e80" <= char <= "\ua4cf" or "\uac00" <= char <= "\ud7af" for char in (left, right)
     )
 
 

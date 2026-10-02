@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from standard_asr import SyncSession
+from standard_asr import StreamFailedError, SyncSession
 from standard_asr.compliance import (
     check_event_sequence,
     check_streaming_param_gating,
@@ -16,6 +16,7 @@ from standard_asr.compliance import (
 from standard_asr.engine import (
     DIARIZE,
     AudioFormat,
+    Diagnostic,
     RuntimeParams,
     Segment,
     TranscriptionResult,
@@ -388,7 +389,9 @@ def test_unmapped_raw_model_language_survives_in_events_and_session_diagnostics(
     content = [event for event in events if event.type in ("partial", "final")]
     assert content and all(event.detected_language is None for event in content)
     assert all(event.extra["unmapped_model_language"] == "Klingon" for event in content)
-    diagnostics = [item for item in session.diagnostics() if item.code == "detected_language_unmapped"]
+    diagnostics = [
+        item for item in session.diagnostics() if item.code == "detected_language_unmapped"
+    ]
     assert len(diagnostics) == 1
     assert diagnostics[0].provided == "Klingon"
     assert_compliant(events, engine)
@@ -509,7 +512,9 @@ def test_native_cancellation_token_stops_at_a_safe_boundary_and_releases_engine(
 def test_closed_windows_use_measured_finalizer_output_and_one_session_speaker_tracker(
     engine, monkeypatch
 ):
-    engine.config = engine.config.model_copy(update={"use_alignment": True, "use_diarization": True})
+    engine.config = engine.config.model_copy(
+        update={"use_alignment": True, "use_diarization": True}
+    )
     engine._runtime.max_audio_seconds = 0.25
     tracker = object()
     preflight = []
@@ -520,15 +525,50 @@ def test_closed_windows_use_measured_finalizer_output_and_one_session_speaker_tr
 
     def finalize(raw, samples, params, offset_seconds=0.0, *, cancel=None, speaker_tracker=None):
         finalizer_calls.append((offset_seconds, speaker_tracker, cancel, samples.size))
-        first = Word(start=offset_seconds + 0.01, end=offset_seconds + 0.08, text="hello", speaker="A")
-        second = Word(start=offset_seconds + 0.10, end=offset_seconds + 0.20, text="world", speaker="B")
+        first = Word(
+            start=offset_seconds + 0.01,
+            end=offset_seconds + 0.08,
+            text="hello",
+            speaker="A",
+            extra={"source_start": 0, "source_end": 5},
+        )
+        second = Word(
+            start=offset_seconds + 0.10,
+            end=offset_seconds + 0.20,
+            text="world",
+            speaker="B",
+            extra={"source_start": 6, "source_end": 11},
+        )
         return TranscriptionResult(
             text="hello world",
             segments=[
-                Segment(start=first.start, end=first.end, text="hello", words=[first], speaker="A"),
-                Segment(start=second.start, end=second.end, text="world", words=[second], speaker="B"),
+                Segment(
+                    start=first.start,
+                    end=first.end,
+                    text="hello ",
+                    text_separator="",
+                    words=[first],
+                    speaker="A",
+                    extra={"source_start": 0, "source_end": 6},
+                ),
+                Segment(
+                    start=second.start,
+                    end=second.end,
+                    text="world",
+                    text_separator="",
+                    words=[second],
+                    speaker="B",
+                    extra={"source_start": 6, "source_end": 11},
+                ),
             ],
             words=[first, second],
+            diagnostics=[
+                Diagnostic(
+                    code="window_finalized",
+                    message="Window finalization evidence.",
+                    provided=offset_seconds,
+                )
+            ],
             extra={
                 "std_qwen3asr_ane_diarization_turns": [
                     {"start": offset_seconds, "end": offset_seconds + 0.1, "speaker": "A"},
@@ -540,21 +580,303 @@ def test_closed_windows_use_measured_finalizer_output_and_one_session_speaker_tr
     monkeypatch.setattr(engine, "_require_request_artifacts", require_artifacts)
     monkeypatch.setattr(engine, "_new_speaker_tracker", lambda params: tracker)
     monkeypatch.setattr(engine, "_finalize_chunk", finalize)
-    params = RuntimeParams(diarization=DIARIZE)
-    events = asyncio.run(recorded(engine.start_transcription(audio_format=FORMAT, params=params), [WIRE]))
+    params = RuntimeParams(word_timestamps="word", diarization=DIARIZE)
+    session = engine.start_transcription(audio_format=FORMAT, params=params)
+    events = asyncio.run(recorded(session, [WIRE]))
 
     closed = [event for event in events if event.type == "final" and event.finality == "closed"]
-    assert len(closed) == 2
+    assert len(closed) == 4
     assert len(preflight) == 1
     assert preflight[0][1:] == ("streaming", 0)
     assert preflight[0][0].diarization is not None
+    assert preflight[0][0].word_timestamps == "word"
     assert all(call[1] is tracker for call in finalizer_calls)
-    assert [event.start for event in closed] == [0.01, 0.26]
-    assert [event.end for event in closed] == [0.20, 0.45]
-    assert all(event.words and [word.speaker for word in event.words] == ["A", "B"] for event in closed)
-    assert all(event.speaker is None for event in closed)
+    assert [event.segment_id for event in closed] == [
+        "utterance-0",
+        "utterance-0.1",
+        "utterance-1",
+        "utterance-1.1",
+    ]
+    assert [event.text for event in closed] == ["hello ", "world", "hello ", "world"]
+    assert [event.text_separator for event in closed] == ["", "", " ", ""]
+    assert [event.start for event in closed] == [0.01, 0.10, 0.26, 0.35]
+    assert [event.end for event in closed] == [0.08, 0.20, 0.33, 0.45]
+    assert all(event.words and len(event.words) == 1 for event in closed)
+    closed_words = [word for event in closed for word in event.words or []]
+    assert [word.speaker for word in closed_words] == ["A", "B", "A", "B"]
+    assert [event.speaker for event in closed] == ["A", "B", "A", "B"]
+    assert [event.extra["source_start"] for event in closed] == [0, 6, 12, 18]
+    assert [event.extra["source_end"] for event in closed] == [6, 11, 18, 23]
+    assert [word.extra["source_start"] for word in closed_words] == [0, 6, 12, 18]
+    assert [word.extra["source_end"] for word in closed_words] == [5, 11, 17, 23]
     assert all(event.extra["speaker_turns"] for event in closed)
+    window_notes = [
+        diagnostic for diagnostic in session.diagnostics() if diagnostic.code == "window_finalized"
+    ]
+    assert [diagnostic.provided for diagnostic in window_notes] == [0.0, 0.25]
+    reduced = session.result()
+    assert reduced.text == "hello world hello world"
+    assert [segment.speaker for segment in reduced.segments or []] == ["A", "B", "A", "B"]
+    assert [segment.text_separator for segment in reduced.segments or []] == ["", "", " ", ""]
+    assert [segment.extra["source_start"] for segment in reduced.segments or []] == [0, 6, 12, 18]
+    assert [word.speaker for word in reduced.words or []] == ["A", "B", "A", "B"]
+    assert [word.extra["source_start"] for word in reduced.words or []] == [0, 6, 12, 18]
     assert_compliant(events, engine)
+
+
+@pytest.mark.parametrize("granularity", ["word", "char", "segment"])
+@pytest.mark.parametrize("with_diarization", [False, True])
+def test_streaming_optional_outputs_preserve_segments_words_speakers_and_exact_text(
+    engine, monkeypatch, granularity, with_diarization
+):
+    engine.config = engine.config.model_copy(
+        update={"use_alignment": True, "use_diarization": with_diarization}
+    )
+    monkeypatch.setattr(engine, "_require_request_artifacts", lambda params, *, mode: None)
+    monkeypatch.setattr(
+        engine,
+        "_new_speaker_tracker",
+        lambda params: object() if with_diarization else None,
+    )
+    text = "甲乙" if granularity == "char" else "one two"
+
+    def finalize(raw, samples, params, offset_seconds=0.0, **kwargs):
+        del raw, samples, params, kwargs
+        parts = ("甲", "乙") if granularity == "char" else ("one ", "two")
+        boundaries = ((0.01, 0.20), (0.25, 0.45))
+        speakers = ("A", "B") if with_diarization else (None, None)
+        words = [
+            Word(
+                start=start,
+                end=end,
+                text=part.strip(),
+                speaker=speaker,
+                extra={"alignment_granularity": granularity},
+            )
+            for part, (start, end), speaker in zip(parts, boundaries, speakers, strict=True)
+        ]
+        if with_diarization:
+            segments = [
+                Segment(
+                    start=start,
+                    end=end,
+                    text=part,
+                    text_separator="",
+                    words=[word] if granularity != "segment" else None,
+                    speaker=speaker,
+                    extra={"source_start": index, "source_end": index + 1},
+                )
+                for index, (part, (start, end), speaker, word) in enumerate(
+                    zip(parts, boundaries, speakers, words, strict=True)
+                )
+            ]
+        else:
+            segments = [
+                Segment(
+                    start=0.01,
+                    end=0.45,
+                    text=text,
+                    text_separator="",
+                    words=words if granularity != "segment" else None,
+                    speaker=None,
+                    extra={"source_start": 0, "source_end": len(text)},
+                )
+            ]
+        return TranscriptionResult(
+            text=text,
+            segments=segments,
+            words=words if granularity != "segment" else None,
+        )
+
+    monkeypatch.setattr(engine, "_finalize_chunk", finalize)
+    params = RuntimeParams(
+        word_timestamps=granularity,
+        diarization=DIARIZE if with_diarization else None,
+    )
+    session = engine.start_transcription(audio_format=FORMAT, params=params)
+    events = asyncio.run(recorded(session, [WIRE]))
+
+    closed = [event for event in events if event.type == "final"]
+    assert len(closed) == (2 if with_diarization else 1)
+    assert "".join(event.text or "" for event in closed) == text
+    assert [event.text_separator for event in closed] == [""] * len(closed)
+    assert [event.speaker for event in closed] == (["A", "B"] if with_diarization else [None])
+    assert all((event.words is not None) is (granularity != "segment") for event in closed)
+    result = session.result()
+    assert result.text == text
+    assert "".join(segment.text for segment in result.segments or []) == text
+    assert [segment.speaker for segment in result.segments or []] == (
+        ["A", "B"] if with_diarization else [None]
+    )
+    assert (result.words is not None) is (granularity != "segment")
+    if result.words is not None:
+        assert [word.speaker for word in result.words] == (
+            ["A", "B"] if with_diarization else [None, None]
+        )
+    assert_compliant(events, engine)
+
+
+def test_segment_timestamps_and_diarization_keep_unknown_language_disclosure(engine, monkeypatch):
+    engine.config = engine.config.model_copy(
+        update={"use_alignment": True, "use_diarization": True}
+    )
+    monkeypatch.setattr(engine, "_require_request_artifacts", lambda params, *, mode: None)
+    monkeypatch.setattr(engine, "_new_speaker_tracker", lambda params: object())
+    original = engine._runtime.transcribe
+
+    def unknown(*args, **kwargs):
+        result = original(*args, **kwargs)
+        return SimpleNamespace(
+            **{
+                **vars(result),
+                "language": None,
+                "raw_model_language": "Klingon",
+                "raw_text": "language Klingon<asr_text>hello world again today",
+            }
+        )
+
+    def finalize(raw, samples, params, offset_seconds=0.0, **kwargs):
+        del raw, samples, params, offset_seconds, kwargs
+        return TranscriptionResult(
+            text="hello world",
+            segments=[
+                Segment(
+                    start=0.1,
+                    end=0.4,
+                    text="hello ",
+                    text_separator="",
+                    speaker="A",
+                ),
+                Segment(
+                    start=0.5,
+                    end=0.9,
+                    text="world",
+                    text_separator="",
+                    speaker="B",
+                ),
+            ],
+        )
+
+    monkeypatch.setattr(engine._runtime, "transcribe", unknown)
+    monkeypatch.setattr(engine, "_finalize_chunk", finalize)
+    params = RuntimeParams(language="auto", word_timestamps="segment", diarization=DIARIZE)
+    session = engine.start_transcription(audio_format=FORMAT, params=params)
+    events = asyncio.run(recorded(session, [WIRE]))
+
+    closed = [event for event in events if event.type == "final"]
+    assert [event.speaker for event in closed] == ["A", "B"]
+    assert all(event.detected_language is None for event in closed)
+    assert all(event.extra["unmapped_model_language"] == "Klingon" for event in closed)
+    assert "detected_language_unmapped" in [item.code for item in session.diagnostics()]
+    assert session.result().text == "hello world"
+
+
+def test_optional_postprocessing_no_speech_does_not_invent_time_or_speaker(engine, monkeypatch):
+    engine.config = engine.config.model_copy(
+        update={"use_alignment": True, "use_diarization": True}
+    )
+    monkeypatch.setattr(engine, "_require_request_artifacts", lambda params, *, mode: None)
+    monkeypatch.setattr(engine, "_new_speaker_tracker", lambda params: object())
+    monkeypatch.setattr(
+        engine,
+        "_finalize_chunk",
+        lambda *args, **kwargs: TranscriptionResult(text="", duration=0.5),
+    )
+    params = RuntimeParams(word_timestamps="segment", diarization=DIARIZE)
+    session = engine.start_transcription(audio_format=FORMAT, params=params)
+    events = asyncio.run(recorded(session, [WIRE]))
+
+    closed = [event for event in events if event.type == "final"]
+    partials = [event for event in events if event.type == "partial"]
+    assert partials and partials[-1].text == "hello world again today"
+    assert len(closed) == 1 and closed[0].text == ""
+    assert closed[0].start is None and closed[0].end is None
+    assert closed[0].speaker is None and closed[0].words is None
+    result = session.result()
+    assert result.text == ""
+    assert result.segments is not None and len(result.segments) == 1
+    assert result.segments[0].text == ""
+    assert result.segments[0].start is None and result.segments[0].end is None
+    assert result.words is None
+
+
+def test_true_silence_without_a_published_partial_keeps_an_empty_segment_list(engine, monkeypatch):
+    monkeypatch.setattr(
+        engine,
+        "_finalize_chunk",
+        lambda *args, **kwargs: TranscriptionResult(text="", duration=0.05),
+    )
+    session = engine.start_transcription(audio_format=FORMAT)
+    short_wire = np.zeros(800, dtype="<f4").tobytes()
+    events = asyncio.run(recorded(session, [short_wire]))
+
+    assert not any(event.is_content for event in events)
+    result = session.result()
+    assert result.text == ""
+    assert result.segments == []
+
+
+def test_optional_postprocessing_failure_is_terminal_and_commits_no_closed_segment(
+    engine, monkeypatch
+):
+    engine.config = engine.config.model_copy(update={"use_alignment": True})
+    monkeypatch.setattr(engine, "_require_request_artifacts", lambda params, *, mode: None)
+    monkeypatch.setattr(engine, "_new_speaker_tracker", lambda params: None)
+
+    def fail(*args, **kwargs):
+        raise ValueError("postprocessing failed")
+
+    monkeypatch.setattr(engine, "_finalize_chunk", fail)
+    session = engine.start_transcription(
+        audio_format=FORMAT,
+        params=RuntimeParams(word_timestamps="word"),
+    )
+    events = asyncio.run(recorded(session, [WIRE]))
+
+    assert events[-1].type == "error" and events[-1].code == "engine_error"
+    assert not any(event.type == "final" for event in events)
+    with pytest.raises(StreamFailedError) as caught:
+        session.result()
+    assert caught.value.code == "engine_error"
+
+
+def test_cjk_longform_windows_compose_without_an_invented_space(engine, monkeypatch):
+    engine._runtime.max_audio_seconds = 0.25
+
+    def recognize(samples, params, **kwargs):
+        del samples, params, kwargs
+        return SimpleNamespace(
+            text="你好",
+            language="zh",
+            raw_text="language Chinese<asr_text>你好",
+            raw_model_language="Chinese",
+        )
+
+    def finalize(raw, samples, params, offset_seconds=0.0, **kwargs):
+        del raw, samples, params, offset_seconds, kwargs
+        return TranscriptionResult(
+            text="你好",
+            segments=[
+                Segment(
+                    start=None,
+                    end=None,
+                    text="你好",
+                    text_separator="",
+                    extra={"source_start": 0, "source_end": 2},
+                )
+            ],
+        )
+
+    monkeypatch.setattr(engine, "_recognize_chunk", recognize)
+    monkeypatch.setattr(engine, "_finalize_chunk", finalize)
+    session = engine.start_transcription(audio_format=FORMAT)
+    events = asyncio.run(recorded(session, [WIRE]))
+
+    closed = [event for event in events if event.type == "final"]
+    assert [event.text_separator for event in closed] == ["", ""]
+    assert [event.extra["source_start"] for event in closed] == [0, 2]
+    assert [event.extra["source_end"] for event in closed] == [2, 4]
+    assert session.result().text == "你好你好"
 
 
 def test_cancellation_reaches_the_auxiliary_finalizer(engine, monkeypatch):
@@ -631,7 +953,9 @@ def test_three_minute_session_segments_without_losing_or_overlapping_audio(engin
     assert decoded and all(len(window) <= 30 * 16000 for window in decoded)
     assert all(event.stable_until == 0 for event in events if event.type == "partial")
     closed = [event for event in events if event.type == "final" and event.finality == "closed"]
-    assert [event.segment_id for event in closed] == [f"utterance-{index}" for index in range(len(closed))]
+    assert [event.segment_id for event in closed] == [
+        f"utterance-{index}" for index in range(len(closed))
+    ]
     assert closed[0].extra["input_start_seconds"] == 0
     assert closed[-1].extra["input_end_seconds"] == 180
     assert all(
@@ -680,7 +1004,9 @@ def test_processing_frontier_does_not_rewind_at_an_earlier_low_energy_cut(engine
     ]
     events = asyncio.run(recorded(session, frames))
     assert events[-1].type == "done"
-    cursors = [event.audio_processed_until for event in events if event.audio_processed_until is not None]
+    cursors = [
+        event.audio_processed_until for event in events if event.audio_processed_until is not None
+    ]
     assert cursors == sorted(cursors)
     assert cursors[-1] == 3.0
     closed = [event for event in events if event.type == "final"]

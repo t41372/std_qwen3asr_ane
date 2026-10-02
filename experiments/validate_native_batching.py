@@ -36,9 +36,13 @@ def load_audio(path: Path) -> np.ndarray:
 
 
 def runtime_result(result) -> dict:
-    decoder_seconds = result.timings["generation_seconds"]
-    if "prefill_seconds" in result.timings:
-        decoder_seconds += result.timings["prefill_seconds"]
+    packed_group_seconds = result.timings.get("packed_group_elapsed_seconds")
+    if packed_group_seconds is None:
+        decoder_seconds = result.timings["generation_seconds"]
+        if "prefill_seconds" in result.timings:
+            decoder_seconds += result.timings["prefill_seconds"]
+    else:
+        decoder_seconds = packed_group_seconds
     return {
         "text": result.text,
         "language": result.language,
@@ -48,7 +52,11 @@ def runtime_result(result) -> dict:
         "generated_tokens": result.timings["generated_tokens"],
         "eos_token_id": result.timings["eos_token_id"],
         "decoder_and_head_seconds": decoder_seconds,
-        "total_seconds": result.timings["total_seconds"],
+        "total_seconds": result.timings.get("total_seconds"),
+        "packed_item_preparation_seconds": result.timings.get(
+            "packed_item_preparation_seconds"
+        ),
+        "packed_group_elapsed_seconds": packed_group_seconds,
     }
 
 

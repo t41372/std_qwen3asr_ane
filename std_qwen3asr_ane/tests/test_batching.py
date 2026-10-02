@@ -100,6 +100,27 @@ def test_transcribe_many_packs_independent_prompts_and_isolates_each_result(bund
     stats = outcomes[0].stats
     assert stats is not None and stats.lane_count == 2 and stats.decoder_calls > 1
     assert outcomes[1].stats == stats
+    for outcome in outcomes:
+        timings = outcome.result.timings
+        assert "prefill_calls" not in timings
+        assert "generation_seconds" not in timings
+        assert "head_calls" not in timings
+        assert "total_seconds" not in timings
+        assert timings["packed_group_elapsed_seconds"] == stats.elapsed_seconds
+        assert timings["packed_group_decoder_calls"] == stats.decoder_calls
+        assert timings["packed_group_head_calls"] == stats.head_calls
+        assert timings["packed_group_lane_count"] == stats.lane_count
+        assert timings["packed_group_reserved_cache_slots"] == stats.reserved_cache_slots
+        assert timings["packed_item_preparation_seconds"] == sum(
+            value
+            for key, value in timings.items()
+            if key in {
+                "features_seconds",
+                "prompt_seconds",
+                "encoder_seconds",
+                "prompt_assembly_seconds",
+            }
+        )
 
     decoder = next(model for model in fake_coreml if model.role == "decoder_00")
     # At least one invocation carries two independent requests in the same

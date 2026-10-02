@@ -18,8 +18,10 @@ from standard_asr.engine import (
     AudioFormat,
     PreparedAudio,
     RuntimeParams,
+    Segment,
     TranscriptionEvent,
     TranscriptionSession,
+    compose_segment_text,
 )
 
 from .audio import SAMPLE_RATE
@@ -27,6 +29,7 @@ from .decoding_guidance import GuidanceRequestError
 from .errors import InferenceCancelled, ModelLimitError
 from .languages import classify_model_language
 from .longform import AudioSpan, LongFormAudioLimit, LongFormCoordinator
+from .result_text import needs_join_space, shift_source_offsets
 from .runtime import rollback_prefix
 
 if TYPE_CHECKING:
@@ -87,10 +90,11 @@ class Qwen3ASRSession(TranscriptionSession):
         self._last_result = None
         self._active_start_sample: int | None = None
         self._active_processed_end_sample: int | None = None
+        self._active_partial_emitted = False
         self._next_partial_end_sample = self._chunk_samples
         self._segment_index = 0
+        self._closed_text = ""
         self._unmapped_language_noted = False
-        self._finalizer_diagnostic_codes: set[str] = set()
         self._speaker_tracker = None
         self._request_artifacts_checked = False
         self._audio_progress_supported = engine.supports("streaming.audio_progress")
@@ -260,7 +264,8 @@ class Qwen3ASRSession(TranscriptionSession):
                     self._received_samples = coordinator.received_samples
                     async for event in self._emit_partials_through(span):
                         yield event
-                    yield await self._close_span(span)
+                    for event in await self._close_span(span):
+                        yield event
                 self._received_samples = coordinator.received_samples
                 active = coordinator.active_span()
                 if active is not None:
@@ -271,7 +276,8 @@ class Qwen3ASRSession(TranscriptionSession):
             if tail is not None:
                 async for event in self._emit_partials_through(tail):
                     yield event
-                yield await self._close_span(tail)
+                for event in await self._close_span(tail):
+                    yield event
             self._set_input_duration(self._received_samples / SAMPLE_RATE)
             # The base emits done and reduces the recorded events.
         except _Cancelled:
@@ -336,42 +342,57 @@ class Qwen3ASRSession(TranscriptionSession):
             self._active_start_sample = span.start_sample
             self._next_partial_end_sample = span.start_sample + self._chunk_samples
         while self._next_partial_end_sample <= span.end_sample:
-            yield await self._decode(self._span_prefix(span, self._next_partial_end_sample))
+            event = await self._decode(self._span_prefix(span, self._next_partial_end_sample))
+            self._active_partial_emitted = True
+            yield event
             self._next_partial_end_sample += self._chunk_samples
 
-    async def _close_span(self, span: AudioSpan) -> TranscriptionEvent:
-        """Close one bounded native utterance and advance to a fresh segment id."""
+    async def _close_span(self, span: AudioSpan) -> tuple[TranscriptionEvent, ...]:
+        """Close one native window without collapsing its measured segments."""
         raw_result = await self._rescore_closed_span(span)
         result = await self._finalize_span(raw_result, span)
         self._emit_finalizer_diagnostics(result.diagnostics)
         detected, language_extra = self._language_fields(raw_result)
-        start, end = self._aggregate_measured_span(result)
-        words = result.words
-        speaker = self._uniform_word_speaker(words)
-        extra = self._event_extra(span, language_extra)
-        speaker_turns = result.extra.get("std_qwen3asr_ane_diarization_turns")
-        if speaker_turns is not None:
-            extra["speaker_turns"] = speaker_turns
-        measurement = result.extra.get("std_qwen3asr_ane_diarization_measurement")
-        if measurement is not None:
-            extra["diarization_measurement"] = measurement
-        event = TranscriptionEvent.closed(
-            self._segment_id,
-            result.text,
-            detected_language=detected,
-            audio_processed_until=(
-                self._processed_samples / SAMPLE_RATE if self._audio_progress_supported else None
-            ),
-            start=start,
-            end=end,
-            words=words,
-            speaker=speaker,
-            extra=extra,
+        segments = self._result_segments(result)
+        separators = tuple(
+            self._segment_text_separator(index, segment) for index, segment in enumerate(segments)
+        )
+        window_text_offset = len(self._closed_text) + (len(separators[0]) if separators else 0)
+        segments = tuple(
+            self._rebase_segment_source_offsets(segment, window_text_offset) for segment in segments
+        )
+        events = tuple(
+            TranscriptionEvent.closed(
+                self._segment_event_id(index),
+                segment.text,
+                text_separator=separators[index],
+                detected_language=detected,
+                audio_processed_until=(
+                    self._processed_samples / SAMPLE_RATE
+                    if self._audio_progress_supported
+                    else None
+                ),
+                start=segment.start,
+                end=segment.end,
+                words=segment.words,
+                speaker=segment.speaker,
+                extra=self._closed_event_extra(
+                    span,
+                    language_extra,
+                    result.extra,
+                    segment.extra,
+                ),
+            )
+            for index, segment in enumerate(segments)
         )
         self._processed_samples = max(self._processed_samples, span.end_sample)
+        self._closed_text += "".join(
+            separator + segment.text
+            for separator, segment in zip(separators, segments, strict=True)
+        )
         self._reset_active_context()
         self._segment_index += 1
-        return event
+        return events
 
     async def _rescore_closed_span(self, span: AudioSpan):
         """Decode a closed window without provisional text conditioning.
@@ -406,10 +427,8 @@ class Qwen3ASRSession(TranscriptionSession):
             raise _Cancelled from exc
 
     def _emit_finalizer_diagnostics(self, diagnostics) -> None:
-        """Expose one copy of each window-finalization note through the session channel."""
+        """Expose each window-finalization note through the bounded session channel."""
         for diagnostic in diagnostics:
-            if diagnostic.code in self._finalizer_diagnostic_codes:
-                continue
             if diagnostic.code == "detected_language_unmapped" and self._unmapped_language_noted:
                 continue
             self.emit_diagnostic(
@@ -420,7 +439,81 @@ class Qwen3ASRSession(TranscriptionSession):
                 provided=diagnostic.provided,
                 effective=diagnostic.effective,
             )
-            self._finalizer_diagnostic_codes.add(diagnostic.code)
+
+    def _result_segments(self, result) -> tuple[Segment, ...]:
+        """Return exact finalized segments or one honest unsegmented fallback."""
+        if result.segments is not None:
+            if not result.segments:
+                if result.text:
+                    raise RuntimeError(
+                        "An empty finalized segment list cannot carry transcript text"
+                    )
+                return self._empty_correction_segment()
+            if compose_segment_text(result.segments) != result.text:
+                raise RuntimeError("Finalized segments do not reconstruct the transcript text")
+            return tuple(result.segments)
+        if not result.text and result.words is None:
+            return self._empty_correction_segment()
+        start, end = self._aggregate_measured_span(result)
+        return (
+            Segment(
+                text=result.text,
+                start=start,
+                end=end,
+                words=result.words,
+                speaker=self._uniform_word_speaker(result.words),
+            ),
+        )
+
+    def _empty_correction_segment(self) -> tuple[Segment, ...]:
+        """Clear a published provisional segment; true silence emits no segment."""
+        if not self._active_partial_emitted:
+            return ()
+        return (Segment(start=None, end=None, text="", text_separator=""),)
+
+    def _segment_event_id(self, index: int) -> str:
+        """Keep the partial's id for the first segment and suffix later splits."""
+        return self._segment_id if index == 0 else f"{self._segment_id}.{index}"
+
+    @staticmethod
+    def _rebase_segment_source_offsets(segment: Segment, offset: int) -> Segment:
+        """Move window-local transcript ranges into the complete session text."""
+        update: dict[str, object] = {"extra": shift_source_offsets(segment.extra, offset)}
+        if segment.words is not None:
+            update["words"] = [
+                word.model_copy(update={"extra": shift_source_offsets(word.extra, offset)})
+                for word in segment.words
+            ]
+        return segment.model_copy(update=update)
+
+    def _segment_text_separator(self, index: int, segment: Segment) -> str:
+        """Declare exact within-window joins and explicit long-form boundaries."""
+        if index > 0:
+            return segment.text_separator
+        if not self._closed_text or not segment.text:
+            return ""
+        return " " if needs_join_space(self._closed_text[-1], segment.text[0]) else ""
+
+    def _closed_event_extra(self, span, language_extra, result_extra, segment_extra) -> dict:
+        """Merge window, result, and segment metadata without overwriting evidence."""
+        merged = self._event_extra(span, language_extra)
+        self._merge_extra(merged, result_extra)
+        self._merge_extra(merged, segment_extra)
+        speaker_turns = result_extra.get("std_qwen3asr_ane_diarization_turns")
+        if speaker_turns is not None:
+            self._merge_extra(merged, {"speaker_turns": speaker_turns})
+        measurement = result_extra.get("std_qwen3asr_ane_diarization_measurement")
+        if measurement is not None:
+            self._merge_extra(merged, {"diarization_measurement": measurement})
+        return merged
+
+    @staticmethod
+    def _merge_extra(destination: dict, source: dict) -> None:
+        """Merge metadata only when duplicate keys carry the same value."""
+        for key, value in source.items():
+            if key in destination and destination[key] != value:
+                raise RuntimeError(f"Conflicting finalized event metadata for {key!r}")
+            destination[key] = value
 
     @staticmethod
     def _aggregate_measured_span(result) -> tuple[float | None, float | None]:
@@ -458,6 +551,7 @@ class Qwen3ASRSession(TranscriptionSession):
         self._audio_context = None
         self._active_start_sample = None
         self._active_processed_end_sample = None
+        self._active_partial_emitted = False
         self._decode_count = 0
         self._last_raw = ""
         self._last_result = None

@@ -115,8 +115,7 @@ def annotate_result(
                 level="warning",
                 code="speaker_attribution_unassigned",
                 message=(
-                    "Some aligned units had no measured speaker support and were left "
-                    "unattributed."
+                    "Some aligned units had no measured speaker support and were left unattributed."
                 ),
                 param="diarization",
                 effective={"unit_count": unassigned},
@@ -235,6 +234,7 @@ def _segments(
                 start=group[0].start,
                 end=group[-1].end,
                 text=text[group[0].text_start : group[-1].text_end],
+                text_separator="",
                 words=segment_words,
                 speaker=group[0].attribution.speaker,
                 extra={
@@ -288,8 +288,7 @@ def _attribute_speaker(
     enough_coverage = winner_overlap + _TIME_EPSILON >= duration * _MIN_EXCLUSIVE_COVERAGE
     enough_margin = (
         runner_up_overlap <= _TIME_EPSILON
-        or winner_overlap + _TIME_EPSILON
-        >= runner_up_overlap * _MIN_WINNER_TO_RUNNER_UP_RATIO
+        or winner_overlap + _TIME_EPSILON >= runner_up_overlap * _MIN_WINNER_TO_RUNNER_UP_RATIO
     )
     if not enough_coverage or not enough_margin:
         return _Attribution(None, "ambiguous")
@@ -304,12 +303,13 @@ def _result_extra(
     if speaker_turns is None:
         return extra
     records = [
-        {"start": turn.start, "end": turn.end, "speaker": turn.speaker}
-        for turn in speaker_turns
+        {"start": turn.start, "end": turn.end, "speaker": turn.speaker} for turn in speaker_turns
     ]
     existing = extra.get(_DIARIZATION_TURNS_EXTRA_KEY)
     if existing is not None and existing != records:
-        raise ValueError(f"result.extra already contains conflicting {_DIARIZATION_TURNS_EXTRA_KEY}")
+        raise ValueError(
+            f"result.extra already contains conflicting {_DIARIZATION_TURNS_EXTRA_KEY}"
+        )
     extra[_DIARIZATION_TURNS_EXTRA_KEY] = records
     return extra
 
