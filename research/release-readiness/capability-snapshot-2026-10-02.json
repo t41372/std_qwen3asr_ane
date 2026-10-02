@@ -1,0 +1,1792 @@
+{
+  "scope": "Static declarations and synthetic configuration narrowing; no inference",
+  "plugin_revision": "a8ae9140de59b666b1f0bd9c9db10471e0bad669",
+  "plugin_version": "0.2.0a1",
+  "plugin_python_sha256": {
+    "std_qwen3asr_ane/__init__.py": "b0d8b9539a9c75bb7de4fb7f60b19fb84226c80354a6b86c5cca922b9d9c1204",
+    "std_qwen3asr_ane/acquisition.py": "c8ba5d001d8e884e033f9d5f6014bc6345f3fe18629c4786aad3b636a83617da",
+    "std_qwen3asr_ane/alignment.py": "d98980a866c8b4dbde71bdc3a793fbcde03876684b74bd1142abb810700c34f8",
+    "std_qwen3asr_ane/alignment_worker.py": "497626d19716aea512f76b6a59e16fa24d0df9e0e66cf87b344db95434cae935",
+    "std_qwen3asr_ane/artifact_lifecycle.py": "5c848024bfda8536619526a82c49d892e8405da12b9d66d942ca8e0103d7eb76",
+    "std_qwen3asr_ane/artifact_validation.py": "b566619325926d9569e4cdb5364982837f9f68abd7583e135f4b08a3b45557c1",
+    "std_qwen3asr_ane/audio.py": "a4739c9ff8783c60d770329aa5c53c3d0c5dd2700e3e2cb543e9b4043227e46d",
+    "std_qwen3asr_ane/audio_batch.py": "213320a5f66b5092322b192630db91630c2e4ec1e43770354d6d7137550c8ad6",
+    "std_qwen3asr_ane/audio_context.py": "465574f2a85c483d4f944cf53a551d1ca4178b1ab3f91109868ff1aa420a9ca3",
+    "std_qwen3asr_ane/auxiliary.py": "223843faefa4a1550779ed03dced99b804d44265dfbc835faaf8284ba8c2244c",
+    "std_qwen3asr_ane/batching.py": "844cd44f88ce321f28a97dfc830342dfd9627f026004eb4d0cf7aee2c91ce7bd",
+    "std_qwen3asr_ane/bulk.py": "b6ad3a440aef162ea28ac1b96ed389149c8e43b943347075dd6089e70d632903",
+    "std_qwen3asr_ane/bundle.py": "8c781d20cca7b52ec5b50ecc113e77fa3022acc2981f88febf1b0870f00eb057",
+    "std_qwen3asr_ane/cli.py": "5dbdd5b9fd93ad2d29053408014478c6c130a8b90ebc5255e0f1d6a723b3fb7b",
+    "std_qwen3asr_ane/compiled.py": "130a2cb17b9b1355128a9a8f5847e7be85471744f7bb883dbf6e82706a562bfd",
+    "std_qwen3asr_ane/conversion/__init__.py": "3bef1ed894996d48ae8d1c83ecb462bf6a471cce0a096d5b7e52bc7d1aa49640",
+    "std_qwen3asr_ane/conversion/batch_head.py": "ea3f12265c71f272476919ab288b64cdd4898d664efb1a083fcb961f720d3701",
+    "std_qwen3asr_ane/conversion/build.py": "b9a227c493c419a0ecb389a6e6ef2dfe73a1e9af2f470018d30dec93f71ecbd9",
+    "std_qwen3asr_ane/conversion/compress.py": "573ead30f453372c05ea60909b1231aae9e9e7e5b4898f2cbb61c78ffb65fd7c",
+    "std_qwen3asr_ane/conversion/decoder.py": "9ec4b17169e2309ff737eeeb77f16c3aa5f48686c26c023af235dda1208c889d",
+    "std_qwen3asr_ane/conversion/draft.py": "3a417fa6b2f93e3a4288c454e606d52e81dbecbec2a170e31e98983590323d6d",
+    "std_qwen3asr_ane/conversion/embedding.py": "36a18a41468bd225b9fc969e93ccbee4fd2bed90703ff9cba01980da729552ff",
+    "std_qwen3asr_ane/conversion/encoder.py": "701c369eea5254b5bbdd381c01b51104a703c720ef85d322023f3cbd8ef37963",
+    "std_qwen3asr_ane/conversion/passes.py": "2128f36a8ece5b1eae94e603a0c4fedab5721d993848aa6fc17bedf1b431e210",
+    "std_qwen3asr_ane/conversion/toolchain.py": "40af00b571b667bf5cafe1f219bbd5506ba45951d642b7e48079ea1b1c1b1aed",
+    "std_qwen3asr_ane/conversion_worker.py": "cf1978499db39319eafd9f060f88df1e53a4533801dd0a70b42d0dc36a70ab3e",
+    "std_qwen3asr_ane/decoding_guidance.py": "b98750ae6e7545450ffa0ae76510c247a6666902376801e221cc3d2eee49b43a",
+    "std_qwen3asr_ane/deployment.py": "3463fb5c17eab86e3c4e83a0fec3fa9995c5509e420e6e0c6fddbfad258d4efb",
+    "std_qwen3asr_ane/diagnostics.py": "3c37aeb7a9bfd972bcd2d6ce711c76285769f5633067c3ce5d1caed728b6cb5c",
+    "std_qwen3asr_ane/diarization.py": "791dcd1586b73ab4f2de0fd4ff7107255df1cb4da6445bf53d886cc8b17edb2c",
+    "std_qwen3asr_ane/draft.py": "2a2a92fc7b31038687e21f9f0a3fe376c5e960129872ac8dac0f64b81eff4f67",
+    "std_qwen3asr_ane/embedding.py": "68be473bd331734fc5d58fc9540c4682e9be2488c1b940d833aa24081055e986",
+    "std_qwen3asr_ane/errors.py": "f1cc33131f968ec59b25defe3086a70c61fbfeb101330374f0afb43730244ad9",
+    "std_qwen3asr_ane/languages.py": "3666864a4318e6e2b5d17e47ad582e00531d47863c87b765ede452c5e63d8c73",
+    "std_qwen3asr_ane/longform.py": "ccd30d7be1a6e2e40753e8e8f98a56e5b3cd535a443a4e6dc65463fec7a3f370",
+    "std_qwen3asr_ane/plugin.py": "6a3211873ad16d3c20585bb91566de13aadd34a22af6366d4fd9d416282b061d",
+    "std_qwen3asr_ane/postprocessing.py": "e4b3656b58edee912dc6571f73206da4e82efea7d5c419d5097ec364ef666f08",
+    "std_qwen3asr_ane/profiles.py": "28383ae5968a06e4dc6a87da9a00854f25736d2b75b41d186220931d9d4771de",
+    "std_qwen3asr_ane/result_text.py": "ffd7f8c510f69d0eed49b91d3e9c88066091b30a627cb8c914760dc776fb7b48",
+    "std_qwen3asr_ane/runtime.py": "da7977b1692d6eb0861f73c85027f3a6b8cde423fc98b6e01a428532087d023f",
+    "std_qwen3asr_ane/source_validation.py": "7de412988205cd0c3a41739a08280f5e3135d768b5f0b606f172f03bb9dd0fc4",
+    "std_qwen3asr_ane/speculative.py": "36d51bb6682bc3e05f714be230a317bfdb6b56e6ae46d40ac44b84e3000f651e",
+    "std_qwen3asr_ane/streaming.py": "bfc04328636f65624d69f51d66ed3f7c82f605eb08871b59dd3baf95f10a2834",
+    "std_qwen3asr_ane/streaming_context.py": "792909ed178af0dc8256c1ccadc2a2d99245693f595e773f8751dbef009f54f6",
+    "std_qwen3asr_ane/transcript_draft.py": "d869fb33b5a9654bec5edaf96c602787b754bfae1ed0be582bda946117447e6a",
+    "std_qwen3asr_ane/worker_environment.py": "7557b544d2b34df5ec4eb3c0a0ef624cb6449e79b09ae0fb31719f0fda66f173"
+  },
+  "upstream_revision": "5f6eef25e35e5e66e9010474e6dee531021e61f1",
+  "upstream_python_sha256": {
+    "__init__.py": "da2a1a279b13211d353c2d61244aa35f362781fc0b542b26fdc2295dbba248a5",
+    "audio/__init__.py": "14aa94431e7d0dbf48be53d076fc02543619e8fbe3750ac0f1e15795ec93c333",
+    "audio/conversion.py": "ecb6bbf07344d44a6066d98d387601dcbddded3369d750a36d593f876505f009",
+    "audio/format.py": "a881ec5453f602fb03f0f3a6a622520be38cb76fbe99b207cc37a864578bd918",
+    "audio/input.py": "0777398a3b1dbcdb38a38f11408c0b978a964747b1264ff6bc0a780fa47701b6",
+    "audio/loader.py": "c8a08feed3a90f1b75eb552c0da7f7f29ef6f47accb51201c1799a1ce3994dbe",
+    "audio/negotiation.py": "6eff2860a8c77d91cc690347564b5646f4d042770ab21ad8470a4f4753326374",
+    "audio/resampling.py": "8626182d92d79f83c800be393cfc20183f8af649f77da664dab4522c2e57cd6e",
+    "audio/wav.py": "cf507247f735aaec6cf228e4fe3fc7221b1354dfb60b4db763c84a32b4f00844",
+    "audio/wire.py": "cb1ec74009cdd8fb977161a1016b966f4d2a18311554a85313d4cf894789c383",
+    "compliance.py": "b3931235ef8b84e832c99fa90ea38e10d100cc78390013d9e45700e2e690cda0",
+    "contract/__init__.py": "9e73a160ea2af12824e3cedbd863d73be00b6faf66b5bfbb9ed7959e03caab4b",
+    "contract/_json_extra.py": "0b6cd92d41a37ae92e4f2e2edfbf22a02e51c0b68ec307b09e33e6b0a307a243",
+    "contract/artifacts.py": "a92f6167585791758359bc50d5b4464ccfe4911252ee71170cfce02565c245ef",
+    "contract/capabilities.py": "bf51875f005360c5f31e4a9f3cfa8cdac98a20246d1ff0229367f5a5801931c3",
+    "contract/exceptions.py": "8a64c0319771c03c4bbfa420f2bc99c15f06660b3ba0a444c4809f9d69f8dfd4",
+    "contract/identifiers.py": "df0daf8071a8530543347411613d74afe86bc4107d918354965d93512c85257f",
+    "contract/language.py": "a4b5804d102a291fc373ea5c445cf27c371a43a69030a4fa98202d468d0e9d5d",
+    "contract/metadata.py": "740190e86e440a981b0ff45ae98630f273557fb6344003e134e026716fa73947",
+    "contract/params.py": "e41556359596e400a2520fd4b587e4b85548fdb15ea0d90a0d027905c2ba542a",
+    "contract/properties.py": "611090b04598bb6966deafcd5dbc59ac9fe516878dc3649d2ffd0137e3f5abdb",
+    "contract/protocol_version.py": "72c5c94ff37dcabcedbf8144188a26bd3199b524a221a6ff7fae3c1f285bbf13",
+    "contract/results.py": "1b18adbf08fafa0b0f78a2cda8e6254ceabe9ff4aab5e26ab3e4c72edcac8294",
+    "engine.py": "d46c3f9ce0234b88c66ea2b10db43c8dfe21b4071fe3f0f0d02eb489bee06c4c",
+    "plugins/__init__.py": "b84be63377de3340d5e74236d9da0a8a7ded61b72f325e794167ee3f58b7ad14",
+    "plugins/discovery.py": "35233829f08b00842cf0c678966c521098211cb2171ebb6501d6d3a18795fdd9",
+    "renderers.py": "c1af7f3a89900a36d544b9a2417486bf60fc3ad69412ccf30dcbd18eda27358f",
+    "runtime/__init__.py": "45bdbae6fefe8a7f75beb24b6c42389d92af0b966e0255d1ef883493eccf3448",
+    "runtime/config.py": "c50d601f580240e8234b77d6ea368c53be3e59ce9ac8d59f474ff23c71d23d50",
+    "runtime/downloads.py": "5e4b4a55dc2f566e04299471a9422055caf7e09279478f0b6fece964a66236f3",
+    "runtime/engine_pool.py": "cf80d88e868e0df4b9e8333b36a172033800aae9af0773dce2c5f9cdf6499643",
+    "runtime/gating.py": "b299b130a4fc47bf2a3e804cc9b823aeed226ce427386c2f6b16a8b44d84d8c6",
+    "runtime/interface.py": "ec20a565d2f3fed8f418df1658ee2d9d4b5a5f8b35bbd23118568c69a02d14fe",
+    "runtime/protocol_boundary.py": "a2731d32f95221c36c8d0503630a9f9f7a273c45c86b09d1ddcce6717732e348",
+    "runtime/redaction.py": "20cfb896d1c71ab1f50e9a1c61c73f5e3d97d9be9bf0002645758ade8f4dac75",
+    "runtime/streaming.py": "8666965db9890e0d5bea9e5969d62fb83168e856b1e14c4923ca4e488abc6361",
+    "toolchain/__init__.py": "ec7529901ca03a94de350d39a3fd351c0b4a01547aaaab3a768b0da353d44c5e",
+    "toolchain/cli.py": "0bc24b843ca175284b690082816af5fbf6a8037cb8bd79592ea97f64a83ee0c4",
+    "toolchain/doctor.py": "dbafe1bbcd92bfbcaa94e6e8c53e4429b3e3e09e5c3d34b65096a5e0d29ea0a1",
+    "toolchain/server.py": "b48441b29f48cbedd387378496217ef03a826c9fb68c6f8bbf38d386d4f58743"
+  },
+  "installed_code_differences": [],
+  "models": {
+    "std-qwen3asr-ane/1.7b": {
+      "properties": {
+        "engine_id": "std-qwen3asr-ane",
+        "model_name": "1.7b",
+        "protocol_version": "0.2.0",
+        "accepted_input": [
+          "array"
+        ],
+        "native_sample_rate": 16000,
+        "accepted_sample_rates": [
+          16000
+        ],
+        "required_input_sample_rate": 16000,
+        "max_file_size": null,
+        "max_audio_duration": null,
+        "wire_encodings": [
+          "pcm_s16le",
+          "pcm_f32le"
+        ],
+        "selectable_languages": [
+          "zh",
+          "en",
+          "yue",
+          "ar",
+          "de",
+          "fr",
+          "es",
+          "pt",
+          "id",
+          "it",
+          "ko",
+          "ru",
+          "th",
+          "vi",
+          "ja",
+          "tr",
+          "hi",
+          "ms",
+          "nl",
+          "sv",
+          "da",
+          "fi",
+          "pl",
+          "cs",
+          "fil",
+          "fa",
+          "el",
+          "ro",
+          "hu",
+          "mk",
+          "auto"
+        ],
+        "detectable_languages": [
+          "zh",
+          "en",
+          "yue",
+          "ar",
+          "de",
+          "fr",
+          "es",
+          "pt",
+          "id",
+          "it",
+          "ko",
+          "ru",
+          "th",
+          "vi",
+          "ja",
+          "tr",
+          "hi",
+          "ms",
+          "nl",
+          "sv",
+          "da",
+          "fi",
+          "pl",
+          "cs",
+          "fil",
+          "fa",
+          "el",
+          "ro",
+          "hu",
+          "mk"
+        ],
+        "description": "Qwen3-ASR 1.7B using locally converted Core ML models targeting ANE."
+      },
+      "declared_capabilities": {
+        "batch": {
+          "language": {
+            "runtime_override": {
+              "supported": true
+            },
+            "candidate_languages": {
+              "supported": true,
+              "constraints": {
+                "max": 8
+              }
+            },
+            "supported": true
+          },
+          "word_timestamps": {
+            "supported": true,
+            "granularities": [
+              "word",
+              "segment",
+              "char"
+            ]
+          },
+          "guidance": {
+            "prompt": {
+              "supported": true,
+              "constraints": {
+                "max_tokens": 128
+              }
+            },
+            "phrase_hints": {
+              "supported": true,
+              "constraints": {
+                "max_terms": 16,
+                "max_chars_per_term": 128,
+                "max_words_per_term": null
+              }
+            },
+            "supported": true
+          },
+          "diarization": {
+            "supported": true,
+            "always_on": {
+              "supported": false
+            },
+            "constraints": {
+              "max_speakers": 32
+            }
+          },
+          "x_qwen3asr_multi_input": {
+            "supported": true,
+            "constraints": {
+              "max_group_size": 16
+            }
+          },
+          "supported": true
+        },
+        "streaming": {
+          "language": {
+            "runtime_override": {
+              "supported": true
+            },
+            "candidate_languages": {
+              "supported": true,
+              "constraints": {
+                "max": 8
+              }
+            },
+            "supported": true
+          },
+          "word_timestamps": {
+            "supported": true,
+            "granularities": [
+              "word",
+              "segment",
+              "char"
+            ]
+          },
+          "diarization": {
+            "supported": true,
+            "always_on": {
+              "supported": false
+            },
+            "constraints": {
+              "max_speakers": 32
+            }
+          },
+          "guidance": {
+            "prompt": {
+              "supported": true,
+              "constraints": {
+                "max_tokens": 128
+              }
+            },
+            "phrase_hints": {
+              "supported": true,
+              "constraints": {
+                "max_terms": 16,
+                "max_chars_per_term": 128,
+                "max_words_per_term": null
+              }
+            },
+            "mutable_mid_stream": {
+              "supported": false
+            },
+            "supported": true
+          },
+          "emits_partials": {
+            "supported": true
+          },
+          "re_segments": {
+            "supported": false
+          },
+          "word_stability": {
+            "supported": false
+          },
+          "audio_progress": {
+            "supported": true
+          },
+          "reconnect": {
+            "mode": "unsupported",
+            "supported": false
+          },
+          "finality_level": {
+            "mode": "closed",
+            "supported": true
+          },
+          "timestamps": {
+            "mode": "post_align",
+            "supported": true
+          },
+          "supported": true
+        },
+        "streaming_input": {
+          "supported": true
+        },
+        "streaming_output": {
+          "supported": true
+        },
+        "self_resamples": {
+          "supported": false
+        }
+      },
+      "declared_query_surface": {
+        "batch": true,
+        "batch.diarization": true,
+        "batch.diarization.always_on": false,
+        "batch.diarization.constraints": false,
+        "batch.guidance": true,
+        "batch.guidance.phrase_hints": true,
+        "batch.guidance.phrase_hints.constraints": false,
+        "batch.guidance.prompt": true,
+        "batch.guidance.prompt.constraints": false,
+        "batch.language": true,
+        "batch.language.candidate_languages": true,
+        "batch.language.candidate_languages.constraints": false,
+        "batch.language.runtime_override": true,
+        "batch.word_timestamps": true,
+        "batch.x_qwen3asr_multi_input": true,
+        "batch.x_qwen3asr_multi_input.constraints": false,
+        "self_resamples": false,
+        "streaming": true,
+        "streaming.audio_progress": true,
+        "streaming.diarization": true,
+        "streaming.diarization.always_on": false,
+        "streaming.diarization.constraints": false,
+        "streaming.emits_partials": true,
+        "streaming.finality_level": true,
+        "streaming.guidance": true,
+        "streaming.guidance.mutable_mid_stream": false,
+        "streaming.guidance.phrase_hints": true,
+        "streaming.guidance.phrase_hints.constraints": false,
+        "streaming.guidance.prompt": true,
+        "streaming.guidance.prompt.constraints": false,
+        "streaming.language": true,
+        "streaming.language.candidate_languages": true,
+        "streaming.language.candidate_languages.constraints": false,
+        "streaming.language.runtime_override": true,
+        "streaming.re_segments": false,
+        "streaming.reconnect": false,
+        "streaming.timestamps": true,
+        "streaming.word_stability": false,
+        "streaming.word_timestamps": true,
+        "streaming_input": true,
+        "streaming_output": true
+      },
+      "effective_query_surfaces": {
+        "logits/disabled": {
+          "batch": true,
+          "batch.diarization": false,
+          "batch.diarization.always_on": false,
+          "batch.diarization.constraints": false,
+          "batch.guidance": true,
+          "batch.guidance.phrase_hints": true,
+          "batch.guidance.phrase_hints.constraints": false,
+          "batch.guidance.prompt": true,
+          "batch.guidance.prompt.constraints": false,
+          "batch.language": true,
+          "batch.language.candidate_languages": true,
+          "batch.language.candidate_languages.constraints": false,
+          "batch.language.runtime_override": true,
+          "batch.word_timestamps": false,
+          "batch.x_qwen3asr_multi_input": true,
+          "batch.x_qwen3asr_multi_input.constraints": false,
+          "self_resamples": false,
+          "streaming": true,
+          "streaming.audio_progress": true,
+          "streaming.diarization": false,
+          "streaming.diarization.always_on": false,
+          "streaming.diarization.constraints": false,
+          "streaming.emits_partials": true,
+          "streaming.finality_level": true,
+          "streaming.guidance": true,
+          "streaming.guidance.mutable_mid_stream": false,
+          "streaming.guidance.phrase_hints": true,
+          "streaming.guidance.phrase_hints.constraints": false,
+          "streaming.guidance.prompt": true,
+          "streaming.guidance.prompt.constraints": false,
+          "streaming.language": true,
+          "streaming.language.candidate_languages": true,
+          "streaming.language.candidate_languages.constraints": false,
+          "streaming.language.runtime_override": true,
+          "streaming.re_segments": false,
+          "streaming.reconnect": false,
+          "streaming.timestamps": false,
+          "streaming.word_stability": false,
+          "streaming.word_timestamps": false,
+          "streaming_input": true,
+          "streaming_output": true
+        },
+        "logits/alignment": {
+          "batch": true,
+          "batch.diarization": false,
+          "batch.diarization.always_on": false,
+          "batch.diarization.constraints": false,
+          "batch.guidance": true,
+          "batch.guidance.phrase_hints": true,
+          "batch.guidance.phrase_hints.constraints": false,
+          "batch.guidance.prompt": true,
+          "batch.guidance.prompt.constraints": false,
+          "batch.language": true,
+          "batch.language.candidate_languages": true,
+          "batch.language.candidate_languages.constraints": false,
+          "batch.language.runtime_override": true,
+          "batch.word_timestamps": true,
+          "batch.x_qwen3asr_multi_input": true,
+          "batch.x_qwen3asr_multi_input.constraints": false,
+          "self_resamples": false,
+          "streaming": true,
+          "streaming.audio_progress": true,
+          "streaming.diarization": false,
+          "streaming.diarization.always_on": false,
+          "streaming.diarization.constraints": false,
+          "streaming.emits_partials": true,
+          "streaming.finality_level": true,
+          "streaming.guidance": true,
+          "streaming.guidance.mutable_mid_stream": false,
+          "streaming.guidance.phrase_hints": true,
+          "streaming.guidance.phrase_hints.constraints": false,
+          "streaming.guidance.prompt": true,
+          "streaming.guidance.prompt.constraints": false,
+          "streaming.language": true,
+          "streaming.language.candidate_languages": true,
+          "streaming.language.candidate_languages.constraints": false,
+          "streaming.language.runtime_override": true,
+          "streaming.re_segments": false,
+          "streaming.reconnect": false,
+          "streaming.timestamps": true,
+          "streaming.word_stability": false,
+          "streaming.word_timestamps": true,
+          "streaming_input": true,
+          "streaming_output": true
+        },
+        "logits/diarization": {
+          "batch": true,
+          "batch.diarization": true,
+          "batch.diarization.always_on": false,
+          "batch.diarization.constraints": false,
+          "batch.guidance": true,
+          "batch.guidance.phrase_hints": true,
+          "batch.guidance.phrase_hints.constraints": false,
+          "batch.guidance.prompt": true,
+          "batch.guidance.prompt.constraints": false,
+          "batch.language": true,
+          "batch.language.candidate_languages": true,
+          "batch.language.candidate_languages.constraints": false,
+          "batch.language.runtime_override": true,
+          "batch.word_timestamps": true,
+          "batch.x_qwen3asr_multi_input": true,
+          "batch.x_qwen3asr_multi_input.constraints": false,
+          "self_resamples": false,
+          "streaming": true,
+          "streaming.audio_progress": true,
+          "streaming.diarization": true,
+          "streaming.diarization.always_on": false,
+          "streaming.diarization.constraints": false,
+          "streaming.emits_partials": true,
+          "streaming.finality_level": true,
+          "streaming.guidance": true,
+          "streaming.guidance.mutable_mid_stream": false,
+          "streaming.guidance.phrase_hints": true,
+          "streaming.guidance.phrase_hints.constraints": false,
+          "streaming.guidance.prompt": true,
+          "streaming.guidance.prompt.constraints": false,
+          "streaming.language": true,
+          "streaming.language.candidate_languages": true,
+          "streaming.language.candidate_languages.constraints": false,
+          "streaming.language.runtime_override": true,
+          "streaming.re_segments": false,
+          "streaming.reconnect": false,
+          "streaming.timestamps": true,
+          "streaming.word_stability": false,
+          "streaming.word_timestamps": true,
+          "streaming_input": true,
+          "streaming_output": true
+        },
+        "chunk_max/disabled": {
+          "batch": true,
+          "batch.diarization": false,
+          "batch.diarization.always_on": false,
+          "batch.diarization.constraints": false,
+          "batch.guidance": true,
+          "batch.guidance.phrase_hints": false,
+          "batch.guidance.phrase_hints.constraints": false,
+          "batch.guidance.prompt": true,
+          "batch.guidance.prompt.constraints": false,
+          "batch.language": true,
+          "batch.language.candidate_languages": false,
+          "batch.language.candidate_languages.constraints": false,
+          "batch.language.runtime_override": true,
+          "batch.word_timestamps": false,
+          "batch.x_qwen3asr_multi_input": true,
+          "batch.x_qwen3asr_multi_input.constraints": false,
+          "self_resamples": false,
+          "streaming": true,
+          "streaming.audio_progress": true,
+          "streaming.diarization": false,
+          "streaming.diarization.always_on": false,
+          "streaming.diarization.constraints": false,
+          "streaming.emits_partials": true,
+          "streaming.finality_level": true,
+          "streaming.guidance": true,
+          "streaming.guidance.mutable_mid_stream": false,
+          "streaming.guidance.phrase_hints": false,
+          "streaming.guidance.phrase_hints.constraints": false,
+          "streaming.guidance.prompt": true,
+          "streaming.guidance.prompt.constraints": false,
+          "streaming.language": true,
+          "streaming.language.candidate_languages": false,
+          "streaming.language.candidate_languages.constraints": false,
+          "streaming.language.runtime_override": true,
+          "streaming.re_segments": false,
+          "streaming.reconnect": false,
+          "streaming.timestamps": false,
+          "streaming.word_stability": false,
+          "streaming.word_timestamps": false,
+          "streaming_input": true,
+          "streaming_output": true
+        },
+        "chunk_max/alignment": {
+          "batch": true,
+          "batch.diarization": false,
+          "batch.diarization.always_on": false,
+          "batch.diarization.constraints": false,
+          "batch.guidance": true,
+          "batch.guidance.phrase_hints": false,
+          "batch.guidance.phrase_hints.constraints": false,
+          "batch.guidance.prompt": true,
+          "batch.guidance.prompt.constraints": false,
+          "batch.language": true,
+          "batch.language.candidate_languages": false,
+          "batch.language.candidate_languages.constraints": false,
+          "batch.language.runtime_override": true,
+          "batch.word_timestamps": true,
+          "batch.x_qwen3asr_multi_input": true,
+          "batch.x_qwen3asr_multi_input.constraints": false,
+          "self_resamples": false,
+          "streaming": true,
+          "streaming.audio_progress": true,
+          "streaming.diarization": false,
+          "streaming.diarization.always_on": false,
+          "streaming.diarization.constraints": false,
+          "streaming.emits_partials": true,
+          "streaming.finality_level": true,
+          "streaming.guidance": true,
+          "streaming.guidance.mutable_mid_stream": false,
+          "streaming.guidance.phrase_hints": false,
+          "streaming.guidance.phrase_hints.constraints": false,
+          "streaming.guidance.prompt": true,
+          "streaming.guidance.prompt.constraints": false,
+          "streaming.language": true,
+          "streaming.language.candidate_languages": false,
+          "streaming.language.candidate_languages.constraints": false,
+          "streaming.language.runtime_override": true,
+          "streaming.re_segments": false,
+          "streaming.reconnect": false,
+          "streaming.timestamps": true,
+          "streaming.word_stability": false,
+          "streaming.word_timestamps": true,
+          "streaming_input": true,
+          "streaming_output": true
+        },
+        "chunk_max/diarization": {
+          "batch": true,
+          "batch.diarization": true,
+          "batch.diarization.always_on": false,
+          "batch.diarization.constraints": false,
+          "batch.guidance": true,
+          "batch.guidance.phrase_hints": false,
+          "batch.guidance.phrase_hints.constraints": false,
+          "batch.guidance.prompt": true,
+          "batch.guidance.prompt.constraints": false,
+          "batch.language": true,
+          "batch.language.candidate_languages": false,
+          "batch.language.candidate_languages.constraints": false,
+          "batch.language.runtime_override": true,
+          "batch.word_timestamps": true,
+          "batch.x_qwen3asr_multi_input": true,
+          "batch.x_qwen3asr_multi_input.constraints": false,
+          "self_resamples": false,
+          "streaming": true,
+          "streaming.audio_progress": true,
+          "streaming.diarization": true,
+          "streaming.diarization.always_on": false,
+          "streaming.diarization.constraints": false,
+          "streaming.emits_partials": true,
+          "streaming.finality_level": true,
+          "streaming.guidance": true,
+          "streaming.guidance.mutable_mid_stream": false,
+          "streaming.guidance.phrase_hints": false,
+          "streaming.guidance.phrase_hints.constraints": false,
+          "streaming.guidance.prompt": true,
+          "streaming.guidance.prompt.constraints": false,
+          "streaming.language": true,
+          "streaming.language.candidate_languages": false,
+          "streaming.language.candidate_languages.constraints": false,
+          "streaming.language.runtime_override": true,
+          "streaming.re_segments": false,
+          "streaming.reconnect": false,
+          "streaming.timestamps": true,
+          "streaming.word_stability": false,
+          "streaming.word_timestamps": true,
+          "streaming_input": true,
+          "streaming_output": true
+        }
+      },
+      "metadata": {
+        "artifacts": {
+          "applicable": true,
+          "supports_explicit_acquisition": true,
+          "may_acquire_during_inference": false
+        },
+        "x_qwen3asr_streaming": {
+          "algorithm": "bounded_windows_with_low_energy_boundaries_and_prefix_rollback",
+          "effective_session_audio_limit": "configured_recording_and_streaming_limits",
+          "decoder_prefix_reuse": "exact_embeddings_at_token_batch_boundaries",
+          "audio_graph_reuse": "exact_padded_inputs_and_masks",
+          "audio_feature_reuse": "aligned_stable_stft_power_with_full_width_mel_projection",
+          "context_limits": "session_configuration_and_bundle_audio_and_decoder_token_capacity",
+          "persistent_causal_encoder_state": false,
+          "segment_rollover_supported": true,
+          "native_window_seconds": 30.0
+        },
+        "x_qwen3asr_auxiliary": {
+          "compute": "cpu",
+          "alignment_languages": [
+            "zh",
+            "en",
+            "yue",
+            "fr",
+            "de",
+            "it",
+            "ja",
+            "ko",
+            "pt",
+            "ru",
+            "es"
+          ],
+          "diarization_requires_alignment": true,
+          "overlapping_word_attribution": "unassigned_when_evidence_is_ambiguous"
+        },
+        "x_qwen3asr_deployment": {
+          "os": "macos",
+          "minimum_os_major": 15,
+          "architectures": [
+            "arm64"
+          ]
+        },
+        "x_qwen3asr_batching": {
+          "method": "transcribe_many",
+          "transport": "python",
+          "execution": "packed_target_when_eligible_otherwise_serial_target",
+          "gpu_draft_used": false
+        }
+      },
+      "config_schema": {
+        "additionalProperties": false,
+        "description": "Standard ASR cache defaults, with explicit paths for existing local bundles.",
+        "properties": {
+          "engine": {
+            "const": "std-qwen3asr-ane",
+            "default": "std-qwen3asr-ane",
+            "title": "Engine",
+            "type": "string"
+          },
+          "strict": {
+            "default": true,
+            "description": "Unsupported-parameter policy: True=strict, False=best_effort.",
+            "title": "Strict",
+            "type": "boolean"
+          },
+          "allow_private_urls": {
+            "default": false,
+            "description": "Opt-in to relax the SSRF policy so an AudioUrl may target a private/loopback/link-local address (HTTPS is still required). False by default; set True only for a trusted internal endpoint.",
+            "title": "Allow Private Urls",
+            "type": "boolean"
+          },
+          "default_language": {
+            "default": "auto",
+            "title": "Default Language",
+            "type": "string"
+          },
+          "default_candidate_languages": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Default candidate languages.",
+            "title": "Default Candidate Languages"
+          },
+          "download_root": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Root directory for downloaded inference artifacts.",
+            "title": "Download Root"
+          },
+          "profile": {
+            "const": "general",
+            "default": "general",
+            "title": "Profile",
+            "type": "string"
+          },
+          "model_dir": {
+            "description": "Bundle path; defaults to the selected profile in the Standard ASR cache.",
+            "format": "path",
+            "title": "Model Dir",
+            "type": "string"
+          },
+          "source_dir": {
+            "description": "Where `standard-asr pull` keeps the pinned official checkpoint it converts from; reused when present.",
+            "format": "path",
+            "title": "Source Dir",
+            "type": "string"
+          },
+          "max_new_tokens": {
+            "default": 256,
+            "maximum": 4096,
+            "minimum": 1,
+            "title": "Max New Tokens",
+            "type": "integer"
+          },
+          "use_draft": {
+            "default": false,
+            "description": "Enable the optional GPU draft using its managed cache path.",
+            "title": "Use Draft",
+            "type": "boolean"
+          },
+          "draft_source_dir": {
+            "description": "Pinned 0.6B checkpoint cache, used by explicit draft acquisition.",
+            "format": "path",
+            "title": "Draft Source Dir",
+            "type": "string"
+          },
+          "draft_dir": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional draft bundle from `qwen3-asr-ane build-draft`. When set, batch transcription proposes tokens with Qwen3-ASR 0.6B on the GPU and verifies them on the Neural Engine; output is unchanged. Needs the gpu-draft extra.",
+            "title": "Draft Dir"
+          },
+          "draft_lookahead": {
+            "default": 15,
+            "maximum": 15,
+            "minimum": 1,
+            "title": "Draft Lookahead",
+            "type": "integer"
+          },
+          "draft_bits": {
+            "anyOf": [
+              {
+                "enum": [
+                  4,
+                  8
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 4,
+            "description": "In-memory quantization of the draft decoder; None keeps bf16.",
+            "title": "Draft Bits"
+          },
+          "stream_chunk_seconds": {
+            "default": 2.0,
+            "maximum": 30.0,
+            "minimum": 0.1,
+            "title": "Stream Chunk Seconds",
+            "type": "number"
+          },
+          "stream_unfixed_chunks": {
+            "default": 2,
+            "minimum": 0,
+            "title": "Stream Unfixed Chunks",
+            "type": "integer"
+          },
+          "stream_unfixed_tokens": {
+            "default": 5,
+            "minimum": 0,
+            "title": "Stream Unfixed Tokens",
+            "type": "integer"
+          },
+          "max_recording_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Recording Seconds"
+          },
+          "stream_max_audio_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stream Max Audio Seconds"
+          },
+          "stream_audio_queue_size": {
+            "default": 4,
+            "maximum": 128,
+            "minimum": 1,
+            "title": "Stream Audio Queue Size",
+            "type": "integer"
+          },
+          "use_batching": {
+            "default": false,
+            "description": "Acquire a compact head for packed offline requests.",
+            "title": "Use Batching",
+            "type": "boolean"
+          },
+          "batch_head_dir": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional target-bound offline batch head.",
+            "title": "Batch Head Dir"
+          },
+          "use_alignment": {
+            "default": false,
+            "description": "Enable explicitly acquired Qwen forced alignment on the CPU.",
+            "title": "Use Alignment",
+            "type": "boolean"
+          },
+          "alignment_dir": {
+            "description": "Managed forced-aligner model and isolated runtime directory.",
+            "format": "path",
+            "title": "Alignment Dir",
+            "type": "string"
+          },
+          "use_diarization": {
+            "default": false,
+            "description": "Enable explicitly acquired speaker diarization on the CPU.",
+            "title": "Use Diarization",
+            "type": "boolean"
+          },
+          "diarization_dir": {
+            "description": "Directory containing the pinned segmentation and speaker-embedding models.",
+            "format": "path",
+            "title": "Diarization Dir",
+            "type": "string"
+          }
+        },
+        "title": "Qwen3ASRConfig",
+        "type": "object"
+      },
+      "provider_params_schema": {
+        "additionalProperties": false,
+        "description": "Per-request decoding budget; omitted values use the engine's defaults.",
+        "properties": {
+          "max_new_tokens": {
+            "anyOf": [
+              {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max New Tokens"
+          },
+          "disable_draft": {
+            "default": false,
+            "description": "Use the ANE target without a configured GPU draft for this request.",
+            "title": "Disable Draft",
+            "type": "boolean"
+          },
+          "include_metrics": {
+            "default": false,
+            "description": "Include native timings, token IDs and raw decoder output in result.extra.",
+            "title": "Include Metrics",
+            "type": "boolean"
+          }
+        },
+        "title": "Qwen3ASRParams",
+        "type": "object"
+      }
+    },
+    "std-qwen3asr-ane/1.7b-short-dictation": {
+      "properties": {
+        "engine_id": "std-qwen3asr-ane",
+        "model_name": "1.7b-short-dictation",
+        "protocol_version": "0.2.0",
+        "accepted_input": [
+          "array"
+        ],
+        "native_sample_rate": 16000,
+        "accepted_sample_rates": [
+          16000
+        ],
+        "required_input_sample_rate": 16000,
+        "max_file_size": null,
+        "max_audio_duration": null,
+        "wire_encodings": [
+          "pcm_s16le",
+          "pcm_f32le"
+        ],
+        "selectable_languages": [
+          "zh",
+          "en",
+          "yue",
+          "ar",
+          "de",
+          "fr",
+          "es",
+          "pt",
+          "id",
+          "it",
+          "ko",
+          "ru",
+          "th",
+          "vi",
+          "ja",
+          "tr",
+          "hi",
+          "ms",
+          "nl",
+          "sv",
+          "da",
+          "fi",
+          "pl",
+          "cs",
+          "fil",
+          "fa",
+          "el",
+          "ro",
+          "hu",
+          "mk",
+          "auto"
+        ],
+        "detectable_languages": [
+          "zh",
+          "en",
+          "yue",
+          "ar",
+          "de",
+          "fr",
+          "es",
+          "pt",
+          "id",
+          "it",
+          "ko",
+          "ru",
+          "th",
+          "vi",
+          "ja",
+          "tr",
+          "hi",
+          "ms",
+          "nl",
+          "sv",
+          "da",
+          "fi",
+          "pl",
+          "cs",
+          "fil",
+          "fa",
+          "el",
+          "ro",
+          "hu",
+          "mk"
+        ],
+        "description": "Qwen3-ASR 1.7B using locally converted Core ML models targeting ANE."
+      },
+      "declared_capabilities": {
+        "batch": {
+          "language": {
+            "runtime_override": {
+              "supported": true
+            },
+            "candidate_languages": {
+              "supported": true,
+              "constraints": {
+                "max": 8
+              }
+            },
+            "supported": true
+          },
+          "word_timestamps": {
+            "supported": true,
+            "granularities": [
+              "word",
+              "segment",
+              "char"
+            ]
+          },
+          "guidance": {
+            "prompt": {
+              "supported": true,
+              "constraints": {
+                "max_tokens": 128
+              }
+            },
+            "phrase_hints": {
+              "supported": true,
+              "constraints": {
+                "max_terms": 16,
+                "max_chars_per_term": 128,
+                "max_words_per_term": null
+              }
+            },
+            "supported": true
+          },
+          "diarization": {
+            "supported": true,
+            "always_on": {
+              "supported": false
+            },
+            "constraints": {
+              "max_speakers": 32
+            }
+          },
+          "x_qwen3asr_multi_input": {
+            "supported": true,
+            "constraints": {
+              "max_group_size": 16
+            }
+          },
+          "supported": true
+        },
+        "streaming": {
+          "language": {
+            "runtime_override": {
+              "supported": true
+            },
+            "candidate_languages": {
+              "supported": true,
+              "constraints": {
+                "max": 8
+              }
+            },
+            "supported": true
+          },
+          "word_timestamps": {
+            "supported": true,
+            "granularities": [
+              "word",
+              "segment",
+              "char"
+            ]
+          },
+          "diarization": {
+            "supported": true,
+            "always_on": {
+              "supported": false
+            },
+            "constraints": {
+              "max_speakers": 32
+            }
+          },
+          "guidance": {
+            "prompt": {
+              "supported": true,
+              "constraints": {
+                "max_tokens": 128
+              }
+            },
+            "phrase_hints": {
+              "supported": true,
+              "constraints": {
+                "max_terms": 16,
+                "max_chars_per_term": 128,
+                "max_words_per_term": null
+              }
+            },
+            "mutable_mid_stream": {
+              "supported": false
+            },
+            "supported": true
+          },
+          "emits_partials": {
+            "supported": true
+          },
+          "re_segments": {
+            "supported": false
+          },
+          "word_stability": {
+            "supported": false
+          },
+          "audio_progress": {
+            "supported": true
+          },
+          "reconnect": {
+            "mode": "unsupported",
+            "supported": false
+          },
+          "finality_level": {
+            "mode": "closed",
+            "supported": true
+          },
+          "timestamps": {
+            "mode": "post_align",
+            "supported": true
+          },
+          "supported": true
+        },
+        "streaming_input": {
+          "supported": true
+        },
+        "streaming_output": {
+          "supported": true
+        },
+        "self_resamples": {
+          "supported": false
+        }
+      },
+      "declared_query_surface": {
+        "batch": true,
+        "batch.diarization": true,
+        "batch.diarization.always_on": false,
+        "batch.diarization.constraints": false,
+        "batch.guidance": true,
+        "batch.guidance.phrase_hints": true,
+        "batch.guidance.phrase_hints.constraints": false,
+        "batch.guidance.prompt": true,
+        "batch.guidance.prompt.constraints": false,
+        "batch.language": true,
+        "batch.language.candidate_languages": true,
+        "batch.language.candidate_languages.constraints": false,
+        "batch.language.runtime_override": true,
+        "batch.word_timestamps": true,
+        "batch.x_qwen3asr_multi_input": true,
+        "batch.x_qwen3asr_multi_input.constraints": false,
+        "self_resamples": false,
+        "streaming": true,
+        "streaming.audio_progress": true,
+        "streaming.diarization": true,
+        "streaming.diarization.always_on": false,
+        "streaming.diarization.constraints": false,
+        "streaming.emits_partials": true,
+        "streaming.finality_level": true,
+        "streaming.guidance": true,
+        "streaming.guidance.mutable_mid_stream": false,
+        "streaming.guidance.phrase_hints": true,
+        "streaming.guidance.phrase_hints.constraints": false,
+        "streaming.guidance.prompt": true,
+        "streaming.guidance.prompt.constraints": false,
+        "streaming.language": true,
+        "streaming.language.candidate_languages": true,
+        "streaming.language.candidate_languages.constraints": false,
+        "streaming.language.runtime_override": true,
+        "streaming.re_segments": false,
+        "streaming.reconnect": false,
+        "streaming.timestamps": true,
+        "streaming.word_stability": false,
+        "streaming.word_timestamps": true,
+        "streaming_input": true,
+        "streaming_output": true
+      },
+      "effective_query_surfaces": {
+        "logits/disabled": {
+          "batch": true,
+          "batch.diarization": false,
+          "batch.diarization.always_on": false,
+          "batch.diarization.constraints": false,
+          "batch.guidance": true,
+          "batch.guidance.phrase_hints": true,
+          "batch.guidance.phrase_hints.constraints": false,
+          "batch.guidance.prompt": true,
+          "batch.guidance.prompt.constraints": false,
+          "batch.language": true,
+          "batch.language.candidate_languages": true,
+          "batch.language.candidate_languages.constraints": false,
+          "batch.language.runtime_override": true,
+          "batch.word_timestamps": false,
+          "batch.x_qwen3asr_multi_input": true,
+          "batch.x_qwen3asr_multi_input.constraints": false,
+          "self_resamples": false,
+          "streaming": true,
+          "streaming.audio_progress": true,
+          "streaming.diarization": false,
+          "streaming.diarization.always_on": false,
+          "streaming.diarization.constraints": false,
+          "streaming.emits_partials": true,
+          "streaming.finality_level": true,
+          "streaming.guidance": true,
+          "streaming.guidance.mutable_mid_stream": false,
+          "streaming.guidance.phrase_hints": true,
+          "streaming.guidance.phrase_hints.constraints": false,
+          "streaming.guidance.prompt": true,
+          "streaming.guidance.prompt.constraints": false,
+          "streaming.language": true,
+          "streaming.language.candidate_languages": true,
+          "streaming.language.candidate_languages.constraints": false,
+          "streaming.language.runtime_override": true,
+          "streaming.re_segments": false,
+          "streaming.reconnect": false,
+          "streaming.timestamps": false,
+          "streaming.word_stability": false,
+          "streaming.word_timestamps": false,
+          "streaming_input": true,
+          "streaming_output": true
+        },
+        "logits/alignment": {
+          "batch": true,
+          "batch.diarization": false,
+          "batch.diarization.always_on": false,
+          "batch.diarization.constraints": false,
+          "batch.guidance": true,
+          "batch.guidance.phrase_hints": true,
+          "batch.guidance.phrase_hints.constraints": false,
+          "batch.guidance.prompt": true,
+          "batch.guidance.prompt.constraints": false,
+          "batch.language": true,
+          "batch.language.candidate_languages": true,
+          "batch.language.candidate_languages.constraints": false,
+          "batch.language.runtime_override": true,
+          "batch.word_timestamps": true,
+          "batch.x_qwen3asr_multi_input": true,
+          "batch.x_qwen3asr_multi_input.constraints": false,
+          "self_resamples": false,
+          "streaming": true,
+          "streaming.audio_progress": true,
+          "streaming.diarization": false,
+          "streaming.diarization.always_on": false,
+          "streaming.diarization.constraints": false,
+          "streaming.emits_partials": true,
+          "streaming.finality_level": true,
+          "streaming.guidance": true,
+          "streaming.guidance.mutable_mid_stream": false,
+          "streaming.guidance.phrase_hints": true,
+          "streaming.guidance.phrase_hints.constraints": false,
+          "streaming.guidance.prompt": true,
+          "streaming.guidance.prompt.constraints": false,
+          "streaming.language": true,
+          "streaming.language.candidate_languages": true,
+          "streaming.language.candidate_languages.constraints": false,
+          "streaming.language.runtime_override": true,
+          "streaming.re_segments": false,
+          "streaming.reconnect": false,
+          "streaming.timestamps": true,
+          "streaming.word_stability": false,
+          "streaming.word_timestamps": true,
+          "streaming_input": true,
+          "streaming_output": true
+        },
+        "logits/diarization": {
+          "batch": true,
+          "batch.diarization": true,
+          "batch.diarization.always_on": false,
+          "batch.diarization.constraints": false,
+          "batch.guidance": true,
+          "batch.guidance.phrase_hints": true,
+          "batch.guidance.phrase_hints.constraints": false,
+          "batch.guidance.prompt": true,
+          "batch.guidance.prompt.constraints": false,
+          "batch.language": true,
+          "batch.language.candidate_languages": true,
+          "batch.language.candidate_languages.constraints": false,
+          "batch.language.runtime_override": true,
+          "batch.word_timestamps": true,
+          "batch.x_qwen3asr_multi_input": true,
+          "batch.x_qwen3asr_multi_input.constraints": false,
+          "self_resamples": false,
+          "streaming": true,
+          "streaming.audio_progress": true,
+          "streaming.diarization": true,
+          "streaming.diarization.always_on": false,
+          "streaming.diarization.constraints": false,
+          "streaming.emits_partials": true,
+          "streaming.finality_level": true,
+          "streaming.guidance": true,
+          "streaming.guidance.mutable_mid_stream": false,
+          "streaming.guidance.phrase_hints": true,
+          "streaming.guidance.phrase_hints.constraints": false,
+          "streaming.guidance.prompt": true,
+          "streaming.guidance.prompt.constraints": false,
+          "streaming.language": true,
+          "streaming.language.candidate_languages": true,
+          "streaming.language.candidate_languages.constraints": false,
+          "streaming.language.runtime_override": true,
+          "streaming.re_segments": false,
+          "streaming.reconnect": false,
+          "streaming.timestamps": true,
+          "streaming.word_stability": false,
+          "streaming.word_timestamps": true,
+          "streaming_input": true,
+          "streaming_output": true
+        },
+        "chunk_max/disabled": {
+          "batch": true,
+          "batch.diarization": false,
+          "batch.diarization.always_on": false,
+          "batch.diarization.constraints": false,
+          "batch.guidance": true,
+          "batch.guidance.phrase_hints": false,
+          "batch.guidance.phrase_hints.constraints": false,
+          "batch.guidance.prompt": true,
+          "batch.guidance.prompt.constraints": false,
+          "batch.language": true,
+          "batch.language.candidate_languages": false,
+          "batch.language.candidate_languages.constraints": false,
+          "batch.language.runtime_override": true,
+          "batch.word_timestamps": false,
+          "batch.x_qwen3asr_multi_input": true,
+          "batch.x_qwen3asr_multi_input.constraints": false,
+          "self_resamples": false,
+          "streaming": true,
+          "streaming.audio_progress": true,
+          "streaming.diarization": false,
+          "streaming.diarization.always_on": false,
+          "streaming.diarization.constraints": false,
+          "streaming.emits_partials": true,
+          "streaming.finality_level": true,
+          "streaming.guidance": true,
+          "streaming.guidance.mutable_mid_stream": false,
+          "streaming.guidance.phrase_hints": false,
+          "streaming.guidance.phrase_hints.constraints": false,
+          "streaming.guidance.prompt": true,
+          "streaming.guidance.prompt.constraints": false,
+          "streaming.language": true,
+          "streaming.language.candidate_languages": false,
+          "streaming.language.candidate_languages.constraints": false,
+          "streaming.language.runtime_override": true,
+          "streaming.re_segments": false,
+          "streaming.reconnect": false,
+          "streaming.timestamps": false,
+          "streaming.word_stability": false,
+          "streaming.word_timestamps": false,
+          "streaming_input": true,
+          "streaming_output": true
+        },
+        "chunk_max/alignment": {
+          "batch": true,
+          "batch.diarization": false,
+          "batch.diarization.always_on": false,
+          "batch.diarization.constraints": false,
+          "batch.guidance": true,
+          "batch.guidance.phrase_hints": false,
+          "batch.guidance.phrase_hints.constraints": false,
+          "batch.guidance.prompt": true,
+          "batch.guidance.prompt.constraints": false,
+          "batch.language": true,
+          "batch.language.candidate_languages": false,
+          "batch.language.candidate_languages.constraints": false,
+          "batch.language.runtime_override": true,
+          "batch.word_timestamps": true,
+          "batch.x_qwen3asr_multi_input": true,
+          "batch.x_qwen3asr_multi_input.constraints": false,
+          "self_resamples": false,
+          "streaming": true,
+          "streaming.audio_progress": true,
+          "streaming.diarization": false,
+          "streaming.diarization.always_on": false,
+          "streaming.diarization.constraints": false,
+          "streaming.emits_partials": true,
+          "streaming.finality_level": true,
+          "streaming.guidance": true,
+          "streaming.guidance.mutable_mid_stream": false,
+          "streaming.guidance.phrase_hints": false,
+          "streaming.guidance.phrase_hints.constraints": false,
+          "streaming.guidance.prompt": true,
+          "streaming.guidance.prompt.constraints": false,
+          "streaming.language": true,
+          "streaming.language.candidate_languages": false,
+          "streaming.language.candidate_languages.constraints": false,
+          "streaming.language.runtime_override": true,
+          "streaming.re_segments": false,
+          "streaming.reconnect": false,
+          "streaming.timestamps": true,
+          "streaming.word_stability": false,
+          "streaming.word_timestamps": true,
+          "streaming_input": true,
+          "streaming_output": true
+        },
+        "chunk_max/diarization": {
+          "batch": true,
+          "batch.diarization": true,
+          "batch.diarization.always_on": false,
+          "batch.diarization.constraints": false,
+          "batch.guidance": true,
+          "batch.guidance.phrase_hints": false,
+          "batch.guidance.phrase_hints.constraints": false,
+          "batch.guidance.prompt": true,
+          "batch.guidance.prompt.constraints": false,
+          "batch.language": true,
+          "batch.language.candidate_languages": false,
+          "batch.language.candidate_languages.constraints": false,
+          "batch.language.runtime_override": true,
+          "batch.word_timestamps": true,
+          "batch.x_qwen3asr_multi_input": true,
+          "batch.x_qwen3asr_multi_input.constraints": false,
+          "self_resamples": false,
+          "streaming": true,
+          "streaming.audio_progress": true,
+          "streaming.diarization": true,
+          "streaming.diarization.always_on": false,
+          "streaming.diarization.constraints": false,
+          "streaming.emits_partials": true,
+          "streaming.finality_level": true,
+          "streaming.guidance": true,
+          "streaming.guidance.mutable_mid_stream": false,
+          "streaming.guidance.phrase_hints": false,
+          "streaming.guidance.phrase_hints.constraints": false,
+          "streaming.guidance.prompt": true,
+          "streaming.guidance.prompt.constraints": false,
+          "streaming.language": true,
+          "streaming.language.candidate_languages": false,
+          "streaming.language.candidate_languages.constraints": false,
+          "streaming.language.runtime_override": true,
+          "streaming.re_segments": false,
+          "streaming.reconnect": false,
+          "streaming.timestamps": true,
+          "streaming.word_stability": false,
+          "streaming.word_timestamps": true,
+          "streaming_input": true,
+          "streaming_output": true
+        }
+      },
+      "metadata": {
+        "artifacts": {
+          "applicable": true,
+          "supports_explicit_acquisition": true,
+          "may_acquire_during_inference": false
+        },
+        "x_qwen3asr_streaming": {
+          "algorithm": "bounded_windows_with_low_energy_boundaries_and_prefix_rollback",
+          "effective_session_audio_limit": "configured_recording_and_streaming_limits",
+          "decoder_prefix_reuse": "exact_embeddings_at_token_batch_boundaries",
+          "audio_graph_reuse": "exact_padded_inputs_and_masks",
+          "audio_feature_reuse": "aligned_stable_stft_power_with_full_width_mel_projection",
+          "context_limits": "session_configuration_and_bundle_audio_and_decoder_token_capacity",
+          "persistent_causal_encoder_state": false,
+          "segment_rollover_supported": true,
+          "native_window_seconds": 12.0
+        },
+        "x_qwen3asr_auxiliary": {
+          "compute": "cpu",
+          "alignment_languages": [
+            "zh",
+            "en",
+            "yue",
+            "fr",
+            "de",
+            "it",
+            "ja",
+            "ko",
+            "pt",
+            "ru",
+            "es"
+          ],
+          "diarization_requires_alignment": true,
+          "overlapping_word_attribution": "unassigned_when_evidence_is_ambiguous"
+        },
+        "x_qwen3asr_deployment": {
+          "os": "macos",
+          "minimum_os_major": 15,
+          "architectures": [
+            "arm64"
+          ]
+        },
+        "x_qwen3asr_batching": {
+          "method": "transcribe_many",
+          "transport": "python",
+          "execution": "packed_target_when_eligible_otherwise_serial_target",
+          "gpu_draft_used": false
+        }
+      },
+      "config_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "engine": {
+            "const": "std-qwen3asr-ane",
+            "default": "std-qwen3asr-ane",
+            "title": "Engine",
+            "type": "string"
+          },
+          "strict": {
+            "default": true,
+            "description": "Unsupported-parameter policy: True=strict, False=best_effort.",
+            "title": "Strict",
+            "type": "boolean"
+          },
+          "allow_private_urls": {
+            "default": false,
+            "description": "Opt-in to relax the SSRF policy so an AudioUrl may target a private/loopback/link-local address (HTTPS is still required). False by default; set True only for a trusted internal endpoint.",
+            "title": "Allow Private Urls",
+            "type": "boolean"
+          },
+          "default_language": {
+            "default": "auto",
+            "title": "Default Language",
+            "type": "string"
+          },
+          "default_candidate_languages": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Default candidate languages.",
+            "title": "Default Candidate Languages"
+          },
+          "download_root": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Root directory for downloaded inference artifacts.",
+            "title": "Download Root"
+          },
+          "profile": {
+            "const": "short-dictation",
+            "default": "short-dictation",
+            "title": "Profile",
+            "type": "string"
+          },
+          "model_dir": {
+            "description": "Bundle path; defaults to the selected profile in the Standard ASR cache.",
+            "format": "path",
+            "title": "Model Dir",
+            "type": "string"
+          },
+          "source_dir": {
+            "description": "Where `standard-asr pull` keeps the pinned official checkpoint it converts from; reused when present.",
+            "format": "path",
+            "title": "Source Dir",
+            "type": "string"
+          },
+          "max_new_tokens": {
+            "default": 128,
+            "maximum": 4096,
+            "minimum": 1,
+            "title": "Max New Tokens",
+            "type": "integer"
+          },
+          "use_draft": {
+            "default": false,
+            "description": "Enable the optional GPU draft using its managed cache path.",
+            "title": "Use Draft",
+            "type": "boolean"
+          },
+          "draft_source_dir": {
+            "description": "Pinned 0.6B checkpoint cache, used by explicit draft acquisition.",
+            "format": "path",
+            "title": "Draft Source Dir",
+            "type": "string"
+          },
+          "draft_dir": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional draft bundle from `qwen3-asr-ane build-draft`. When set, batch transcription proposes tokens with Qwen3-ASR 0.6B on the GPU and verifies them on the Neural Engine; output is unchanged. Needs the gpu-draft extra.",
+            "title": "Draft Dir"
+          },
+          "draft_lookahead": {
+            "default": 15,
+            "maximum": 15,
+            "minimum": 1,
+            "title": "Draft Lookahead",
+            "type": "integer"
+          },
+          "draft_bits": {
+            "anyOf": [
+              {
+                "enum": [
+                  4,
+                  8
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 4,
+            "description": "In-memory quantization of the draft decoder; None keeps bf16.",
+            "title": "Draft Bits"
+          },
+          "stream_chunk_seconds": {
+            "default": 2.0,
+            "maximum": 30.0,
+            "minimum": 0.1,
+            "title": "Stream Chunk Seconds",
+            "type": "number"
+          },
+          "stream_unfixed_chunks": {
+            "default": 2,
+            "minimum": 0,
+            "title": "Stream Unfixed Chunks",
+            "type": "integer"
+          },
+          "stream_unfixed_tokens": {
+            "default": 5,
+            "minimum": 0,
+            "title": "Stream Unfixed Tokens",
+            "type": "integer"
+          },
+          "max_recording_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Recording Seconds"
+          },
+          "stream_max_audio_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stream Max Audio Seconds"
+          },
+          "stream_audio_queue_size": {
+            "default": 4,
+            "maximum": 128,
+            "minimum": 1,
+            "title": "Stream Audio Queue Size",
+            "type": "integer"
+          },
+          "use_batching": {
+            "default": false,
+            "description": "Acquire a compact head for packed offline requests.",
+            "title": "Use Batching",
+            "type": "boolean"
+          },
+          "batch_head_dir": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional target-bound offline batch head.",
+            "title": "Batch Head Dir"
+          },
+          "use_alignment": {
+            "default": false,
+            "description": "Enable explicitly acquired Qwen forced alignment on the CPU.",
+            "title": "Use Alignment",
+            "type": "boolean"
+          },
+          "alignment_dir": {
+            "description": "Managed forced-aligner model and isolated runtime directory.",
+            "format": "path",
+            "title": "Alignment Dir",
+            "type": "string"
+          },
+          "use_diarization": {
+            "default": false,
+            "description": "Enable explicitly acquired speaker diarization on the CPU.",
+            "title": "Use Diarization",
+            "type": "boolean"
+          },
+          "diarization_dir": {
+            "description": "Directory containing the pinned segmentation and speaker-embedding models.",
+            "format": "path",
+            "title": "Diarization Dir",
+            "type": "string"
+          }
+        },
+        "title": "ShortDictationConfig",
+        "type": "object"
+      },
+      "provider_params_schema": {
+        "additionalProperties": false,
+        "description": "Per-request decoding budget; omitted values use the engine's defaults.",
+        "properties": {
+          "max_new_tokens": {
+            "anyOf": [
+              {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max New Tokens"
+          },
+          "disable_draft": {
+            "default": false,
+            "description": "Use the ANE target without a configured GPU draft for this request.",
+            "title": "Disable Draft",
+            "type": "boolean"
+          },
+          "include_metrics": {
+            "default": false,
+            "description": "Include native timings, token IDs and raw decoder output in result.extra.",
+            "title": "Include Metrics",
+            "type": "boolean"
+          }
+        },
+        "title": "Qwen3ASRParams",
+        "type": "object"
+      }
+    }
+  }
+}

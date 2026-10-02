@@ -33,7 +33,7 @@ from standard_asr.engine import RuntimeParams
 from std_qwen3asr_ane.plugin import Qwen3ASREngine, ShortDictationEngine
 
 ROOT = Path(__file__).resolve().parents[2]
-EVIDENCE = ROOT / "research/release-readiness/longform-validation-2026-09-22.json"
+EVIDENCE = ROOT / "research/release-readiness/longform-validation-2026-10-02.json"
 GENERAL_BUNDLE = ROOT / "artifacts/qwen3-asr-1.7b"
 SHORT_BUNDLE = ROOT / "artifacts/qwen3-asr-1.7b-short-dictation"
 ALIGNMENT_DIR = ROOT / "artifacts/auxiliary/alignment"
@@ -41,9 +41,7 @@ DIARIZATION_DIR = ROOT / "artifacts/auxiliary/diarization"
 EN_MANIFEST = ROOT / "artifacts/evaluation/librispeech-balanced-100/manifest.jsonl"
 ZH_MANIFEST = ROOT / "artifacts/evaluation/fleurs-zh-balanced-100/manifest.jsonl"
 SMOKE_MANIFEST = ROOT / "artifacts/evaluation/smoke/manifest.jsonl"
-OPTIONAL_SITE_PACKAGES = (
-    ROOT / "std_qwen3asr_ane/.venv/lib/python3.12/site-packages"
-)
+OPTIONAL_SITE_PACKAGES = ROOT / "std_qwen3asr_ane/.venv/lib/python3.12/site-packages"
 SAMPLE_RATE = 16_000
 
 
@@ -218,9 +216,9 @@ def load_audio(path: Path) -> np.ndarray:
     samples = values[:, 0]
     if source_rate != SAMPLE_RATE:
         common = math.gcd(source_rate, SAMPLE_RATE)
-        samples = resample_poly(
-            samples, SAMPLE_RATE // common, source_rate // common
-        ).astype(np.float32)
+        samples = resample_poly(samples, SAMPLE_RATE // common, source_rate // common).astype(
+            np.float32
+        )
     return np.ascontiguousarray(samples, dtype=np.float32)
 
 
@@ -413,8 +411,7 @@ def edit_alignment(reference: list[str], hypothesis: list[str]) -> dict[str, Any
         for name in ("substitute", "delete", "insert")
     }
     counts["likely_duplicate_insertions"] = sum(
-        item["operation"] == "insert" and item.get("likely_duplicate", False)
-        for item in operations
+        item["operation"] == "insert" and item.get("likely_duplicate", False) for item in operations
     )
     distance = costs[-1][-1]
     return {
@@ -435,6 +432,43 @@ def serializable_events(events: list[Any]) -> list[dict[str, Any]]:
     return [event.model_dump(mode="json") for event in events]
 
 
+def closed_window_groups(events: list[Any]) -> list[dict[str, Any]]:
+    """Group adjacent closed segment events that describe one input window.
+
+    A finalized aligned or diarized window may now expose one closed event per
+    measured segment.  Every event in that group intentionally carries the
+    same input span, while its text, words, speaker, and source offsets remain
+    segment-specific.
+    """
+
+    groups: list[dict[str, Any]] = []
+    for event in events:
+        if event.type != "final" or event.finality != "closed":
+            continue
+        if "input_start_seconds" not in event.extra or "input_end_seconds" not in event.extra:
+            continue
+        span = (
+            float(event.extra["input_start_seconds"]),
+            float(event.extra["input_end_seconds"]),
+        )
+        if groups and groups[-1]["span"] == span:
+            groups[-1]["events"].append(event)
+        else:
+            groups.append({"span": span, "events": [event]})
+    return groups
+
+
+def compose_closed_event_text(events: list[Any]) -> str:
+    """Compose closed events with their protocol-declared exact separators."""
+
+    closed = [event for event in events if event.type == "final" and event.finality == "closed"]
+    if not closed:
+        return ""
+    return (closed[0].text or "") + "".join(
+        event.text_separator + (event.text or "") for event in closed[1:]
+    )
+
+
 def public_batch(engine: Any, samples: np.ndarray, params: RuntimeParams) -> tuple[Any, float]:
     started = time.monotonic()
     result = engine.transcribe(AudioArray(samples, SAMPLE_RATE), params)
@@ -453,9 +487,7 @@ def individual_baselines(
     requested = sorted({(key, case.language) for case in cases for key in case.clip_keys})
     results: dict[tuple[str, str], str] = {}
     for key, language in requested:
-        result, _ = public_batch(
-            engine, clips[key].samples, RuntimeParams(language=language)
-        )
+        result, _ = public_batch(engine, clips[key].samples, RuntimeParams(language=language))
         results[(key, language)] = result.text
     return results
 
@@ -480,9 +512,11 @@ def join_edit_evidence(
     boundaries = window_bounds[1:-1]
     # Edit operations are exact.  The text indices expected at audio-window
     # boundaries are estimates because the baseline has no word timestamps.
-    approximate_indices = [
-        round(len(baseline_units) * boundary / window_bounds[-1]) for boundary in boundaries
-    ] if window_bounds else []
+    approximate_indices = (
+        [round(len(baseline_units) * boundary / window_bounds[-1]) for boundary in boundaries]
+        if window_bounds
+        else []
+    )
     for item in evidence["operations"]:
         item["near_estimated_window_join"] = any(
             abs(item["reference_index"] - index) <= 3 for index in approximate_indices
@@ -515,9 +549,7 @@ def evaluate_batch_case(
         units(material["reference"], case.metric), units(result.text, case.metric)
     )
     window_bounds = batch_window_bounds(result, duration)
-    baseline_edits = join_edit_evidence(
-        case, baseline_text, result.text, window_bounds
-    )
+    baseline_edits = join_edit_evidence(case, baseline_text, result.text, window_bounds)
     has_latin = bool(re.search(r"[a-zA-Z]", result.text))
     has_cjk = any(is_cjk(character) for character in result.text)
     checks = [
@@ -586,21 +618,20 @@ def validate_stream_lifecycle(
     events: list[Any], result: Any, duration: float, *, batch_text: str, metric: str, limit: float
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     terminals = [event for event in events if event.is_terminal]
-    cursors = [event.audio_processed_until for event in events if event.audio_processed_until is not None]
+    cursors = [
+        event.audio_processed_until for event in events if event.audio_processed_until is not None
+    ]
     closed = [event for event in events if event.type == "final" and event.finality == "closed"]
     stream_edits = edit_alignment(units(batch_text, metric), units(result.text, metric))
-    input_spans = [
-        (
-            float(event.extra["input_start_seconds"]),
-            float(event.extra["input_end_seconds"]),
-        )
-        for event in closed
-        if "input_start_seconds" in event.extra and "input_end_seconds" in event.extra
-    ]
+    window_groups = closed_window_groups(events)
+    input_spans = [group["span"] for group in window_groups]
+    event_text = compose_closed_event_text(events)
     spans_cover_input = bool(input_spans) and abs(input_spans[0][0]) <= 1 / SAMPLE_RATE
     previous = 0.0
     for start, end in input_spans:
-        spans_cover_input = spans_cover_input and abs(start - previous) <= 1 / SAMPLE_RATE and end >= start
+        spans_cover_input = (
+            spans_cover_input and abs(start - previous) <= 1 / SAMPLE_RATE and end >= start
+        )
         previous = end
     spans_cover_input = spans_cover_input and abs(previous - duration) <= 1 / SAMPLE_RATE
     checks = [
@@ -627,8 +658,17 @@ def validate_stream_lifecycle(
         gate(
             "closed_input_spans_cover_recording",
             spans_cover_input,
-            input_spans,
-            "closed plugin spans are adjacent and cover [0, input duration]",
+            {
+                "window_spans": input_spans,
+                "closed_events_per_window": [len(group["events"]) for group in window_groups],
+            },
+            "unique closed-window spans are adjacent and cover [0, input duration]",
+        ),
+        gate(
+            "closed_event_text_matches_result",
+            bool(closed) and event_text == result.text,
+            {"closed_event_text": event_text, "result_text": result.text},
+            "exact text_separator composition of closed events equals result.text",
         ),
         gate(
             "stream_vs_batch_error_rate",
@@ -659,6 +699,7 @@ async def incremental_stream(
     )
     started = time.monotonic()
     async with session:
+
         async def produce() -> None:
             for frame in frames:
                 await session.send_audio(frame)
@@ -738,9 +779,8 @@ def plan_document(clips: dict[str, Clip]) -> dict[str, Any]:
             "python": sys.version,
             "executable": sys.executable,
             "platform": platform.platform(),
-            "standard_asr_source_override_required": str(
-                ROOT / "references/standard-asr-audit-2026-09-22/src"
-            ),
+            "standard_asr_installation": "root .venv resolved from the published Git pin; no PYTHONPATH override",
+            "standard_asr_commit": "5f6eef25e35e5e66e9010474e6dee531021e61f1",
         },
         "artifacts": {
             "general_bundle": str(GENERAL_BUNDLE.relative_to(ROOT)),
@@ -757,6 +797,13 @@ def plan_document(clips: dict[str, Clip]) -> dict[str, Any]:
                 "streaming": "std_qwen3asr_ane/src/std_qwen3asr_ane/streaming.py",
                 "longform": "std_qwen3asr_ane/src/std_qwen3asr_ane/longform.py",
                 "diarization": "std_qwen3asr_ane/src/std_qwen3asr_ane/diarization.py",
+                "audio": "std_qwen3asr_ane/src/std_qwen3asr_ane/audio.py",
+                "audio_context": "std_qwen3asr_ane/src/std_qwen3asr_ane/audio_context.py",
+                "postprocessing": "std_qwen3asr_ane/src/std_qwen3asr_ane/postprocessing.py",
+                "auxiliary": "std_qwen3asr_ane/src/std_qwen3asr_ane/auxiliary.py",
+                "result_text": "std_qwen3asr_ane/src/std_qwen3asr_ane/result_text.py",
+                "runtime": "std_qwen3asr_ane/src/std_qwen3asr_ane/runtime.py",
+                "bulk": "std_qwen3asr_ane/src/std_qwen3asr_ane/bulk.py",
                 "verifier": "research/release-readiness/verify_longform.py",
             }.items()
         },
@@ -823,9 +870,7 @@ def run_profile(
     if profile == "general":
         engine = Qwen3ASREngine(
             model_dir=GENERAL_BUNDLE,
-            stream_chunk_seconds=STREAMING_PLAN["whole_input"][
-                "partial_cadence_seconds"
-            ],
+            stream_chunk_seconds=STREAMING_PLAN["whole_input"]["partial_cadence_seconds"],
         )
     else:
         engine = ShortDictationEngine(
@@ -838,20 +883,15 @@ def run_profile(
         batch_results: dict[str, Any] = {}
         for case in selected:
             material = case_material(case, clips)
-            baseline_text = join_text(
-                [baselines[(key, case.language)] for key in case.clip_keys]
-            )
+            baseline_text = join_text([baselines[(key, case.language)] for key in case.clip_keys])
             result, elapsed = public_batch(
                 engine,
                 material["samples"],
                 RuntimeParams(language=case.language),
             )
-            evaluated = evaluate_batch_case(
-                case, material, baseline_text, result, elapsed
-            )
+            evaluated = evaluate_batch_case(case, material, baseline_text, result, elapsed)
             evaluated["individual_clip_baselines"] = [
-                {"key": key, "text": baselines[(key, case.language)]}
-                for key in case.clip_keys
+                {"key": key, "text": baselines[(key, case.language)]} for key in case.clip_keys
             ]
             cases_output[case.name] = evaluated
             batch_results[case.name] = result
@@ -924,9 +964,7 @@ def run_default_partial_regression(
     engine = Qwen3ASREngine(model_dir=GENERAL_BUNDLE)
     try:
         events, result, elapsed = asyncio.run(
-            whole_input_stream(
-                engine, material["samples"], RuntimeParams(language=case.language)
-            )
+            whole_input_stream(engine, material["samples"], RuntimeParams(language=case.language))
         )
         checks, edits = validate_stream_lifecycle(
             events,
@@ -934,9 +972,7 @@ def run_default_partial_regression(
             material["samples"].size / SAMPLE_RATE,
             batch_text=batch_text,
             metric=case.metric,
-            limit=STREAMING_PLAN["whole_input_partial_regression"][
-                "batch_text_error_max"
-            ],
+            limit=STREAMING_PLAN["whole_input_partial_regression"]["batch_text_error_max"],
         )
         document["results"]["whole_input_default_2s_partial_regression"] = {
             "case": case.name,
@@ -990,9 +1026,7 @@ def validate_diarization(document: dict[str, Any], clips: dict[str, Clip], outpu
         individual = []
         individual_rows = []
         for key in ("en0", "en1", "en_same_speaker", "en_same_speaker_2"):
-            result, _ = public_batch(
-                engine, clips[key].samples, RuntimeParams(language="en")
-            )
+            result, _ = public_batch(engine, clips[key].samples, RuntimeParams(language="en"))
             individual.append(result.text)
             individual_rows.append({"key": key, "text": result.text})
         baseline = join_text(individual)
@@ -1013,9 +1047,7 @@ def validate_diarization(document: dict[str, Any], clips: dict[str, Clip], outpu
         )
         reference_edits = edit_alignment(word_units(reference), word_units(result.text))
         words = result.words or [
-            word
-            for segment in (result.segments or [])
-            for word in (segment.words or [])
+            word for segment in (result.segments or []) for word in (segment.words or [])
         ]
         speakers = sorted({word.speaker for word in words if word.speaker is not None})
         labeled_fraction = sum(word.speaker is not None for word in words) / max(1, len(words))
@@ -1029,12 +1061,30 @@ def validate_diarization(document: dict[str, Any], clips: dict[str, Clip], outpu
             left.end is not None and right.start is not None and left.end <= right.start + 1e-3
             for left, right in pairwise(words)
         )
+        window_groups = closed_window_groups(events)
+        # Window-level diarization evidence is repeated on each segment event
+        # from that window. Count it once per measured input window.
         speaker_turns = [
             turn
+            for group in window_groups
+            for turn in group["events"][0].extra.get("speaker_turns", [])
+        ]
+        offset_events = [
+            event
             for event in events
             if event.type == "final"
-            for turn in event.extra.get("speaker_turns", [])
+            and event.finality == "closed"
+            and "source_start" in event.extra
+            and "source_end" in event.extra
         ]
+        source_offsets_exact = bool(offset_events) and all(
+            isinstance(event.extra["source_start"], int)
+            and isinstance(event.extra["source_end"], int)
+            and 0 <= event.extra["source_start"] <= event.extra["source_end"] <= len(result.text)
+            and result.text[event.extra["source_start"] : event.extra["source_end"]]
+            == (event.text or "")
+            for event in offset_events
+        )
         plan = STREAMING_PLAN["diarized_whole_input"]
         checks = [
             *lifecycle,
@@ -1068,6 +1118,20 @@ def validate_diarization(document: dict[str, Any], clips: dict[str, Clip], outpu
                 len(speaker_turns),
                 "at least one model-measured speaker turn in streamed finals",
             ),
+            gate(
+                "global_source_offsets",
+                source_offsets_exact,
+                [
+                    {
+                        "segment_id": event.segment_id,
+                        "source_start": event.extra["source_start"],
+                        "source_end": event.extra["source_end"],
+                        "text": event.text,
+                    }
+                    for event in offset_events
+                ],
+                "every exposed source range is globally bounded and slices its exact event text",
+            ),
         ]
         document["results"]["diarized_whole_input_streaming"] = {
             "sherpa_onnx": sherpa,
@@ -1082,6 +1146,13 @@ def validate_diarization(document: dict[str, Any], clips: dict[str, Clip], outpu
             "speaker_labels_on_words": speakers,
             "speaker_labeled_word_fraction": labeled_fraction,
             "speaker_turns": speaker_turns,
+            "closed_window_groups": [
+                {
+                    "input_span_seconds": group["span"],
+                    "segment_ids": [event.segment_id for event in group["events"]],
+                }
+                for group in window_groups
+            ],
             "observed_wall_seconds_no_latency_claim": elapsed,
             "gates": checks,
             "passed": all(item["passed"] for item in checks),
@@ -1190,9 +1261,7 @@ def main() -> None:
     if missing_results:
         gate_failures.append(f"missing required result sections: {missing_results}")
     document["gate_failures"] = gate_failures
-    document["status"] = (
-        "passed" if not gate_failures and not document["failures"] else "failed"
-    )
+    document["status"] = "passed" if not gate_failures and not document["failures"] else "failed"
     write_evidence(document, args.output)
     print(json.dumps({"status": document["status"], "output": str(args.output)}))
     if gate_failures or document["failures"]:

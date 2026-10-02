@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BUNDLE = ROOT / "artifacts/qwen3-asr-1.7b"
 BASELINE_SOURCE = ROOT / ".cache/native-baseline-884c22e/std_qwen3asr_ane/src"
 CURRENT_SOURCE = ROOT / "std_qwen3asr_ane/src"
+EVIDENCE = ROOT / "research/release-readiness/native-baseline-884c22e-2026-10-02.json"
 HELDOUT_MANIFESTS = (
     ROOT / "artifacts/evaluation/librispeech-balanced-100/manifest.jsonl",
     ROOT / "artifacts/evaluation/fleurs-zh-balanced-100/manifest.jsonl",
@@ -74,7 +75,9 @@ def load(path: Path) -> tuple[np.ndarray, dict[str, object]]:
     samples = data[:, 0]
     if sample_rate != 16000:
         divisor = math.gcd(sample_rate, 16000)
-        samples = resample_poly(samples, 16000 // divisor, sample_rate // divisor).astype(np.float32)
+        samples = resample_poly(samples, 16000 // divisor, sample_rate // divisor).astype(
+            np.float32
+        )
     return samples, {
         "path": str(path),
         "sha256": sha256(path),
@@ -125,8 +128,11 @@ def run_single(label: str) -> None:
         runtime.close()
 
 
-def run_child(label: str, source: Path) -> dict:
-    environment = os.environ | {"PYTHONPATH": str(source)}
+def run_child(label: str, source: Path | None) -> dict:
+    environment = dict(os.environ)
+    environment.pop("PYTHONPATH", None)
+    if source is not None:
+        environment["PYTHONPATH"] = str(source)
     process = subprocess.run(
         [sys.executable, str(Path(__file__)), "single", "--label", label],
         cwd=ROOT,
@@ -142,9 +148,9 @@ def run_child(label: str, source: Path) -> dict:
     return json.loads(process.stdout)
 
 
-def compare() -> None:
+def compare() -> dict:
     baseline = run_child("baseline-884c22e", BASELINE_SOURCE)
-    current = run_child("current", CURRENT_SOURCE)
+    current = run_child("current-installed-editable", None)
     baseline_rows = {row["id"]: row for row in baseline["rows"]}
     current_rows = {row["id"]: row for row in current["rows"]}
     comparison = []
@@ -161,23 +167,44 @@ def compare() -> None:
                 "current": newer,
             }
         )
-    print(
-        json.dumps(
-            {
-                "command": "./.venv/bin/python research/release-readiness/compare_native_baseline.py compare",
-                "baseline": baseline,
-                "current": current,
-                "comparison": comparison,
-                "all_text_equal": all(item["text_equal"] for item in comparison),
-                "all_raw_text_equal": all(item["raw_text_equal"] for item in comparison),
-                "all_token_ids_equal": all(item["token_ids_equal"] for item in comparison),
-                "all_eos_equal": all(item["eos_equal"] for item in comparison),
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        flush=True,
+    equality = {
+        "all_text_equal": all(item["text_equal"] for item in comparison),
+        "all_raw_text_equal": all(item["raw_text_equal"] for item in comparison),
+        "all_token_ids_equal": all(item["token_ids_equal"] for item in comparison),
+        "all_eos_equal": all(item["eos_equal"] for item in comparison),
+    }
+    return {
+        "schema_version": 1,
+        "date": "2026-10-02",
+        "status": "passed" if all(equality.values()) else "failed",
+        "command": "./.venv/bin/python research/release-readiness/compare_native_baseline.py compare",
+        "environment": {
+            "executable": sys.executable,
+            "current_source": "installed editable package; PYTHONPATH removed",
+            "baseline_source_override": str(BASELINE_SOURCE),
+            "standard_asr_commit": "5f6eef25e35e5e66e9010474e6dee531021e61f1",
+        },
+        "source_sha256": {
+            "verifier": sha256(Path(__file__)),
+            "current_runtime": sha256(CURRENT_SOURCE / "std_qwen3asr_ane/runtime.py"),
+        },
+        "baseline": baseline,
+        "current": current,
+        "comparison": comparison,
+        **equality,
+        "failures": [] if all(equality.values()) else ["one or more exact parity gates failed"],
+        "performance_claim": False,
+    }
+
+
+def write_evidence(document: dict, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(document, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+        encoding="utf-8",
     )
+    temporary.replace(path)
 
 
 def main() -> None:
@@ -185,12 +212,30 @@ def main() -> None:
     subcommands = parser.add_subparsers(dest="mode", required=True)
     single = subcommands.add_parser("single")
     single.add_argument("--label", required=True)
-    subcommands.add_parser("compare")
+    compare_parser = subcommands.add_parser("compare")
+    compare_parser.add_argument("--output", type=Path, default=EVIDENCE)
     args = parser.parse_args()
     if args.mode == "single":
         run_single(args.label)
     else:
-        compare()
+        try:
+            document = compare()
+        except Exception as error:
+            document = {
+                "schema_version": 1,
+                "date": "2026-10-02",
+                "status": "failed",
+                "command": "./.venv/bin/python research/release-readiness/compare_native_baseline.py compare",
+                "source_sha256": {"verifier": sha256(Path(__file__))},
+                "failures": [{"type": type(error).__name__, "message": str(error)}],
+                "performance_claim": False,
+            }
+            write_evidence(document, args.output)
+            raise
+        write_evidence(document, args.output)
+        print(json.dumps({"status": document["status"], "output": str(args.output)}))
+        if document["status"] != "passed":
+            raise SystemExit(1)
 
 
 if __name__ == "__main__":

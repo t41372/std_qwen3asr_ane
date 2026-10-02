@@ -131,7 +131,7 @@ Both presets automatically divide longer recordings and streams into bounded, no
 
 Batch and streaming support language selection, automatic detection, context prompts, candidate-language restriction, phrase score hints and optional measured word, segment and character timing. Candidate lists are hard constraints on the model's language header and accept at most 8 languages. Phrase hints are bounded soft next-token score biases, at most 16 terms and 128 characters per term; they do not guarantee that a phrase appears. Both features require the target's full vocabulary logits. A target bundle built with a compact vocabulary head reports them unsupported instead of pretending to apply them; this is separate from the optional packed-batch head described below.
 
-Streaming accepts mono 16 kHz PCM (`pcm_s16le` or `pcm_f32le`). Partials are revisable. Each completed window is independently rescored from its full audio rather than being locked to provisional partial text, then emitted as a separate closed segment with an input-processing cursor. A successful final result carries the complete input duration. `word_stability`, `reconnect`, `re_segments` and mutable mid-stream guidance remain false: they are reserved Standard ASR semantics, not aliases for window rollover or revisable partials.
+Streaming accepts mono 16 kHz PCM (`pcm_s16le` or `pcm_f32le`). Partials are revisable. Each completed window is independently rescored from its full audio rather than being locked to provisional partial text, then emitted as one or more closed segments with an input-processing cursor. Speaker boundaries and exact text survive result reduction. A successful final result carries the complete input duration. `word_stability`, `reconnect`, `re_segments` and mutable mid-stream guidance remain false: they are reserved Standard ASR semantics, not aliases for window rollover or revisable partials.
 
 ## Optional forced alignment and speaker diarization
 
@@ -206,12 +206,13 @@ Select a previously built bundle explicitly; no migration or rebuild is required
 standard-asr transcribe std-qwen3asr-ane/1.7b recording.wav --set model_dir=/absolute/path/to/bundle
 ```
 
-The earlier `artifacts/` location is no longer an implicit lookup relative to your working directory. `model_dir` and `source_dir` remain available for explicit local paths. The earlier `profile=short-dictation` config remains supported; the separate model key makes the preset discoverable to applications.
+The earlier `artifacts/` location is no longer an implicit lookup relative to your working directory. `model_dir` and `source_dir` remain available for explicit local paths. Select short dictation through `std-qwen3asr-ane/1.7b-short-dictation`; setting `profile=short-dictation` on the general model is rejected so discovery and execution describe the same preset.
 
 ## Development and evidence
 
 - [Development and manual conversion](CONTRIBUTING.md)
 - [Release readiness ledger](docs/release-readiness-2026-09-22.md)
+- [Standard ASR capability coverage and limits](docs/standard-asr-capability-coverage.md)
 - [Historical Standard ASR contract audit](docs/standard-asr-audit.md)
 - [Research results](research/results-2026-09-13.md), [round 2 evidence](research/evidence/round2/README.md), and [experiment workflows](experiments/workflows/README.md)
 

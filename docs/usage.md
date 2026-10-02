@@ -26,7 +26,7 @@ finally:
     engine.close()
 ```
 
-Candidate languages are a hard restriction on the model's language header, with at most 8 candidates. Phrase hints are soft next-token score biases, with at most 16 terms and 128 characters per term. A hint does not guarantee that its phrase appears. Both paths need full vocabulary logits; a target bundle built with a compact vocabulary head narrows the effective capabilities and rejects these requests instead of silently ignoring them. That target-head format is separate from the optional packed-batch head.
+Candidate languages are a hard restriction on the model's language header, with at most 8 candidates. Phrase hints are soft next-token score biases, with at most 16 terms and 128 characters per term. A hint does not guarantee that its phrase appears. Both paths need full vocabulary logits; a target bundle built with a compact vocabulary head narrows the effective capabilities. Standard ASR then reports unsupported candidate languages as ignored, while unsupported phrase hints follow the request's strict or best-effort policy and explicit prompt-fallback option. Inspect diagnostics for the applied behavior. That target-head format is separate from the optional packed-batch head.
 
 `language="auto"` enables automatic language detection. A forced language suppresses detection metadata. Batch and streaming accept a context prompt of up to 128 tokens under the Standard ASR gate, with the native decoder capacity checked separately.
 
@@ -157,7 +157,7 @@ finally:
     engine.close()
 ```
 
-Outcomes remain in input order and contain exactly one `result` or `error`. `execution` is `"packed"`, `"serial"` or `"not_run"`. A target-bound compact batch head enables packed groups; ineligible inputs use a disclosed serial target fallback. Long recordings continue through the bounded-window path. Bulk execution does not use the optional GPU draft. Standard ASR `transcribe` remains the canonical single-recording call.
+Outcomes remain in input order and contain exactly one `result` or `error`. `execution` is `"packed"`, `"serial"`, `"not_run"` or `"unknown"`. The last value accompanies an error when native dispatch began but failed before returning trustworthy per-input execution details. A target-bound compact batch head enables packed groups; ineligible inputs and unavailable or unusable optional heads use a disclosed serial target fallback. Long recordings continue through the bounded-window path. Bulk execution does not use the optional GPU draft. Standard ASR `transcribe` remains the canonical single-recording call.
 
 ## Artifact status and deployment
 

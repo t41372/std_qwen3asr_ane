@@ -1,6 +1,26 @@
 # Standard ASR 回饋：原生 ANE 外掛的完整能力調查
 
-> 這是修復前的問題紀錄；多項上游改善已提交於 `1e09da15af31657845c4b8e205f67c6855fda259`。完成範圍與剩餘發佈驗收請見 [handoff](docs/handoff-2026-09-22.md)，不要把以下所有問題當成仍未修復。
+> 以下編號問題保留修復前的證據。2026-10-02 的處理狀態見下表；上游實作已提交於 `5f6eef25e35e5e66e9010474e6dee531021e61f1`，見 [Standard ASR PR #106](https://github.com/standard-voice/standard_asr/pull/106)。目前引擎的支援與限制請見[能力對照](docs/standard-asr-capability-coverage.md)，驗收見 [release ledger](docs/release-readiness-2026-09-22.md)。
+
+## 2026-10-02 處理狀態
+
+| 原問題 | 已完成的對應處理 | 原提案的邊界 |
+|---|---|---|
+| 1：server lifecycle／readiness | 標準同步 close 契約、依固定 model/config 的 singleflight engine pool、REST/WS lease、取消與 shutdown cleanup、read-only readiness endpoint。 | 每個已註冊 model 至多一個固定配置；不是可由請求任意新增配置的無界快取。沒有以此宣稱並行速度提升。 |
+| 2：session completion | async／sync 都提供 status、嚴格 final result、明確 partial_result；失敗不再冒充成功空結果。 | Partial snapshot 是使用者明確選擇保留的資料，不是成功證明。 |
+| 3：cursor／alignment／duration | 獨立 audio_progress capability、單調 cursor、measured input duration。 | Speech timing 仍需要真實 alignment；無此能力時不填造語音 spans。 |
+| 4：有效容量 | Mode-aware non-widening duration hook；外掛 bounded windows 與 total recording guards；原生精確 token/cache 檢查。 | 原提案中的跨引擎、逐請求、逐 session 的一般化 remaining-capacity 查詢仍是未標準化設計，沒有宣稱本次新增了這個公共 API。 |
+| 5：worker／SDK 前置條件 | 外掛共用 source validation、確切 dependency receipt/Python ABI fingerprint、offline feasibility；先檢查選配 SDK。Conversion／alignment worker 不繼承父 site-packages。Doctor 明示只分析 NumPy。 | 上游尚無一般化的 known/unknown SDK prerequisites 資料模型；外掛用明確 artifact report、deployment metadata 與 ConfigError 表達可知部分。 |
+| 6：wire ProviderParams | CLI／REST／WS 都依選定引擎的 concrete type 驗證；schema、錯誤與 swap safety 同步。 | Engine-specific params 保持非可攜；沒有任意 dict 繞過驗證。 |
+| 7：跨層驗證 | 已增加公開 API regression、真模型證據、乾淨 wheel 矩陣、來源綁定能力快照、完整結果與生命週期驗證。 | 沒有把目前 compliance 工具不存在的通用 runtime/acquisition flags 宣稱為已實作；這項通用作者工具提案保留給上游後續設計。 |
+| 8：無效 candidate default | 外掛已實作真正 candidate restriction，因此此配置對 full-logits target 有效；compact target 的 narrowing 與標準 diagnostic 已揭露。 | 通用 mixin 拆分屬上游設計建議，不再是此外掛的功能阻塞。 |
+| 9：canonical arrays | 共用 mono／finite／range 政策；ARRAY、encoded 與 resampling 邊界一致，輸入錯誤在 native hook 前歸類。 | 有損 normalization 會保留診斷；不把它當作聲學品質保證。 |
+
+本輪另修正了上游結果組合缺陷：舊 reducer 會 strip／space-join，破壞 CJK 與精確分段空白，且丟棄 Word channel 和 Segment extra。新契約提供 `text_separator`、唯一 composition helper、speaker segment／word／extra 保存，以及 separator-aware frozen-prefix／supersede 檢查。真實 speaker split 可以沿標準 event → result → wire 傳遞，無需把標準資訊藏進 vendor payload。
+
+最終 review 另重現 ProviderParams 自訂 `PydanticCustomError` 被重建成內部 KeyError。已保留 code、原樣 rendered message 與 `provider_params` 路徑，避免二次展開任意 context；原始 ValidationError 仍在 cause。CLI 返回 usage error，REST 返回經清理的 typed 422。關於 shutdown timeout 的建議，保留「先等待 active work，再關閉 engine」的 ownership 契約，並明確文件化沒有隱含 drain deadline；硬性 process deadline 由部署層處理，不以略過未完成 native work 假裝成功清理。
+
+這些一般化上游設計建議與引擎已宣告功能的缺陷分開記錄；能力 false 不會為了完成矩陣而改成不實 true。舊紀錄中的「沒有修改上游來源」描述的是 2026-09-22 調查當時，並非現在狀態。
 
 日期：2026-09-22。Standard ASR：`1b2cf3fa5860c075e5160eb60b26b708a7c8bfea`；外掛：`std_qwen3asr_ane@884c22e`。最新 Standard ASR 已直接 clone 到 `references/standard-asr-audit-2026-09-22`，與外掛 pin `8b124e8c` 的 Python／規範內容相同；以下不是套用舊版文件後推測的新問題。
 

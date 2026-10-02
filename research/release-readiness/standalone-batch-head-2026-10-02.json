@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-02",
+  "outcome": "pass",
+  "scope": "Real standalone Standard ASR acquisition of a target-bound compact batch head through a newly created managed conversion worker, followed by repeat-pull, downloads-disabled reuse, and native prediction parity.",
+  "repository": {
+    "branch": "feat/standard-asr-release-readiness",
+    "head_before_validation": "a8ae9140de59b666b1f0bd9c9db10471e0bad669",
+    "worktree_was_dirty": true,
+    "package_version": "0.2.0a1",
+    "installation": "editable isolated base environment",
+    "python": "3.13.11"
+  },
+  "standard_asr": {
+    "version": "0.2.0.dev0",
+    "url": "https://github.com/standard-voice/standard_asr.git",
+    "commit": "5f6eef25e35e5e66e9010474e6dee531021e61f1"
+  },
+  "isolation": {
+    "runtime_environment": ".cache/release-batch-head-2026-10-02/runtime",
+    "artifact_root": "artifacts/release-readiness/standalone-batch-head-2026-10-02-5f6eef25",
+    "runtime_sync": "UV_PROJECT_ENVIRONMENT=.cache/release-batch-head-2026-10-02/runtime UV_CACHE_DIR=.cache/uv uv sync --locked --no-default-groups --offline",
+    "conversion_toolchain_available_in_runtime": false,
+    "existing_main_venv_changed": false,
+    "existing_source_or_bundle_changed": false
+  },
+  "inputs": {
+    "source": {
+      "origin": "artifacts/source/Qwen3-ASR-1.7B",
+      "isolated_copy": "artifacts/release-readiness/standalone-batch-head-2026-10-02-5f6eef25/source/Qwen3-ASR-1.7B",
+      "copy_method": "APFS clone via cp -cR; this was local reuse, not a fresh model download",
+      "model_id": "Qwen/Qwen3-ASR-1.7B",
+      "revision": "7278e1e70fe206f11671096ffdd38061171dd6e5",
+      "content_sha256": "008592c1f35ad26b9c060bf65ae36b413b02430bfe43998c2a3d960806106ed0",
+      "total_bytes_hashed_by_pull": 4703112789,
+      "files": [
+        {"path": "README.md", "size_bytes": 57456, "sha256": "5058416891bc47a2051557765997e8c42f8eb78a0e33c3e775bd17d4b0ba4d50"},
+        {"path": "chat_template.json", "size_bytes": 1161, "sha256": "75a8cfca24f00de72d796fbfed6858fc9614ef3dabd8696684cc3bc03a9c58ff"},
+        {"path": "config.json", "size_bytes": 6194, "sha256": "2e74a751548b8ad7d7526d29365ad8144c345d8b412b1152d25dc6698452712f"},
+        {"path": "generation_config.json", "size_bytes": 142, "sha256": "1da527824d81e07118facff437e03f2e24a23311e3bdeb2368973fe77e5f275c"},
+        {"path": "merges.txt", "size_bytes": 1671853, "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"},
+        {"path": "model-00001-of-00002.safetensors", "size_bytes": 4220320824, "sha256": "a4cd1f1a04d90b757dc7f7dd26254e69a013b19e80efe590a83c6a3bde8608d6"},
+        {"path": "model-00002-of-00002.safetensors", "size_bytes": 478200688, "sha256": "6e0b9d9e09e2e0238e7ef3cc8a484ab387e91b90f1900bedf88bc92d7929ccfc"},
+        {"path": "model.safetensors.index.json", "size_bytes": 64821, "sha256": "f994739fe38e5210b9e3e8ce6c6307315e2ceac3cb630e7b7414d69dce520f60"},
+        {"path": "preprocessor_config.json", "size_bytes": 330, "sha256": "45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d"},
+        {"path": "tokenizer_config.json", "size_bytes": 12487, "sha256": "4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c"},
+        {"path": "vocab.json", "size_bytes": 2776833, "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"}
+      ]
+    },
+    "target": {
+      "origin": "artifacts/qwen3-asr-1.7b-p14-lut8-g32-compiled",
+      "isolated_copy": "artifacts/release-readiness/standalone-batch-head-2026-10-02-5f6eef25/model/qwen3-asr-1.7b",
+      "copy_method": "APFS clone via cp -cR; the target was reused rather than reconverted",
+      "manifest_sha256": "6fb52962b00b709994915b857551c92a13074b2223e31de94ac3b73b284fa43f",
+      "token_batch_size": 16,
+      "initial_standard_asr_state": "ready"
+    },
+    "batch_head": {
+      "path": "artifacts/release-readiness/standalone-batch-head-2026-10-02-5f6eef25/model/qwen3-asr-1.7b-batch-head",
+      "initial_standard_asr_state": "missing"
+    }
+  },
+  "fresh_pull": {
+    "entry_point": ".cache/release-batch-head-2026-10-02/runtime/bin/standard-asr",
+    "arguments": [
+      "pull",
+      "std-qwen3asr-ane/1.7b",
+      "--set", "profile=general",
+      "--set", "model_dir=<artifact-root>/model/qwen3-asr-1.7b",
+      "--set", "source_dir=<artifact-root>/source/Qwen3-ASR-1.7B",
+      "--set", "use_batching=true",
+      "--set", "batch_head_dir=<artifact-root>/model/qwen3-asr-1.7b-batch-head",
+      "--json"
+    ],
+    "environment": {
+      "PYTHONPATH": ".cache/release-batch-head-2026-10-02/runtime/lib/python3.13/site-packages",
+      "STANDARD_ASR_ALLOW_DOWNLOAD": "1",
+      "UV_CACHE_DIR": ".cache/uv"
+    },
+    "managed_worker": {
+      "path": "artifacts/release-readiness/standalone-batch-head-2026-10-02-5f6eef25/source/conversion-worker-v1-7ca7592b71e51678",
+      "fingerprint": "7ca7592b71e51678",
+      "newly_created": true,
+      "launch_isolated_mode": true,
+      "parent_pythonpath_removed": true,
+      "polluted_parent_pythonpath_tokenizers_version": "0.23.2",
+      "isolated_worker_tokenizers_version": "0.22.2",
+      "receipt_schema": 1,
+      "python": "CPython 3.13 cpython-313",
+      "dependencies": [
+        "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@5f6eef25e35e5e66e9010474e6dee531021e61f1",
+        "coremltools==9.0",
+        "torch==2.14.0",
+        "numpy==2.5.3",
+        "transformers==4.57.6",
+        "huggingface-hub==0.36.2",
+        "safetensors==0.8.0",
+        "scipy==1.18.1",
+        "tokenizers==0.22.2"
+      ]
+    },
+    "observed_phases": ["resolving", "verifying source", "converting batch head", "verifying batch head", "finalizing"],
+    "exit_code": 0,
+    "final_readiness": "ready",
+    "final_states": {
+      "qwen3-asr-1.7b-coreml": "ready",
+      "qwen3-asr-1.7b-batch-head": "ready"
+    },
+    "batch_head_artifact": {
+      "created_at": "2026-10-02T15:27:13.823747+00:00",
+      "host": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+      "manifest_sha256": "8900f471afe71c67bea755cf69ce69f6e90549ac99acc654d6d46f2d598a408e",
+      "kind": "qwen3-asr-ane-batch-head",
+      "token_batch_size": 16,
+      "vocabulary_chunk": 8192,
+      "chunks": 19,
+      "weight_compression": {"scheme": "palette", "bits": 8, "group_size": 32},
+      "weight_bytes": 313602560,
+      "weight_sha256": "bdab21e720bd63458759a1421c27bdec4fe4ec2be2a03b164ee52e47a6178da9",
+      "declared_build_seconds": 9.514487874999759,
+      "versions": {"torch": "2.14.0", "coremltools": "9.0", "numpy": "2.5.3"}
+    },
+    "isolation_note": "The caller deliberately exposed its whole Python 3.13 site-packages through PYTHONPATH. acquire_in_worker removed PYTHONPATH and launched the fingerprinted worker with Python -I, so worker imports stayed pinned."
+  },
+  "native_prediction": {
+    "validator": "research/release-readiness/verify_standalone_batch_head.py --predict",
+    "compute_units": "cpu_and_ne",
+    "seed": 20261002,
+    "rows": 3,
+    "packed_tokens": [140803, 137716, 33329],
+    "serial_tokens": [140803, 137716, 33329],
+    "equal": true,
+    "performance_claim": false
+  },
+  "repeat_pull": {
+    "exit_code": 0,
+    "final_readiness": "ready",
+    "conversion_or_worker_creation_observed": false,
+    "head_manifest_sha256_after": "8900f471afe71c67bea755cf69ce69f6e90549ac99acc654d6d46f2d598a408e"
+  },
+  "offline_reuse": {
+    "environment": {
+      "STANDARD_ASR_ALLOW_DOWNLOAD": "0",
+      "UV_CACHE_DIR": "artifacts/release-readiness/standalone-batch-head-2026-10-02-5f6eef25/empty-uv-cache"
+    },
+    "empty_uv_cache_was_created": false,
+    "exit_code": 0,
+    "final_readiness": "ready",
+    "conversion_or_worker_creation_observed": false,
+    "head_manifest_sha256_after": "8900f471afe71c67bea755cf69ce69f6e90549ac99acc654d6d46f2d598a408e"
+  },
+  "verification": {
+    "targeted_tests": "41 passed",
+    "targeted_test_command": "STANDARD_ASR_ALLOW_DOWNLOAD=0 .venv/bin/pytest -q std_qwen3asr_ane/tests/test_acquisition_worker.py std_qwen3asr_ane/tests/test_worker_environment.py std_qwen3asr_ane/tests/test_artifact_lifecycle.py",
+    "ruff": "passed",
+    "diff_check": "passed"
+  },
+  "source_code_sha256": {
+    "pyproject.toml": "75d27988e0db959ecfa3eb68a01c57f67729413cad3e6062b9dcd92707f0f2ed",
+    "uv.lock": "6079c7ca0c80eca40fdade96e04974e67391d70c0c677787a2333dea5351de7a",
+    "std_qwen3asr_ane/src/std_qwen3asr_ane/acquisition.py": "c8ba5d001d8e884e033f9d5f6014bc6345f3fe18629c4786aad3b636a83617da",
+    "std_qwen3asr_ane/src/std_qwen3asr_ane/artifact_lifecycle.py": "5c848024bfda8536619526a82c49d892e8405da12b9d66d942ca8e0103d7eb76",
+    "std_qwen3asr_ane/src/std_qwen3asr_ane/conversion_worker.py": "cf1978499db39319eafd9f060f88df1e53a4533801dd0a70b42d0dc36a70ab3e",
+    "std_qwen3asr_ane/src/std_qwen3asr_ane/conversion/batch_head.py": "ea3f12265c71f272476919ab288b64cdd4898d664efb1a083fcb961f720d3701",
+    "std_qwen3asr_ane/src/std_qwen3asr_ane/batching.py": "844cd44f88ce321f28a97dfc830342dfd9627f026004eb4d0cf7aee2c91ce7bd",
+    "std_qwen3asr_ane/src/std_qwen3asr_ane/source_validation.py": "7de412988205cd0c3a41739a08280f5e3135d768b5f0b606f172f03bb9dd0fc4",
+    "std_qwen3asr_ane/src/std_qwen3asr_ane/worker_environment.py": "7557b544d2b34df5ec4eb3c0a0ef624cb6449e79b09ae0fb31719f0fda66f173",
+    "research/release-readiness/verify_standalone_batch_head.py": "738aef271cb45800b1f92ed1b6ecc8a8b080813271178baab9cd57281d8ebcea"
+  },
+  "raw_logs_ignored_by_git": [
+    "artifacts/release-readiness/standalone-batch-head-2026-10-02-5f6eef25/logs/pull-1-fresh.typescript",
+    "artifacts/release-readiness/standalone-batch-head-2026-10-02-5f6eef25/logs/pull-2-repeat.typescript",
+    "artifacts/release-readiness/standalone-batch-head-2026-10-02-5f6eef25/logs/pull-3-offline-empty-cache.typescript"
+  ],
+  "limitations": [
+    "The source checkpoint and target bundle were local APFS clones of existing artifacts; this run did not redownload 4.7 GB or reconvert the full 1.7B target.",
+    "The compact batch head and managed worker were new and were produced through the real Standard ASR pull path.",
+    "The native comparison validates target-head token parity for three deterministic rows. It is not a quality, latency, throughput, energy, or hardware-placement benchmark.",
+    "Earlier runs against Standard ASR 1e09da15 and cad09d41 remain only in ignored artifacts and are not the release-gate evidence summarized here."
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "date": "2026-10-02",
+  "status": "passed",
+  "product_code_commit": "a8ae9140de59b666b1f0bd9c9db10471e0bad669",
+  "standard_asr_commit": "5f6eef25e35e5e66e9010474e6dee531021e61f1",
+  "package_version": "0.2.0a1",
+  "product_tests": {
+    "tests": 711,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "python": "3.12",
+    "source_override": false,
+    "coreml_cpu_checks": true,
+    "junit": "artifacts/release-readiness/final-tests-2026-10-02.xml"
+  },
+  "upstream_tests": {
+    "passed": 2667,
+    "coverage_percent": 100,
+    "statements": 7429,
+    "branches": 2528,
+    "prek_all_files": "passed"
+  },
+  "static_checks": {
+    "ruff_product": "passed",
+    "ruff_verifiers": "passed",
+    "actionlint": "passed",
+    "git_diff_check": "passed"
+  },
+  "install_matrix": {
+    "passed": 18,
+    "total": 18,
+    "python": [
+      "3.12",
+      "3.13"
+    ]
+  },
+  "native": {
+    "baseline_exact_cases": 6,
+    "longform_batch_cases": 5,
+    "streaming_scenarios": 4,
+    "packed_exact_cases": 3,
+    "installed_wheel_http_websocket": "passed",
+    "fresh_managed_head_and_offline_reuse": "passed",
+    "performance_claim": false
+  },
+  "report_sha256": {
+    "capability-snapshot-2026-10-02.json": "7dd4f1adbcd070b8818234359901557aa5fde1f6369fd1338e35625c967e781d",
+    "install-matrix-2026-10-02.json": "d4045175e297e13e06fbee2f73713cc91c7eef21d6ac2e39e3fbb2f0fad785c1",
+    "server-native-2026-10-02.json": "a63dc18231ea0a2fe97f22b9cae32c784ce7b680fbfb1de1a0e2ba40262e44c8",
+    "standalone-batch-head-2026-10-02.json": "5793dd895ac8cf1ba8e2ac5ca1a5393472a9f2afc6e2e320acf401326fe5b94f",
+    "native-baseline-884c22e-2026-10-02.json": "97f6e75168e7c8d0154f6c59c3e1508666e5712a6c716d4bc7746061b007d999",
+    "longform-validation-2026-10-02.json": "d666bd7d37a73beca2ae1dad352519e4dbeef67bc6d89d5604884ffc71d9c111",
+    "packed-parity-2026-10-02.json": "2fae5affd159b1eada59f50be0b7ec87d7945cacdd1ac9c185172bf6b8598a08",
+    "integration-review-2026-10-02.md": "fdbea046afa68fbea8784451102bd70a5cc913da2b6530876f1b385f1d8c2614"
+  },
+  "validated_ci_runs": {
+    "plugin": "https://github.com/t41372/std_qwen3asr_ane/actions/runs/37026838204",
+    "standard_asr": "https://github.com/standard-voice/standard_asr/actions/runs/37026751698"
+  },
+  "release_published": false,
+  "limitations": "Fixed fixtures establish the recorded correctness and lifecycle gates, not all-language acoustic accuracy or a new performance result. Unsupported protocol capabilities remain explicitly false."
+}
