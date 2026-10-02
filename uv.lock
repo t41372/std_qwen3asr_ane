@@ -2115,7 +2115,7 @@ wheels = [
 [[package]]
 name = "standard-asr"
 version = "0.2.0.dev0"
-source = { git = "https://github.com/standard-voice/standard_asr.git?rev=cad09d412479937f7fdbede0e0c54437bef25ef7#cad09d412479937f7fdbede0e0c54437bef25ef7" }
+source = { git = "https://github.com/standard-voice/standard_asr.git?rev=5f6eef25e35e5e66e9010474e6dee531021e61f1#5f6eef25e35e5e66e9010474e6dee531021e61f1" }
 dependencies = [
     { name = "numpy" },
     { name = "pydantic" },
@@ -2200,7 +2200,7 @@ requires-dist = [
     { name = "sherpa-onnx", marker = "extra == 'diarization'", specifier = "==1.13.8" },
     { name = "sherpa-onnx-core", marker = "extra == 'diarization'", specifier = "==1.13.8" },
     { name = "soundfile", specifier = ">=0.13" },
-    { name = "standard-asr", git = "https://github.com/standard-voice/standard_asr.git?rev=cad09d412479937f7fdbede0e0c54437bef25ef7" },
+    { name = "standard-asr", git = "https://github.com/standard-voice/standard_asr.git?rev=5f6eef25e35e5e66e9010474e6dee531021e61f1" },
     { name = "standard-asr", extras = ["server"], marker = "extra == 'server'" },
     { name = "tokenizers", specifier = ">=0.22" },
     { name = "uv", specifier = ">=0.12,<0.13" },

@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
 _STANDARD_ASR_WORKER_REQUIREMENT = (
     "standard-asr @ git+https://github.com/standard-voice/standard_asr.git"
-    "@cad09d412479937f7fdbede0e0c54437bef25ef7"
+    "@5f6eef25e35e5e66e9010474e6dee531021e61f1"
 )
 CONVERSION_WORKER_SPEC = WorkerEnvironmentSpec(
     name="conversion",
