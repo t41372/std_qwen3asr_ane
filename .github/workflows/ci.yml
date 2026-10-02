@@ -24,10 +24,13 @@ jobs:
         python: ["3.12", "3.13"]
     env:
       STANDARD_ASR_ALLOW_DOWNLOAD: "0"
-      STANDARD_ASR_MODEL_DIR: ${{ runner.temp }}/asr-models
-      UV_TOOL_DIR: ${{ runner.temp }}/asr-tools
-      UV_TOOL_BIN_DIR: ${{ runner.temp }}/asr-bin
     steps:
+      - name: Set isolated model and tool directories
+        run: |
+          printf '%s\n' \
+            "STANDARD_ASR_MODEL_DIR=$RUNNER_TEMP/asr-models" \
+            "UV_TOOL_DIR=$RUNNER_TEMP/asr-tools" \
+            "UV_TOOL_BIN_DIR=$RUNNER_TEMP/asr-bin" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -59,8 +62,9 @@ jobs:
     timeout-minutes: 15
     env:
       STANDARD_ASR_ALLOW_DOWNLOAD: "0"
-      STANDARD_ASR_MODEL_DIR: ${{ runner.temp }}/asr-server-models
     steps:
+      - name: Set the isolated model directory
+        run: printf '%s\n' "STANDARD_ASR_MODEL_DIR=$RUNNER_TEMP/asr-server-models" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
