@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -239,6 +241,27 @@ def test_worker_invokes_official_cpu_api_with_local_files_only():
     assert 'device_map="cpu"' in worker
     assert "local_files_only=True" in worker
     assert "aligner.align(" in worker
+
+
+def test_worker_bootstrap_does_not_borrow_parent_dependencies(monkeypatch, tmp_path):
+    polluted = tmp_path / "parent-site-packages"
+    polluted.mkdir()
+    (polluted / "numpy.py").write_text("raise RuntimeError('parent dependency leaked')\n")
+    monkeypatch.setenv("PYTHONPATH", str(polluted))
+
+    environment = alignment._worker_environment(offline=True)
+    completed = subprocess.run(
+        alignment._worker_command(Path(sys.executable), "--help"),
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "PYTHONPATH" not in environment
+    assert environment["HF_HUB_OFFLINE"] == "1"
+    assert environment["TRANSFORMERS_OFFLINE"] == "1"
 
 
 def test_explicit_acquisition_records_verified_existing_model(monkeypatch, tmp_path):

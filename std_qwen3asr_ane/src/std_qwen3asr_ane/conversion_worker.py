@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12,<3.14"
 # dependencies = [
-#   "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@1e09da15af31657845c4b8e205f67c6855fda259",
+#   "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@cad09d412479937f7fdbede0e0c54437bef25ef7",
 #   "coremltools==9.0", "torch==2.14.0", "numpy==2.5.3",
 #   "transformers==4.57.6", "huggingface-hub==0.36.2",
 #   "safetensors==0.8.0", "scipy==1.18.1", "tokenizers==0.22.2",

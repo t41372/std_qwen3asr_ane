@@ -213,16 +213,28 @@ def inspect_forced_aligner(root: str | Path) -> ForcedAlignerInspection:
 
 
 def _worker_command(python: Path, *arguments: str) -> list[str]:
-    return [str(python), "-u", "-m", "std_qwen3asr_ane.alignment_worker", *arguments]
+    """Expose plugin code without exposing the parent environment's dependencies."""
+    package_dir = Path(__file__).resolve().parent
+    package_init = package_dir / "__init__.py"
+    bootstrap = (
+        "import importlib.util,runpy,sys;"
+        "spec=importlib.util.spec_from_file_location("
+        f"'std_qwen3asr_ane',{str(package_init)!r},"
+        f"submodule_search_locations=[{str(package_dir)!r}]);"
+        "package=importlib.util.module_from_spec(spec);"
+        "sys.modules[spec.name]=package;"
+        "spec.loader.exec_module(package);"
+        "runpy.run_module('std_qwen3asr_ane.alignment_worker',run_name='__main__')"
+    )
+    return [str(python), "-I", "-u", "-c", bootstrap, *arguments]
 
 
 def _worker_environment(*, offline: bool) -> dict[str, str]:
     environment = os.environ.copy()
-    module_root = str(Path(__file__).resolve().parents[1])
-    existing = environment.get("PYTHONPATH")
-    environment["PYTHONPATH"] = (
-        module_root if not existing else os.pathsep.join((module_root, existing))
-    )
+    # The bootstrap exposes only this package. Adding its site-packages parent
+    # to PYTHONPATH would let the server environment shadow the worker's pinned
+    # third-party dependencies and defeat the isolation this process provides.
+    environment.pop("PYTHONPATH", None)
     if offline:
         environment["HF_HUB_OFFLINE"] = "1"
         environment["TRANSFORMERS_OFFLINE"] = "1"

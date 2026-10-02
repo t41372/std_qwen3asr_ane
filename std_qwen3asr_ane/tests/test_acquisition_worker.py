@@ -136,6 +136,28 @@ def test_parent_retains_worker_error_reason_and_preflight_report(monkeypatch, tm
     assert not engine.config.model_dir.exists()
 
 
+def test_conversion_worker_does_not_inherit_parent_pythonpath(monkeypatch, tmp_path):
+    worker = tmp_path / "worker"
+    worker.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "json.loads(sys.stdin.readline())\n"
+        'assert sys.argv[1] == "-I"\n'
+        'assert "PYTHONPATH" not in os.environ\n'
+        'print(json.dumps({"phase": "finalizing"}), flush=True)\n'
+    )
+    worker.chmod(0o755)
+    monkeypatch.setattr(acquisition, "ensure_conversion_worker", lambda config, progress: worker)
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "parent-site-packages"))
+    engine = create_engine(download_root=tmp_path)
+    events = []
+
+    acquisition.acquire_in_worker(engine.config, {BUNDLE_ARTIFACT_ID}, events.append)
+
+    assert len(events) == 1
+    assert events[0].phase == "finalizing"
+
+
 @pytest.mark.parametrize("draft", [False, True])
 def test_existing_directory_without_manifest_requires_action(tmp_path, draft):
     engine = create_engine(download_root=tmp_path, use_draft=draft)

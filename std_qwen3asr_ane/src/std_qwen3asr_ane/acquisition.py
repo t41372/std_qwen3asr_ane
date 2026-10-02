@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
 _STANDARD_ASR_WORKER_REQUIREMENT = (
     "standard-asr @ git+https://github.com/standard-voice/standard_asr.git"
-    "@1e09da15af31657845c4b8e205f67c6855fda259"
+    "@cad09d412479937f7fdbede0e0c54437bef25ef7"
 )
 CONVERSION_WORKER_SPEC = WorkerEnvironmentSpec(
     name="conversion",
@@ -153,14 +153,25 @@ def acquire_in_worker(
     """Forward only structured progress; native conversion logs stay on stderr."""
     worker = Path(__file__).with_name("conversion_worker.py")
     python_executable = ensure_conversion_worker(config, progress)
-    command = [str(python_executable), str(worker)]
+    # Isolated mode ignores all PYTHON* settings plus the script and user site
+    # paths. The worker bootstraps this exact package from worker.__file__, then
+    # resolves every third-party import from its fingerprinted environment.
+    command = [str(python_executable), "-I", str(worker)]
     request = {"config": config.model_dump(mode="json"), "targets": sorted(targets)}
+    environment = os.environ.copy()
+    # A caller may expose its complete site-packages through PYTHONPATH (for
+    # example an installed-wheel integration test). Letting that path precede
+    # the worker's site-packages would defeat the pinned dependency receipt.
+    # conversion_worker.py already bootstraps this package from its exact file;
+    # removing the variable also keeps that process boundary explicit to tools.
+    environment.pop("PYTHONPATH", None)
     with subprocess.Popen(
         command,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,
         start_new_session=True,
+        env=environment,
     ) as process:
         try:
             assert process.stdin is not None and process.stdout is not None
