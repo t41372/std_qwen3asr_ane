@@ -16,6 +16,7 @@ from std_qwen3asr_ane.decoding_guidance import (
     MAX_PHRASE_HINT_TOKENS,
     DecodingGuidance,
     GuidanceRequestError,
+    _PhraseTokenMachine,
 )
 
 TOKENIZER_PATH = Path(__file__).parents[2] / "artifacts/qwen3-asr-1.7b-precise/tokenizer.json"
@@ -42,6 +43,37 @@ def scores(vocabulary_size: int, *ranked: tuple[int, float]) -> np.ndarray:
 def score_chunks(values: np.ndarray) -> list[np.ndarray]:
     """Split real vocabulary IDs across ordered head-style chunks."""
     return [values[:10_000], values[10_000:70_000], values[70_000:]]
+
+
+def test_overlapping_hint_suffixes_remain_active_without_stacking_bias() -> None:
+    # After 1,2,3, all three hints can still continue. Token 4 appears on
+    # multiple matching prefixes but must receive the bias only once.
+    machine = _PhraseTokenMachine([(1, 2, 3, 4), (2, 3, 5), (3, 4), (3, 6)])
+    guidance = DecodingGuidance(None, machine, phrase_bias=DEFAULT_PHRASE_BIAS)
+    guidance.commit_prefix([1, 2, 3])
+    for continuation in (4, 5, 6):
+        assert guidance.select_from_logits_chunks(
+            [scores(8, (continuation, 0.0), (7, 1.0))], vocabulary_size=8
+        ) == continuation
+    assert guidance.select_from_logits_chunks(
+        [scores(8, (4, 0.0), (7, DEFAULT_PHRASE_BIAS + 0.5))], vocabulary_size=8
+    ) == 7
+    guidance.commit(7)
+    assert machine.next_tokens() == frozenset({1, 2, 3})
+
+
+def test_another_hint_does_not_disable_a_matching_qwen_suffix(tokenizer: Tokenizer) -> None:
+    vocabulary_size = tokenizer.get_vocab_size()
+    continuation = token_ids(tokenizer, " Times")
+    competitor = token_ids(tokenizer, " yesterday")
+    assert len(continuation) == len(competitor) == 1
+    logits = scores(vocabulary_size, (continuation[0], 0.0), (competitor[0], 1.0))
+    for hints in (["York Times"], ["New York City", "York Times"]):
+        guidance = DecodingGuidance.create(tokenizer, phrase_hints=hints)
+        guidance.commit_prefix(token_ids(tokenizer, "New York"))
+        assert guidance.select_from_logits_chunks(
+            score_chunks(logits), vocabulary_size=vocabulary_size
+        ) == continuation[0]
 
 
 def test_no_request_creates_no_policy_and_keeps_existing_argmax_path(tokenizer: Tokenizer) -> None:

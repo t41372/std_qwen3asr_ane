@@ -146,8 +146,15 @@ class _PhraseTokenMachine:
                 queue.append(child)
 
     def next_tokens(self) -> frozenset[int]:
-        """Tokens that either start a hint or continue its current prefix."""
-        return frozenset(self._nodes[0].children) | frozenset(self._nodes[self._node].children)
+        """Tokens that start a hint or continue any matching emitted suffix."""
+        tokens = set(self._nodes[0].children)
+        node = self._node
+        # A shorter suffix can continue another hint: after "New York", both
+        # "New York City" and "York Times" still have a matching prefix.
+        while node:
+            tokens.update(self._nodes[node].children)
+            node = self._failure[node]
+        return frozenset(tokens)
 
     def commit(self, token: int) -> None:
         """Advance to the longest emitted suffix that is a hint prefix."""
