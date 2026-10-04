@@ -14,19 +14,19 @@ import importlib
 import json
 import math
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
+from evidence_provenance import evidence_date, module_sha256, runtime_provenance
 from scipy.signal import resample_poly
 
 ROOT = Path(__file__).resolve().parents[2]
 BUNDLE = ROOT / "artifacts/qwen3-asr-1.7b"
 BASELINE_SOURCE = ROOT / ".cache/native-baseline-884c22e/std_qwen3asr_ane/src"
-CURRENT_SOURCE = ROOT / "std_qwen3asr_ane/src"
-EVIDENCE = ROOT / "research/release-readiness/native-baseline-884c22e-2026-10-02.json"
 HELDOUT_MANIFESTS = (
     ROOT / "artifacts/evaluation/librispeech-balanced-100/manifest.jsonl",
     ROOT / "artifacts/evaluation/fleurs-zh-balanced-100/manifest.jsonl",
@@ -87,7 +87,8 @@ def load(path: Path) -> tuple[np.ndarray, dict[str, object]]:
     }
 
 
-def run_single(label: str) -> None:
+def run_single(label: str, *, source_override: bool = False) -> None:
+    provenance = runtime_provenance(allow_plugin_override=source_override)
     from std_qwen3asr_ane.runtime import CoreMLRuntime
 
     runtime_module = importlib.import_module("std_qwen3asr_ane.runtime")
@@ -113,6 +114,7 @@ def run_single(label: str) -> None:
             json.dumps(
                 {
                     "label": label,
+                    "environment": provenance,
                     "runtime_module": runtime_module.__file__,
                     "runtime_sha256": sha256(Path(runtime_module.__file__)),
                     "bundle_manifest_sha256": sha256(BUNDLE / "manifest.json"),
@@ -134,7 +136,8 @@ def run_child(label: str, source: Path | None) -> dict:
     if source is not None:
         environment["PYTHONPATH"] = str(source)
     process = subprocess.run(
-        [sys.executable, str(Path(__file__)), "single", "--label", label],
+        [sys.executable, str(Path(__file__)), "single", "--label", label]
+        + (["--source-override"] if source is not None else []),
         cwd=ROOT,
         env=environment,
         check=False,
@@ -150,7 +153,7 @@ def run_child(label: str, source: Path | None) -> dict:
 
 def compare() -> dict:
     baseline = run_child("baseline-884c22e", BASELINE_SOURCE)
-    current = run_child("current-installed-editable", None)
+    current = run_child("current-installed", None)
     baseline_rows = {row["id"]: row for row in baseline["rows"]}
     current_rows = {row["id"]: row for row in current["rows"]}
     comparison = []
@@ -175,18 +178,19 @@ def compare() -> dict:
     }
     return {
         "schema_version": 1,
-        "date": "2026-10-02",
+        "date": evidence_date(),
         "status": "passed" if all(equality.values()) else "failed",
-        "command": "./.venv/bin/python research/release-readiness/compare_native_baseline.py compare",
+        "command": shlex.join([sys.executable, *sys.argv]),
         "environment": {
             "executable": sys.executable,
-            "current_source": "installed editable package; PYTHONPATH removed",
+            "current_source": current["runtime_module"],
             "baseline_source_override": str(BASELINE_SOURCE),
-            "standard_asr_commit": "5f6eef25e35e5e66e9010474e6dee531021e61f1",
+            **runtime_provenance(),
         },
         "source_sha256": {
             "verifier": sha256(Path(__file__)),
-            "current_runtime": sha256(CURRENT_SOURCE / "std_qwen3asr_ane/runtime.py"),
+            "provenance": module_sha256("evidence_provenance"),
+            "current_runtime": current["runtime_sha256"],
         },
         "baseline": baseline,
         "current": current,
@@ -212,20 +216,21 @@ def main() -> None:
     subcommands = parser.add_subparsers(dest="mode", required=True)
     single = subcommands.add_parser("single")
     single.add_argument("--label", required=True)
+    single.add_argument("--source-override", action="store_true")
     compare_parser = subcommands.add_parser("compare")
-    compare_parser.add_argument("--output", type=Path, default=EVIDENCE)
+    compare_parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.mode == "single":
-        run_single(args.label)
+        run_single(args.label, source_override=args.source_override)
     else:
         try:
             document = compare()
         except Exception as error:
             document = {
                 "schema_version": 1,
-                "date": "2026-10-02",
+                "date": evidence_date(),
                 "status": "failed",
-                "command": "./.venv/bin/python research/release-readiness/compare_native_baseline.py compare",
+                "command": shlex.join([sys.executable, *sys.argv]),
                 "source_sha256": {"verifier": sha256(Path(__file__))},
                 "failures": [{"type": type(error).__name__, "message": str(error)}],
                 "performance_claim": False,

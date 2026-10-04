@@ -26,6 +26,7 @@ from typing import Any, Literal
 
 import numpy as np
 import soundfile as sf
+from evidence_provenance import evidence_date, module_sha256, runtime_provenance
 from scipy.signal import resample_poly
 from standard_asr import DIARIZE, AudioArray, AudioFormat
 from standard_asr.engine import RuntimeParams
@@ -33,7 +34,6 @@ from standard_asr.engine import RuntimeParams
 from std_qwen3asr_ane.plugin import Qwen3ASREngine, ShortDictationEngine
 
 ROOT = Path(__file__).resolve().parents[2]
-EVIDENCE = ROOT / "research/release-readiness/longform-validation-2026-10-02.json"
 GENERAL_BUNDLE = ROOT / "artifacts/qwen3-asr-1.7b"
 SHORT_BUNDLE = ROOT / "artifacts/qwen3-asr-1.7b-short-dictation"
 ALIGNMENT_DIR = ROOT / "artifacts/auxiliary/alignment"
@@ -771,6 +771,7 @@ def plan_document(clips: dict[str, Clip]) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "status": "planned",
+        "date": evidence_date(),
         "purpose": "Real public Standard ASR batch, rollover streaming, alignment, and diarization release validation.",
         "preregistered_before_native_results": True,
         "no_download_or_model_build": True,
@@ -779,8 +780,7 @@ def plan_document(clips: dict[str, Clip]) -> dict[str, Any]:
             "python": sys.version,
             "executable": sys.executable,
             "platform": platform.platform(),
-            "standard_asr_installation": "root .venv resolved from the published Git pin; no PYTHONPATH override",
-            "standard_asr_commit": "5f6eef25e35e5e66e9010474e6dee531021e61f1",
+            **runtime_provenance(),
         },
         "artifacts": {
             "general_bundle": str(GENERAL_BUNDLE.relative_to(ROOT)),
@@ -791,21 +791,15 @@ def plan_document(clips: dict[str, Clip]) -> dict[str, Any]:
             "diarization_dir": str(DIARIZATION_DIR.relative_to(ROOT)),
         },
         "source_sha256": {
-            name: sha256(ROOT / path)
-            for name, path in {
-                "plugin": "std_qwen3asr_ane/src/std_qwen3asr_ane/plugin.py",
-                "streaming": "std_qwen3asr_ane/src/std_qwen3asr_ane/streaming.py",
-                "longform": "std_qwen3asr_ane/src/std_qwen3asr_ane/longform.py",
-                "diarization": "std_qwen3asr_ane/src/std_qwen3asr_ane/diarization.py",
-                "audio": "std_qwen3asr_ane/src/std_qwen3asr_ane/audio.py",
-                "audio_context": "std_qwen3asr_ane/src/std_qwen3asr_ane/audio_context.py",
-                "postprocessing": "std_qwen3asr_ane/src/std_qwen3asr_ane/postprocessing.py",
-                "auxiliary": "std_qwen3asr_ane/src/std_qwen3asr_ane/auxiliary.py",
-                "result_text": "std_qwen3asr_ane/src/std_qwen3asr_ane/result_text.py",
-                "runtime": "std_qwen3asr_ane/src/std_qwen3asr_ane/runtime.py",
-                "bulk": "std_qwen3asr_ane/src/std_qwen3asr_ane/bulk.py",
-                "verifier": "research/release-readiness/verify_longform.py",
-            }.items()
+            **{
+                name: module_sha256(f"std_qwen3asr_ane.{name}")
+                for name in (
+                    "plugin", "streaming", "longform", "diarization", "audio", "audio_context",
+                    "postprocessing", "auxiliary", "result_text", "runtime", "bulk",
+                )
+            },
+            "verifier": sha256(Path(__file__)),
+            "provenance": module_sha256("evidence_provenance"),
         },
         "inputs": input_inventory(clips),
         "batch_cases": case_plans,
@@ -1183,7 +1177,7 @@ def collect_gate_failures(value: Any, path: str = "results") -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, default=EVIDENCE)
+    parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--sections",
         default="general,short,diarization",
@@ -1203,14 +1197,12 @@ def main() -> None:
         document = json.loads(args.output.read_text(encoding="utf-8"))
         if document["batch_cases"] != planned["batch_cases"]:
             raise ValueError("Existing evidence uses a different preregistered batch plan")
-        for key in (
-            "environment",
-            "artifacts",
-            "source_sha256",
-            "streaming",
-            "validation_addenda",
-        ):
-            document[key] = planned[key]
+        # Completed sections remain evidence for their original code and artifacts.
+        # Do not relabel old measurements with a newly installed dependency's identity.
+        for key in ("environment", "artifacts", "source_sha256", "streaming", "validation_addenda"):
+            if document.get(key) != planned[key]:
+                raise ValueError(f"Cannot resume evidence with different {key}; use a new --output")
+        document["last_resumed_date"] = evidence_date()
         document["failures"] = [
             failure
             for failure in document.get("failures", [])

@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 import soundfile as sf
+from evidence_provenance import evidence_date, module_sha256, runtime_provenance
 from scipy.signal import resample_poly
 
 from std_qwen3asr_ane.batching import OfflineRecognitionRequest
@@ -23,7 +24,6 @@ ROOT = Path(__file__).resolve().parents[2]
 ARTIFACT_ROOT = ROOT / "artifacts/release-readiness/standalone-batch-head-2026-10-02-5f6eef25/model"
 TARGET = ARTIFACT_ROOT / "qwen3-asr-1.7b"
 HEAD = ARTIFACT_ROOT / "qwen3-asr-1.7b-batch-head"
-EVIDENCE = ROOT / "research/release-readiness/packed-parity-2026-10-02.json"
 FIXTURES = (
     ("english", ROOT / "artifacts/evaluation/smoke/qwen_official_en.wav", "en"),
     ("chinese", ROOT / "artifacts/evaluation/smoke/qwen_official_zh.wav", "zh"),
@@ -78,6 +78,7 @@ def write_evidence(document: dict[str, Any], output: Path) -> None:
 
 
 def verify(max_new_tokens: int) -> dict[str, Any]:
+    provenance = runtime_provenance()
     inputs = [(name, path, language, load_audio(path)) for name, path, language in FIXTURES]
     runtime = CoreMLRuntime(TARGET)
     head = runtime.load_batch_head(HEAD)
@@ -152,15 +153,14 @@ def verify(max_new_tokens: int) -> dict[str, Any]:
         passed = all(row["passed"] for row in rows)
         return {
             "schema_version": 1,
-            "date": "2026-10-02",
+            "date": evidence_date(),
             "status": "passed" if passed else "failed",
             "purpose": "Exact serial-versus-packed native parity and telemetry-shape validation.",
             "environment": {
                 "python": sys.version,
                 "executable": sys.executable,
                 "platform": platform.platform(),
-                "standard_asr_commit": "5f6eef25e35e5e66e9010474e6dee531021e61f1",
-                "pythonpath_override": False,
+                **provenance,
             },
             "artifacts": {
                 "target": str(TARGET.relative_to(ROOT)),
@@ -169,9 +169,10 @@ def verify(max_new_tokens: int) -> dict[str, Any]:
                 "batch_head_manifest_sha256": sha256(HEAD / "manifest.json"),
             },
             "source_sha256": {
-                "runtime": sha256(ROOT / "std_qwen3asr_ane/src/std_qwen3asr_ane/runtime.py"),
-                "batching": sha256(ROOT / "std_qwen3asr_ane/src/std_qwen3asr_ane/batching.py"),
+                "runtime": module_sha256("std_qwen3asr_ane.runtime"),
+                "batching": module_sha256("std_qwen3asr_ane.batching"),
                 "verifier": sha256(Path(__file__)),
+                "provenance": module_sha256("evidence_provenance"),
             },
             "max_new_tokens": max_new_tokens,
             "rows": rows,
@@ -190,7 +191,7 @@ def verify(max_new_tokens: int) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, default=EVIDENCE)
+    parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-new-tokens", type=int, default=128)
     args = parser.parse_args()
     try:
@@ -198,7 +199,7 @@ def main() -> None:
     except Exception as error:
         document = {
             "schema_version": 1,
-            "date": "2026-10-02",
+            "date": evidence_date(),
             "status": "failed",
             "source_sha256": {"verifier": sha256(Path(__file__))},
             "performance_claim": False,
