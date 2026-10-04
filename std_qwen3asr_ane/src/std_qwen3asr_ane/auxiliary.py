@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import importlib.util
 import json
@@ -289,7 +290,25 @@ def _emit(progress: ProgressObserver, phase: str, artifact_id: str, **fields) ->
 
 
 def _acquire_diarization(root: Path, progress: ProgressObserver) -> None:
+    """Publish one shared model directory, reporting concurrent pulls as busy."""
     root = root.expanduser().resolve()
+    root.parent.mkdir(parents=True, exist_ok=True)
+    # Keep the lock file: removing it could give another caller a new inode
+    # while an existing caller still owns the original lock.
+    with root.with_name(f".{root.name}.lock").open("a+b") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ArtifactAcquisitionError(
+                "Another process is acquiring the diarization models.",
+                reason="busy",
+                retriable_after=1.0,
+            ) from error
+        _acquire_diarization_locked(root, progress)
+
+
+def _acquire_diarization_locked(root: Path, progress: ProgressObserver) -> None:
+    """Recheck readiness under the publication lock before downloading."""
     if diarization_artifact_status(root).ready:
         return
     if root.exists():
@@ -301,7 +320,6 @@ def _acquire_diarization(root: Path, progress: ProgressObserver) -> None:
         raise ArtifactAcquisitionError(
             "Diarization model downloads are disabled.", reason="downloads_disabled"
         )
-    root.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f".{root.name}-", dir=root.parent) as temporary:
         staged = Path(temporary) / "models"
         staged.mkdir()

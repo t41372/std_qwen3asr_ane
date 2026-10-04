@@ -147,6 +147,8 @@ def _inspect_model(model_path: Path) -> tuple[AlignmentState, dict[str, Any] | N
         return "unknown", None, "Alignment model provenance is absent"
     except (OSError, UnicodeError, json.JSONDecodeError):
         return "corrupt", None, "Alignment model provenance is invalid"
+    if not isinstance(provenance, dict):
+        return "corrupt", None, "Alignment model provenance must be a JSON object"
     expected_source = {
         "schema_version": 1,
         "model_id": ALIGNMENT_MODEL_ID,

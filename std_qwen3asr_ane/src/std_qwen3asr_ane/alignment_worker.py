@@ -78,6 +78,8 @@ def _has_pinned_receipt(destination: Path) -> bool:
         receipt = json.loads((destination / _MODEL_RECEIPT).read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
         return False
+    if not isinstance(receipt, dict):
+        return False
     expected = _receipt(source=str(receipt.get("source", "")))
     return receipt == expected
 

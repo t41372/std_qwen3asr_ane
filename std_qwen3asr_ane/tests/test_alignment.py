@@ -11,8 +11,10 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from standard_asr.engine import ArtifactContext, RuntimeParams
 
 from std_qwen3asr_ane import alignment, alignment_worker, worker_environment
+from std_qwen3asr_ane.auxiliary import AuxiliaryModels
 
 
 class _Input(io.BytesIO):
@@ -157,6 +159,31 @@ def test_missing_inspection_is_read_only(tmp_path):
     assert not root.exists()
 
 
+@pytest.mark.parametrize("receipt", [[], None, "invalid receipt"])
+def test_non_object_receipt_reports_corrupt_with_an_acquisition_remedy(tmp_path, receipt):
+    root = tmp_path / "optional-aligner"
+    model = alignment.alignment_model_path(root)
+    model.mkdir(parents=True)
+    for name in alignment.ALIGNMENT_REQUIRED_FILES:
+        (model / name).write_bytes(b"fixture")
+    (model / "alignment-model.json").write_text(json.dumps(receipt))
+
+    inspection = alignment.inspect_forced_aligner(root)
+
+    assert inspection.state == inspection.model_state == "corrupt"
+    assert inspection.provenance is None
+    owner = AuxiliaryModels(
+        SimpleNamespace(use_alignment=True, use_diarization=False, alignment_dir=root)
+    )
+    requirement, = owner.requirements(
+        ArtifactContext(mode="batch", params=RuntimeParams(word_timestamps="word"))
+    )
+    assert requirement.state == "corrupt"
+    assert requirement.acquisition_blocker == "action_required"
+    assert requirement.required_actions
+    assert not requirement.can_acquire_now
+
+
 def test_runtime_path_reuses_only_a_matching_legacy_environment(tmp_path):
     root = tmp_path / "optional-aligner"
     legacy = root / "runtime-v1"
@@ -264,7 +291,10 @@ def test_worker_bootstrap_does_not_borrow_parent_dependencies(monkeypatch, tmp_p
     assert environment["TRANSFORMERS_OFFLINE"] == "1"
 
 
-def test_explicit_acquisition_records_verified_existing_model(monkeypatch, tmp_path):
+@pytest.mark.parametrize("initial_receipt", [None, "[]", "null", '"invalid receipt"'])
+def test_explicit_acquisition_records_verified_existing_model(
+    monkeypatch, tmp_path, initial_receipt
+):
     destination = tmp_path / "model"
     destination.mkdir()
     for name in alignment_worker.ALIGNMENT_REQUIRED_FILES:
@@ -272,6 +302,8 @@ def test_explicit_acquisition_records_verified_existing_model(monkeypatch, tmp_p
     digest = alignment_worker.hashlib.sha256(b"weights").hexdigest()
     monkeypatch.setattr(alignment_worker, "ALIGNMENT_WEIGHTS_SIZE", len(b"weights"))
     monkeypatch.setattr(alignment_worker, "ALIGNMENT_WEIGHTS_SHA256", digest)
+    if initial_receipt is not None:
+        (destination / "alignment-model.json").write_text(initial_receipt)
 
     alignment_worker.acquire_model(destination, allow_downloads=False)
 

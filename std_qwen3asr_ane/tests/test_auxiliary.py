@@ -1,20 +1,75 @@
 """Measured auxiliary data and boundary repairs remain visible in standard results."""
 
+import hashlib
+import io
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from standard_asr import UnsupportedFeatureError
+from standard_asr.contract.exceptions import ArtifactAcquisitionError
 from standard_asr.engine import DIARIZE, RuntimeParams, TranscriptionResult
 
+from std_qwen3asr_ane import auxiliary, diarization
 from std_qwen3asr_ane.alignment import AlignmentSpan
 from std_qwen3asr_ane.auxiliary import AuxiliaryModels
 from std_qwen3asr_ane.diarization import (
+    DiarizationArtifact,
     DiarizationBoundaryAdjustment,
     DiarizationMeasurement,
     RawSpeakerTurn,
     SpeakerTurn,
 )
+
+
+def test_concurrent_diarization_pull_reports_busy_and_reuses_published_models(
+    monkeypatch, tmp_path
+):
+    payload = b"small pinned model fixture"
+    artifact = DiarizationArtifact(
+        filename="model.onnx",
+        url="https://example.invalid/model.onnx",
+        revision="fixture",
+        sha256=hashlib.sha256(payload).hexdigest(),
+        size=len(payload),
+        license="MIT",
+    )
+    for module in (auxiliary, diarization):
+        monkeypatch.setattr(module, "DIARIZATION_ARTIFACTS", (artifact,))
+    monkeypatch.setenv("STANDARD_ASR_ALLOW_DOWNLOAD", "1")
+    download_started, release_download = Event(), Event()
+    downloads = []
+
+    def open_model(url, *, timeout):
+        downloads.append(url)
+        download_started.set()
+        assert release_download.wait(timeout=5), "test did not release the download"
+        return io.BytesIO(payload)
+
+    monkeypatch.setattr(auxiliary.urllib.request, "urlopen", open_model)
+    root = tmp_path / "models"
+    owner = AuxiliaryModels(SimpleNamespace(diarization_dir=root))
+    another_owner = AuxiliaryModels(SimpleNamespace(diarization_dir=root))
+    targets = {auxiliary.DIARIZATION_ARTIFACT_ID}
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        first_pull = executor.submit(owner.acquire, targets, None)
+        try:
+            assert download_started.wait(timeout=5), "first pull did not start"
+            with pytest.raises(ArtifactAcquisitionError) as caught:
+                another_owner.acquire(targets, None)
+            assert caught.value.reason == "busy"
+            assert caught.value.retriable_after == 1.0
+            assert not root.exists(), "incomplete models became visible before publication"
+        finally:
+            release_download.set()
+        first_pull.result(timeout=5)
+
+    assert diarization.diarization_artifact_status(root).ready
+    monkeypatch.setenv("STANDARD_ASR_ALLOW_DOWNLOAD", "0")
+    another_owner.acquire(targets, None)
+    assert downloads == [artifact.url]
 
 
 def test_frame_support_repair_is_disclosed_with_raw_local_evidence(monkeypatch):
