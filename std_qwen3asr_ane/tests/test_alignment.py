@@ -30,6 +30,7 @@ def _run_with_response(
     text: str,
     granularity: alignment.AlignmentGranularity = "word",
     seconds: float = 2.0,
+    language: str = "en-US",
 ) -> tuple[list[alignment.AlignmentSpan], bytes]:
     stream = _Input()
     process = SimpleNamespace(stdin=stream)
@@ -40,7 +41,7 @@ def _run_with_response(
         lambda *, timeout, cancelled: response,
     )
     samples = np.zeros(round(seconds * alignment.ALIGNMENT_SAMPLE_RATE), dtype=np.float32)
-    spans = aligner.align(samples, text, "en-US", granularity=granularity)
+    spans = aligner.align(samples, text, language, granularity=granularity)
     return spans, stream.getvalue()
 
 
@@ -77,11 +78,132 @@ def test_character_granularity_sends_actual_characters_to_model(monkeypatch, tmp
     )
     header = json.loads(request_bytes.split(b"\n", 1)[0])
 
-    assert header["text"] == "A B"
+    assert header["text"] == "A, B!"
+    assert header["granularity"] == "char"
     assert [(span.text, span.source_start, span.source_end) for span in spans] == [
         ("A", 0, 1),
         ("B", 3, 4),
     ]
+
+
+@pytest.mark.parametrize("text", ["こんにちは世界", "今日は良い天気です。", "ＡＢＣ１２３"])
+def test_japanese_character_units_survive_the_pinned_processor(monkeypatch, tmp_path, text):
+    """Use real Qwen tokenization; stub only model timing and worker IPC."""
+    upstream = pytest.importorskip("qwen_asr.inference.qwen3_forced_aligner")
+    processor = upstream.Qwen3ForceAlignProcessor()
+    observed_prompts = []
+
+    class Aligner:
+        aligner_processor = processor
+
+        def align(self, *, audio, text, language):
+            units, prompt = self.aligner_processor.encode_timestamp(text, language)
+            observed_prompts.append(prompt)
+            return units
+
+    native = Aligner()
+    units = alignment_worker._align(
+        native, audio=None, text=text, language="Japanese", granularity="char"
+    )
+    assert units == alignment.alignment_characters(text)
+    assert observed_prompts[0].count("<timestamp>") == 2 * len(units)
+    assert native.aligner_processor is processor
+    # A subsequent word request must still use the original Japanese tokenizer.
+    assert alignment_worker._align(
+        native, audio=None, text=text, language="Japanese", granularity="word"
+    ) == processor.encode_timestamp(text, "Japanese")[0]
+
+    response = {
+        "status": "ok",
+        "items": [
+            {"text": unit, "start_time": index / 10, "end_time": (index + 1) / 10}
+            for index, unit in enumerate(units)
+        ],
+    }
+    spans, _ = _run_with_response(
+        alignment.ForcedAligner(tmp_path), monkeypatch, response,
+        text=text, language="ja", granularity="char",
+    )
+    assert [span.text for span in spans] == units
+    assert all(span.source_end - span.source_start == 1 for span in spans)
+    assert [(span.start_time, span.end_time) for span in spans] == [
+        (item["start_time"], item["end_time"]) for item in response["items"]
+    ]
+
+
+def test_character_alignment_rejects_merged_worker_units(monkeypatch, tmp_path):
+    response = {
+        "status": "ok",
+        "items": [{"text": "こん", "start_time": 0.0, "end_time": 0.5}],
+    }
+    with pytest.raises(alignment.AlignmentError, match="one item per character"):
+        _run_with_response(
+            alignment.ForcedAligner(tmp_path), monkeypatch, response,
+            text="こん", language="ja", granularity="char",
+        )
+
+
+def test_character_processor_preserves_time_decoding_and_restores_after_failure():
+    class Processor:
+        def parse_timestamp(self, units, times):
+            return units, times
+
+    original = Processor()
+    adapter = alignment_worker._CharacterProcessor(original)
+    units, times = ["こ", "ん"], [100, 200, 300, 400]
+    assert adapter.parse_timestamp(units, times) == (units, times)
+
+    class Aligner:
+        aligner_processor = original
+
+        def align(self, **kwargs):
+            raise RuntimeError("model failure")
+
+    native = Aligner()
+    with pytest.raises(RuntimeError, match="model failure"):
+        alignment_worker._align(
+            native, audio=None, text="こん", language="Japanese", granularity="char"
+        )
+    assert native.aligner_processor is original
+
+
+@pytest.mark.parametrize("text", ["ＡＢＣ１２３", "ｶﾞｯｺｳです。", "カ\u3099ラスです。"])
+def test_japanese_word_alignment_maps_normalized_units_to_original_text(
+    monkeypatch, tmp_path, text
+):
+    upstream = pytest.importorskip("qwen_asr.inference.qwen3_forced_aligner")
+    processor = upstream.Qwen3ForceAlignProcessor()
+    units, _ = processor.encode_timestamp(text, "Japanese")
+    response = {
+        "status": "ok",
+        "items": [
+            {"text": unit, "start_time": index / 10, "end_time": (index + 1) / 10}
+            for index, unit in enumerate(units)
+        ],
+    }
+    spans, _ = _run_with_response(
+        alignment.ForcedAligner(tmp_path), monkeypatch, response, text=text, language="ja"
+    )
+    from standard_asr import TranscriptionResult
+
+    from std_qwen3asr_ane.postprocessing import annotate_result
+
+    result = annotate_result(TranscriptionResult(text=text), spans, offset_seconds=0)
+    assert result.text == text
+    assert "".join(segment.text for segment in result.segments) == text
+    assert "".join(span.text for span in spans) == text.rstrip("。")
+    for word, item in zip(result.words, response["items"], strict=True):
+        assert text[word.extra["source_start"] : word.extra["source_end"]] == word.text
+        assert (word.start, word.end) == (item["start_time"], item["end_time"])
+
+
+def test_normalized_source_mapping_rejects_mismatch_and_indivisible_splits():
+    with pytest.raises(alignment.AlignmentError, match="exact source"):
+        alignment._map_source_ranges("ＡＢＣ", ["ABD"], normalize=True)
+    # A ligature can expand, but cannot be assigned two independent source spans.
+    assert alignment._map_source_ranges("ﬃ", ["ffi"], normalize=True) == [(0, 1)]
+    with pytest.raises(alignment.AlignmentError, match="split one normalized"):
+        alignment._map_source_ranges("ﬃ", ["f", "fi"], normalize=True)
 
 
 @pytest.mark.parametrize(

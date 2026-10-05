@@ -24,6 +24,7 @@ from .alignment import (
     ALIGNMENT_WEIGHTS_SIZE,
     MAX_ALIGNMENT_SECONDS,
     SUPPORTED_ALIGNMENT_LANGUAGES,
+    alignment_characters,
 )
 
 _MODEL_RECEIPT = "alignment-model.json"
@@ -131,6 +132,43 @@ def _write_response(payload: dict[str, Any]) -> None:
     sys.stdout.buffer.flush()
 
 
+class _CharacterProcessor:
+    """Give the pinned Qwen aligner explicit units while retaining its time decoder.
+
+    Qwen 0.0.6 chooses alignment units in ``encode_timestamp``. Its Japanese
+    tokenizer can merge space-separated characters, so a text rewrite cannot
+    guarantee character granularity. This request-local adapter changes only
+    the units fed to the model; timestamps still come from the model itself.
+    """
+
+    def __init__(self, processor: Any) -> None:
+        self._processor = processor
+
+    def encode_timestamp(self, text: str, language: str) -> tuple[list[str], str]:
+        units = alignment_characters(text)
+        if not units:
+            raise ValueError("Alignment text has no alignable characters")
+        timestamps = "<timestamp><timestamp>"
+        prompt = "<|audio_start|><|audio_pad|><|audio_end|>"
+        return units, prompt + timestamps.join(units) + timestamps
+
+    def parse_timestamp(self, word_list, timestamp):
+        return self._processor.parse_timestamp(word_list, timestamp)
+
+
+def _align(aligner, *, audio, text: str, language: str, granularity: str):
+    """Use explicit character units only for this sequential worker request."""
+    if granularity not in ("word", "char"):
+        raise ValueError("Alignment granularity must be 'word' or 'char'")
+    processor = aligner.aligner_processor
+    try:
+        if granularity == "char":
+            aligner.aligner_processor = _CharacterProcessor(processor)
+        return aligner.align(audio=audio, text=text, language=language)
+    finally:
+        aligner.aligner_processor = processor
+
+
 def serve(model_path: Path) -> None:
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
@@ -169,10 +207,12 @@ def serve(model_path: Path) -> None:
                 raise ValueError("Alignment text must be non-empty")
             frame = _read_exact(sys.stdin.buffer, audio_bytes)
             audio = np.frombuffer(frame, dtype=np.float32)
-            results = aligner.align(
+            results = _align(
+                aligner,
                 audio=(audio, sample_rate),
                 text=text,
                 language=language,
+                granularity=request.get("granularity", "word"),
             )
             if len(results) != 1:
                 raise RuntimeError("Alignment model returned an unexpected batch size")

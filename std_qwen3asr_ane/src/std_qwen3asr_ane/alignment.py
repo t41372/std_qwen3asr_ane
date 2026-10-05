@@ -279,18 +279,43 @@ def _is_kept_character(character: str) -> bool:
     return character == "'" or unicodedata.category(character)[0] in {"L", "N"}
 
 
-def _character_input(text: str) -> str:
-    return " ".join(character for character in text if _is_kept_character(character))
+def alignment_characters(text: str) -> list[str]:
+    """Explicit character units shared by the worker and response validation."""
+    return [character for character in text if _is_kept_character(character)]
 
 
-def _map_source_ranges(text: str, item_texts: list[str]) -> list[tuple[int, int]]:
-    kept = [
-        (index, character) for index, character in enumerate(text) if _is_kept_character(character)
-    ]
+def _source_characters(text: str, *, normalize: bool) -> list[tuple[int, int, str]]:
+    """Retain original ranges through Japanese tokenization's NFKC normalization.
+
+    Normalize interacting characters together (for example half-width kana plus
+    a voicing mark). Expansions retain the source range of their original unit;
+    callers must not split that range across independently timed items.
+    """
+    kept = []
+    start = 0
+    unit = ""
+    for index, character in enumerate(text):
+        if normalize and unit and unicodedata.normalize("NFKC", unit + character) != (
+            unicodedata.normalize("NFKC", unit) + unicodedata.normalize("NFKC", character)
+        ):
+            unit += character
+            continue
+        value = unicodedata.normalize("NFKC", unit) if normalize else unit
+        kept.extend((start, index, char) for char in value if _is_kept_character(char))
+        start, unit = index, character
+    value = unicodedata.normalize("NFKC", unit) if normalize else unit
+    kept.extend((start, len(text), char) for char in value if _is_kept_character(char))
+    return kept
+
+
+def _map_source_ranges(
+    text: str, item_texts: list[str], *, normalize: bool = False
+) -> list[tuple[int, int]]:
+    kept = _source_characters(text, normalize=normalize)
     item_characters = [
         character for item in item_texts for character in item if _is_kept_character(character)
     ]
-    if item_characters != [character for _, character in kept]:
+    if item_characters != [character for _, _, character in kept]:
         raise AlignmentError("Aligned items do not cover the exact source transcript")
     cursor = 0
     ranges: list[tuple[int, int]] = []
@@ -299,7 +324,10 @@ def _map_source_ranges(text: str, item_texts: list[str]) -> list[tuple[int, int]
         if not expected:
             raise AlignmentError("The aligner returned an item without alignable characters")
         selected = kept[cursor : cursor + len(expected)]
-        ranges.append((selected[0][0], selected[-1][0] + 1))
+        start, end = selected[0][0], selected[-1][1]
+        if ranges and start < ranges[-1][1]:
+            raise AlignmentError("Aligned items split one normalized source character")
+        ranges.append((start, end))
         cursor += len(expected)
     return ranges
 
@@ -442,8 +470,7 @@ class ForcedAligner:
             raise ValueError(
                 f"Alignment audio is {duration:.3f}s; the model limit is {MAX_ALIGNMENT_SECONDS:.0f}s"
             )
-        model_text = text if granularity == "word" else _character_input(text)
-        if not model_text:
+        if not alignment_characters(text):
             raise ValueError("Alignment transcript has no characters supported by the model")
         contiguous = np.ascontiguousarray(samples)
 
@@ -455,8 +482,9 @@ class ForcedAligner:
                 "sample_rate": ALIGNMENT_SAMPLE_RATE,
                 "sample_count": int(contiguous.size),
                 "audio_bytes": int(contiguous.nbytes),
-                "text": model_text,
+                "text": text,
                 "language": language_name,
+                "granularity": granularity,
             }
             try:
                 process.stdin.write(json.dumps(request, separators=(",", ":")).encode() + b"\n")
@@ -478,7 +506,11 @@ class ForcedAligner:
         item_texts = [str(item.get("text", "")) for item in raw_items if isinstance(item, dict)]
         if len(item_texts) != len(raw_items):
             raise AlignmentError("Alignment worker returned a malformed item")
-        ranges = _map_source_ranges(text, item_texts)
+        if granularity == "char" and item_texts != alignment_characters(text):
+            raise AlignmentError("Character alignment must return exactly one item per character")
+        ranges = _map_source_ranges(
+            text, item_texts, normalize=language_code == "ja" and granularity == "word"
+        )
         spans: list[AlignmentSpan] = []
         previous_end = 0.0
         for item, item_text, source_range in zip(raw_items, item_texts, ranges, strict=True):
