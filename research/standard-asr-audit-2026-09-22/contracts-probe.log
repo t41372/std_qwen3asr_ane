@@ -1,0 +1,5 @@
+preset drift: general entry point accepts the short-dictation bundle selection
+current defect reproduced: EngineBase forwards en-US unchanged and CoreML prompt validation rejects it; candidates are correctly diagnosed
+guidance degradation and exact provider-params swap safety work through EngineBase
+unknown detection: parse_output discards the raw unknown name before disclosure
+all model-free contract probes passed

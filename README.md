@@ -81,6 +81,17 @@ standard-asr show std-qwen3asr-ane/1.7b
 
 Models use Standard ASR's cache policy: explicit `download_root`, then `STANDARD_ASR_MODEL_DIR`, then the Standard ASR cache (normally `~/.cache/standard-asr` on macOS). `status` reports the actual bundle path. `STANDARD_ASR_ALLOW_DOWNLOAD=0` disables network acquisition; already acquired models remain usable.
 
+Install optional features into the same tool environment:
+
+```sh
+uv tool install --reinstall 'std-qwen3asr-ane[server] @ git+https://github.com/t41372/std_qwen3asr_ane.git'
+uv tool install --reinstall 'std-qwen3asr-ane[diarization] @ git+https://github.com/t41372/std_qwen3asr_ane.git'
+# Or retain both:
+uv tool install --reinstall 'std-qwen3asr-ane[server,diarization] @ git+https://github.com/t41372/std_qwen3asr_ane.git'
+```
+
+The `server` extra supplies Standard ASR's HTTP/WebSocket dependencies. The `diarization` extra supplies the pinned `sherpa-onnx==1.13.8` runtime; model acquisition remains an explicit `standard-asr pull` operation. When reinstalling a tool, include the complete set of extras you want that environment to retain; `gpu-draft` can be combined the same way.
+
 ## Use in a Python application
 
 Install the plugin into the application's environment. A `uv tool` environment is for terminal commands; it does not add imports to an unrelated Python project.
@@ -104,7 +115,7 @@ The app uses Standard ASR's discovery, audio conversion, request parameters, res
 
 ## Models and limits
 
-| Model key | Audio limit per utterance/session | Default output budget |
+| Model key | Native recognition window | Default output budget |
 |---|---:|---:|
 | `std-qwen3asr-ane/1.7b` | 30 seconds | 256 tokens |
 | `std-qwen3asr-ane/1.7b-short-dictation` | 12 seconds | 128 tokens |
@@ -116,9 +127,35 @@ standard-asr pull std-qwen3asr-ane/1.7b-short-dictation
 standard-asr transcribe std-qwen3asr-ane/1.7b-short-dictation recording.wav
 ```
 
-Both support batch recognition, language selection, automatic language detection, context prompts, and bounded streaming with revisable partials and a final result. Standard ASR handles file/bytes/array conversion and batch resampling. Incremental streaming accepts mono 16 kHz PCM (`pcm_s16le` or `pcm_f32le`).
+Both presets automatically divide longer recordings and streams into bounded, non-overlapping native windows. `max_recording_seconds` optionally guards total batch and streaming input; `stream_max_audio_seconds` adds a streaming-only guard. Both default to `None`, so the native window size is not a total-recording limit. Window boundaries prefer low local energy without claiming silence, and every input sample belongs to exactly one window.
 
-There is no forced alignment, word/segment speech timing, diarization, hard candidate-language restriction, or automatic long-recording segmentation. Audio duration and decoder context/output limits are checked separately; exceeding either fails explicitly. Streaming does not automatically start another segment at the limit.
+Batch and streaming support language selection, automatic detection, context prompts, candidate-language restriction, phrase score hints and optional measured word, segment and character timing. Candidate lists are hard constraints on the model's language header and accept at most 8 languages. Phrase hints are bounded soft next-token score biases, at most 16 terms and 128 characters per term; they do not guarantee that a phrase appears. Both features require the target's full vocabulary logits. A target bundle built with a compact vocabulary head reports them unsupported instead of pretending to apply them; this is separate from the optional packed-batch head described below.
+
+Streaming accepts mono 16 kHz PCM (`pcm_s16le` or `pcm_f32le`). Partials are revisable (`stable_text=""`). Each completed window is independently rescored and emitted as one or more closed segments. Standard ASR preserves measured segment and word details and joins trimmed segment texts with spaces in `session.result()`, including at CJK segment boundaries. Read the terminal event to distinguish completion from failure: `result()` is a snapshot of finalized segments, not a success verdict. Word details are in `result.segments[*].words`.
+
+With alignment enabled, the standard processing cursor accompanies measured timestamps. Without alignment, input window positions remain available in event extras. The `done` event includes `extra["std_qwen3asr_ane_input_duration_seconds"]`; the standard streaming result does not populate duration. `partial_stability`, reconnect, re-segmentation and mutable mid-stream guidance remain unsupported.
+
+## Optional forced alignment and speaker diarization
+
+Enable the CPU forced aligner, acquire its pinned model and isolated runtime, then request timestamps:
+
+```sh
+standard-asr pull std-qwen3asr-ane/1.7b --set use_alignment=true
+standard-asr transcribe std-qwen3asr-ane/1.7b recording.wav \
+  --set use_alignment=true --options '{"word_timestamps":"word"}'
+```
+
+The aligner adds about 1.8 GB of model weights and supports Chinese, English, Cantonese, French, German, Italian, Japanese, Korean, Portuguese, Russian and Spanish. `word`, `segment` and `char` output is based on measured alignment; the plugin does not manufacture timing from the input window.
+
+Speaker diarization requires the `diarization` install extra and implicitly requires the same alignment model:
+
+```sh
+standard-asr pull std-qwen3asr-ane/1.7b --set use_diarization=true
+standard-asr transcribe std-qwen3asr-ane/1.7b meeting.wav \
+  --set use_diarization=true --options '{"diarization":{}}'
+```
+
+The learned CPU backend preserves measured speaker turns, including overlap. Transcript units receive a speaker only when exclusive coverage is strong enough; ambiguous or unsupported units stay unattributed and carry diagnostics.
 
 ## Optional GPU draft
 
@@ -132,6 +169,30 @@ standard-asr transcribe std-qwen3asr-ane/1.7b recording.wav --set use_draft=true
 
 This adds a Qwen3-ASR 0.6B draft on the GPU and roughly 4 GB of wired memory in the measured setup. Conversion dependency isolation is handled by `pull`. `prepare()` and streaming load only the ANE target; the draft loads on the first batch request. Streaming artifact status does not require the unused draft.
 
+Candidate-language and phrase guidance bypass the draft because they need the target's full vocabulary scores. Python, CLI and wire callers can set `Qwen3ASRParams(disable_draft=True)` / `{"provider_params":{"disable_draft":true}}` for one request.
+
+## Optional packed bulk recognition
+
+`use_batching=true` makes `pull` acquire a compact head bound to the selected target bundle:
+
+```sh
+standard-asr pull std-qwen3asr-ane/1.7b --set use_batching=true
+```
+
+Python applications can then submit independent recordings through `engine.transcribe_many(...)`. It returns ordered `BulkTranscriptionOutcome` values containing `result`, `error`, `execution` and `fallback_reason`; `result_or_raise()` re-raises the original typed error for one item. Eligible groups use packed target execution and other inputs disclose their serial fallback. The Standard ASR per-file `transcribe` method and CLI remain the canonical single-recording interface.
+
+## Reference server
+
+Install the `server` extra, acquire the model with `standard-asr pull`, and run:
+
+```sh
+standard-asr serve
+```
+
+The reference server accepts encoded audio over REST and PCM over WebSocket. Portable options such as language, prompt, phrase hints, timestamps and diarization use Standard ASR's wire schema. Typed `Qwen3ASRParams` are available in Python; CLI and server JSON deliberately reject `provider_params`. For the CLI, set the default decoding budget with `--set max_new_tokens=128`.
+
+Configure server engine defaults through the documented environment variables, for example `STANDARD_ASR_STD_QWEN3ASR_ANE__USE_ALIGNMENT=true` after acquiring the aligner. The server constructs an engine for each request; it does not promise a shared model pool, a readiness endpoint, or per-model JSON initialization maps. Python applications that need a warm engine can retain an instance and call its explicit `prepare()` and `close()` methods.
+
 ## Existing local bundles
 
 Select a previously built bundle explicitly; no migration or rebuild is required:
@@ -140,12 +201,14 @@ Select a previously built bundle explicitly; no migration or rebuild is required
 standard-asr transcribe std-qwen3asr-ane/1.7b recording.wav --set model_dir=/absolute/path/to/bundle
 ```
 
-The earlier `artifacts/` location is no longer an implicit lookup relative to your working directory. `model_dir` and `source_dir` remain available for explicit local paths. The earlier `profile=short-dictation` config remains supported; the separate model key makes the preset discoverable to applications.
+The earlier `artifacts/` location is no longer an implicit lookup relative to your working directory. `model_dir` and `source_dir` remain available for explicit local paths. Select short dictation through `std-qwen3asr-ane/1.7b-short-dictation`; setting `profile=short-dictation` on the general model is rejected so discovery and execution describe the same preset.
 
 ## Development and evidence
 
 - [Development and manual conversion](CONTRIBUTING.md)
-- [Standard ASR contract audit](docs/standard-asr-audit.md)
+- [Release readiness ledger](docs/release-readiness-2026-10-04.md)
+- [Standard ASR capability coverage and limits](docs/standard-asr-capability-coverage.md)
+- [Historical Standard ASR contract audit](docs/standard-asr-audit.md)
 - [Research results](research/results-2026-09-13.md), [round 2 evidence](research/evidence/round2/README.md), and [experiment workflows](experiments/workflows/README.md)
 
 ## License

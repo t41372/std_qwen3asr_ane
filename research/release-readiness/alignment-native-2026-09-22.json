@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "recorded_date": "2026-09-22",
+  "backend": "qwen-asr-0.0.6 Qwen3ForcedAligner CPU float32 isolated worker",
+  "offline_inference": true,
+  "model": {
+    "id": "Qwen/Qwen3-ForcedAligner-0.6B",
+    "revision": "c7cbfc2048c462b0d63a45797104fc9db3ad62b7",
+    "weights_bytes": 1835544544,
+    "weights_sha256": "47831d0e82f96b20e9034dba01a075ee06436654719f6a68289e49f1b65ce0e7",
+    "license": "Apache-2.0"
+  },
+  "runtime": {
+    "qwen-asr": "0.0.6",
+    "torch": "2.14.0",
+    "transformers": "4.57.6",
+    "numpy": "2.5.3",
+    "device_map": "cpu",
+    "dtype": "float32",
+    "local_files_only": true
+  },
+  "fixtures": [
+    {
+      "language": "en",
+      "audio": "artifacts/evaluation/smoke/qwen_official_en.wav",
+      "audio_sha256": "f9b4440ac8393e47c14a6240e9739dea09b645bb1592b8f2dd48feb9666cea7f",
+      "source_url": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-ASR-Repo/asr_en.wav",
+      "reference_source_url": "https://raw.githubusercontent.com/QwenLM/Qwen3-ASR/7c6daf77a2421100f5fb066495372c00129d39ff/examples/example_qwen3_forced_aligner.py",
+      "request": {
+        "sample_rate": 16000,
+        "sample_count": 240820,
+        "granularity": "word",
+        "text": "Mm. Oh, yeah, yeah. He wasn't even that big when I started listening to him, but and his solo music didn't do overly well, but he did very well when he started writing for other people."
+      },
+      "elapsed_seconds_including_cold_worker_start": 29.86051349999616,
+      "output": [
+        ["Mm", 0.4, 0.88, 0, 2],
+        ["Oh", 1.04, 1.28, 4, 6],
+        ["yeah", 1.28, 1.52, 8, 12],
+        ["yeah", 1.52, 1.92, 14, 18],
+        ["He", 2.32, 2.4, 20, 22],
+        ["wasn't", 2.4, 2.8, 23, 29],
+        ["even", 2.8, 3.12, 30, 34],
+        ["that", 3.12, 3.36, 35, 39],
+        ["big", 3.36, 3.84, 40, 43],
+        ["when", 3.84, 4.0, 44, 48],
+        ["I", 4.08, 4.24, 49, 50],
+        ["started", 4.24, 4.64, 51, 58],
+        ["listening", 4.64, 5.04, 59, 68],
+        ["to", 5.12, 5.2, 69, 71],
+        ["him", 5.28, 5.52, 72, 75],
+        ["but", 6.0, 6.56, 77, 80],
+        ["and", 6.64, 6.8, 81, 84],
+        ["his", 6.8, 6.96, 85, 88],
+        ["solo", 6.96, 7.44, 89, 93],
+        ["music", 7.44, 8.0, 94, 99],
+        ["didn't", 8.08, 8.72, 100, 106],
+        ["do", 8.72, 9.28, 107, 109],
+        ["overly", 9.52, 10.08, 110, 116],
+        ["well", 10.08, 10.56, 117, 121],
+        ["but", 11.12, 11.28, 123, 126],
+        ["he", 11.28, 11.44, 127, 129],
+        ["did", 11.44, 11.68, 130, 133],
+        ["very", 11.68, 12.24, 134, 138],
+        ["well", 12.24, 12.64, 139, 143],
+        ["when", 12.64, 12.8, 144, 148],
+        ["he", 12.8, 12.88, 149, 151],
+        ["started", 12.88, 13.28, 152, 159],
+        ["writing", 13.28, 13.68, 160, 167],
+        ["for", 13.68, 13.84, 168, 171],
+        ["other", 13.84, 14.08, 172, 177],
+        ["people", 14.08, 14.64, 178, 184]
+      ]
+    },
+    {
+      "language": "zh",
+      "audio": "artifacts/evaluation/smoke/qwen_official_zh.wav",
+      "audio_sha256": "46dbc998c9d1d48111267c40741dd3200f2e5bcf4075f8c4c97f4451160dce50",
+      "source_url": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-ASR-Repo/asr_zh.wav",
+      "reference_source_url": "https://raw.githubusercontent.com/QwenLM/Qwen3-ASR/7c6daf77a2421100f5fb066495372c00129d39ff/examples/example_qwen3_forced_aligner.py",
+      "request": {
+        "sample_rate": 16000,
+        "sample_count": 67263,
+        "granularity": "word",
+        "text": "甚至出现交易几乎停滞的情况。"
+      },
+      "elapsed_seconds_warm_worker": 0.2179914159933105,
+      "output": [
+        ["甚", 0.4, 0.72, 0, 1],
+        ["至", 0.72, 0.96, 1, 2],
+        ["出", 0.96, 1.12, 2, 3],
+        ["现", 1.12, 1.52, 3, 4],
+        ["交", 1.52, 1.76, 4, 5],
+        ["易", 1.76, 2.0, 5, 6],
+        ["几", 2.0, 2.24, 6, 7],
+        ["乎", 2.24, 2.48, 7, 8],
+        ["停", 2.48, 2.72, 8, 9],
+        ["滞", 2.72, 2.88, 9, 10],
+        ["的", 2.88, 3.04, 10, 11],
+        ["情", 3.04, 3.36, 11, 12],
+        ["况", 3.36, 3.68, 12, 13]
+      ]
+    }
+  ],
+  "character_granularity_probe": {
+    "method": "Characters were separated before the official align() call; times were not subdivided from word output.",
+    "english_request": "Mm. Oh, yeah, yeah.",
+    "english_output": [
+      ["M", 0.4, 0.88, 0, 1],
+      ["m", 0.88, 0.88, 1, 2],
+      ["O", 1.04, 1.28, 4, 5],
+      ["h", 1.28, 1.28, 5, 6],
+      ["y", 1.28, 1.36, 8, 9],
+      ["e", 1.36, 1.44, 9, 10],
+      ["a", 1.44, 1.52, 10, 11],
+      ["h", 1.52, 1.52, 11, 12],
+      ["y", 1.52, 1.6, 14, 15],
+      ["e", 1.6, 1.6, 15, 16],
+      ["a", 1.76, 1.76, 16, 17],
+      ["h", 1.76, 1.84, 17, 18]
+    ],
+    "chinese_span_count": 13,
+    "chinese_first": ["甚", 0.4, 0.72, 0, 1],
+    "chinese_last": ["况", 3.36, 3.68, 12, 13]
+  },
+  "validation": {
+    "all_times_finite": true,
+    "all_times_ordered": true,
+    "all_times_within_source_audio": true,
+    "all_source_ranges_exact": true,
+    "punctuation_times_fabricated": false
+  }
+}

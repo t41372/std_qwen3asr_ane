@@ -1,8 +1,9 @@
 """Bundle assembly binds every reused graph to the checkpoint the manifest names."""
 
 import json
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import numpy as np
 import pytest
@@ -15,6 +16,12 @@ def _source(root: Path, revision: str) -> Path:
     source.mkdir(exist_ok=True)
     (source / "config.json").write_text("{}")
     (source / "chat_template.json").write_text(json.dumps({"chat_template": "x"}))
+    (source / "generation_config.json").write_text("{}")
+    (source / "preprocessor_config.json").write_text("{}")
+    (source / "tokenizer_config.json").write_text("{}")
+    (source / "vocab.json").write_text("{}")
+    (source / "merges.txt").write_text("merge")
+    (source / "model.safetensors").write_bytes(b"weights")
     (source / "source.json").write_text(json.dumps({"model_id": MODEL_ID, "revision": revision}))
     return source
 
@@ -22,7 +29,10 @@ def _source(root: Path, revision: str) -> Path:
 @pytest.fixture
 def fake_conversion(monkeypatch: pytest.MonkeyPatch):
     """Stub the graph converters and tokenizer tooling; only bundle assembly runs."""
-    transformers = pytest.importorskip("transformers")
+    transformers = ModuleType("transformers")
+    transformers.AutoTokenizer = None
+    transformers.WhisperFeatureExtractor = None
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
     from std_qwen3asr_ane.conversion import decoder, encoder
 
     calls = {"encoder": 0, "decoder_fails": False}
@@ -74,10 +84,10 @@ def test_reused_encoder_must_come_from_the_same_checkpoint(tmp_path: Path, fake_
     fake_conversion["decoder_fails"] = True
     with pytest.raises(RuntimeError, match="interrupted"):
         build_bundle(source, output)
-    assert json.loads((output / "encoder-manifest.json").read_text())["source"] == {
-        "model_id": MODEL_ID,
-        "revision": "a" * 40,
-    }
+    encoder_source = json.loads((output / "encoder-manifest.json").read_text())["source"]
+    assert encoder_source["model_id"] == MODEL_ID
+    assert encoder_source["revision"] == "a" * 40
+    assert len(encoder_source["content_sha256"]) == 64
     assert not (output / "manifest.json").exists()
     fake_conversion["decoder_fails"] = False
     # An architecture-compatible revision must not inherit the other checkpoint's encoder.
@@ -90,6 +100,7 @@ def test_reused_encoder_must_come_from_the_same_checkpoint(tmp_path: Path, fake_
         build_bundle(source, output, reuse_encoder=True, frontend_batch_size=4)
     manifest = build_bundle(source, output, reuse_encoder=True)
     assert manifest["source_revision"] == "a" * 40
+    assert len(manifest["source_content_sha256"]) == 64
     assert fake_conversion["encoder"] == 1
 
 

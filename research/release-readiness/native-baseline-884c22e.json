@@ -1,0 +1,76 @@
+{
+  "command": "./.venv/bin/python research/release-readiness/compare_native_baseline.py compare",
+  "execution": "macOS sandbox escalation approved only so Core ML could create execution plans for the existing compiled bundle",
+  "comparison_scope": "Default direct CoreMLRuntime greedy decoding only: no cancellation token, candidate list, phrase hint, prompt, draft, long-form coordination, or timing comparison.",
+  "baseline": {
+    "git_revision": "884c22e",
+    "source_root": ".cache/native-baseline-884c22e/std_qwen3asr_ane/src",
+    "runtime_path": ".cache/native-baseline-884c22e/std_qwen3asr_ane/src/std_qwen3asr_ane/runtime.py",
+    "runtime_sha256": "d1b256c4202d759b19a0453e53a08c686c0ad5a1c3504dc3ab060ec08a385b71"
+  },
+  "current": {
+    "runtime_path": "std_qwen3asr_ane/src/std_qwen3asr_ane/runtime.py",
+    "runtime_sha256": "c347fd52c29777cba4e36f659cefc0ff350e432bf919aa0730a116b7f0f88f28"
+  },
+  "bundle": {
+    "path": "artifacts/qwen3-asr-1.7b",
+    "manifest_sha256": "6fb52962b00b709994915b857551c92a13074b2223e31de94ac3b73b284fa43f",
+    "compute_units_requested": "cpu_and_ne",
+    "max_new_tokens": 256
+  },
+  "selection": {
+    "official_smoke": [
+      {
+        "id": "smoke-en",
+        "path": "artifacts/evaluation/smoke/qwen_official_en.wav",
+        "audio_sha256": "f9b4440ac8393e47c14a6240e9739dea09b645bb1592b8f2dd48feb9666cea7f",
+        "source_sample_rate": 48000,
+        "native_samples": 240820,
+        "resampling": "scipy.signal.resample_poly(up=1, down=3)"
+      },
+      {
+        "id": "smoke-zh",
+        "path": "artifacts/evaluation/smoke/qwen_official_zh.wav",
+        "audio_sha256": "46dbc998c9d1d48111267c40741dd3200f2e5bcf4075f8c4c97f4451160dce50",
+        "source_sample_rate": 16000,
+        "native_samples": 67263,
+        "resampling": "none"
+      }
+    ],
+    "first_two_rows_of_each_cached_heldout_manifest": [
+      {
+        "id": "librispeech-balanced-100-0-librispeech-clean-test-1824",
+        "manifest": "artifacts/evaluation/librispeech-balanced-100/manifest.jsonl",
+        "audio_sha256": "46b7779e25462c3b4bddf3270e8cc1df50f7ba85b05d2a3e31ab7a93a53ee292"
+      },
+      {
+        "id": "librispeech-balanced-100-1-librispeech-clean-test-219",
+        "manifest": "artifacts/evaluation/librispeech-balanced-100/manifest.jsonl",
+        "audio_sha256": "271e626e78815d8062c8df36730cea52fc2cf183274b8e7dc7f5a103704b6c07"
+      },
+      {
+        "id": "fleurs-zh-balanced-100-0-fleurs-cmn_hans_cn-test-587",
+        "manifest": "artifacts/evaluation/fleurs-zh-balanced-100/manifest.jsonl",
+        "audio_sha256": "4e5fdab5fed7ebdbff0bc8cdb587e33fd579736161b83f04fe00fcc9c4af2b63"
+      },
+      {
+        "id": "fleurs-zh-balanced-100-1-fleurs-cmn_hans_cn-test-569",
+        "manifest": "artifacts/evaluation/fleurs-zh-balanced-100/manifest.jsonl",
+        "audio_sha256": "e94d8ebb9981fafa2026e8b86689ae0b84c99af10c16076efb28d4d0c8531aa5"
+      }
+    ]
+  },
+  "per_input": [
+    {"id": "smoke-en", "text_equal": true, "raw_text_equal": true, "token_ids_equal": true, "eos_equal": true},
+    {"id": "smoke-zh", "text_equal": true, "raw_text_equal": true, "token_ids_equal": true, "eos_equal": true},
+    {"id": "librispeech-balanced-100-0-librispeech-clean-test-1824", "text_equal": true, "raw_text_equal": true, "token_ids_equal": true, "eos_equal": true},
+    {"id": "librispeech-balanced-100-1-librispeech-clean-test-219", "text_equal": true, "raw_text_equal": true, "token_ids_equal": true, "eos_equal": true},
+    {"id": "fleurs-zh-balanced-100-0-fleurs-cmn_hans_cn-test-587", "text_equal": true, "raw_text_equal": true, "token_ids_equal": true, "eos_equal": true},
+    {"id": "fleurs-zh-balanced-100-1-fleurs-cmn_hans_cn-test-569", "text_equal": true, "raw_text_equal": true, "token_ids_equal": true, "eos_equal": true}
+  ],
+  "all_text_equal": true,
+  "all_raw_text_equal": true,
+  "all_token_ids_equal": true,
+  "all_eos_equal": true,
+  "interpretation": "This is a bounded regression check for the default greedy path. It establishes no accuracy, latency, energy, ANE-placement, or behavior claim for new optional features."
+}

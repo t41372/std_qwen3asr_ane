@@ -1,0 +1,247 @@
+"""Compare default greedy decoding from one source tree against another.
+
+The script has no model download, conversion, or artifact-writing path. In
+``compare`` mode it spawns two fresh Python processes so each imports exactly
+one ``std_qwen3asr_ane.runtime`` implementation against the same compiled
+bundle and decoded NumPy audio arrays.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib
+import json
+import math
+import os
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
+import numpy as np
+import soundfile as sf
+from evidence_provenance import evidence_date, module_sha256, runtime_provenance
+from scipy.signal import resample_poly
+
+ROOT = Path(__file__).resolve().parents[2]
+BUNDLE = ROOT / "artifacts/qwen3-asr-1.7b"
+BASELINE_SOURCE = ROOT / ".cache/native-baseline-884c22e/std_qwen3asr_ane/src"
+HELDOUT_MANIFESTS = (
+    ROOT / "artifacts/evaluation/librispeech-balanced-100/manifest.jsonl",
+    ROOT / "artifacts/evaluation/fleurs-zh-balanced-100/manifest.jsonl",
+)
+SMOKE = (
+    ("smoke-en", ROOT / "artifacts/evaluation/smoke/qwen_official_en.wav"),
+    ("smoke-zh", ROOT / "artifacts/evaluation/smoke/qwen_official_zh.wav"),
+)
+HELDOUT_PER_MANIFEST = 2
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def inputs() -> list[tuple[str, Path, dict[str, object]]]:
+    selected = []
+    for item_id, path in SMOKE:
+        selected.append((item_id, path, {"selection": "official smoke"}))
+    for manifest_path in HELDOUT_MANIFESTS:
+        for index, line in enumerate(manifest_path.read_text().splitlines()[:HELDOUT_PER_MANIFEST]):
+            row = json.loads(line)
+            path = manifest_path.parent / row["audio_path"]
+            selected.append(
+                (
+                    f"{manifest_path.parent.name}-{index}-{row['id']}",
+                    path,
+                    {
+                        "selection": f"first {HELDOUT_PER_MANIFEST} rows of {manifest_path.relative_to(ROOT)}",
+                        "manifest_audio_sha256": row["audio_sha256"],
+                        "manifest_language": row["language"],
+                    },
+                )
+            )
+    return selected
+
+
+def load(path: Path) -> tuple[np.ndarray, dict[str, object]]:
+    data, sample_rate = sf.read(path, dtype="float32", always_2d=True)
+    if data.shape[1] != 1:
+        raise ValueError(f"Expected mono audio: {path}")
+    samples = data[:, 0]
+    if sample_rate != 16000:
+        divisor = math.gcd(sample_rate, 16000)
+        samples = resample_poly(samples, 16000 // divisor, sample_rate // divisor).astype(
+            np.float32
+        )
+    return samples, {
+        "path": str(path),
+        "sha256": sha256(path),
+        "source_sample_rate": sample_rate,
+        "native_samples": len(samples),
+        "native_seconds": len(samples) / 16000,
+    }
+
+
+def run_single(label: str, *, source_override: bool = False) -> None:
+    provenance = runtime_provenance(allow_plugin_override=source_override)
+    from std_qwen3asr_ane.runtime import CoreMLRuntime
+
+    runtime_module = importlib.import_module("std_qwen3asr_ane.runtime")
+    runtime = CoreMLRuntime(BUNDLE)
+    try:
+        rows = []
+        for item_id, path, selection in inputs():
+            samples, audio = load(path)
+            result = runtime.transcribe(samples, language=None, max_new_tokens=256)
+            rows.append(
+                {
+                    "id": item_id,
+                    "selection": selection,
+                    "audio": audio,
+                    "text": result.text,
+                    "raw_text": result.raw_text,
+                    "language": result.language,
+                    "token_ids": list(result.token_ids),
+                    "eos_token_id": result.timings["eos_token_id"],
+                }
+            )
+        print(
+            json.dumps(
+                {
+                    "label": label,
+                    "environment": provenance,
+                    "runtime_module": runtime_module.__file__,
+                    "runtime_sha256": sha256(Path(runtime_module.__file__)),
+                    "bundle_manifest_sha256": sha256(BUNDLE / "manifest.json"),
+                    "heldout_per_manifest": HELDOUT_PER_MANIFEST,
+                    "rows": rows,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            flush=True,
+        )
+    finally:
+        runtime.close()
+
+
+def run_child(label: str, source: Path | None) -> dict:
+    environment = dict(os.environ)
+    environment.pop("PYTHONPATH", None)
+    if source is not None:
+        environment["PYTHONPATH"] = str(source)
+    process = subprocess.run(
+        [sys.executable, str(Path(__file__)), "single", "--label", label]
+        + (["--source-override"] if source is not None else []),
+        cwd=ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if process.returncode:
+        raise RuntimeError(
+            f"{label} exited {process.returncode}: stderr={process.stderr} stdout={process.stdout}"
+        )
+    return json.loads(process.stdout)
+
+
+def compare() -> dict:
+    baseline = run_child("baseline-884c22e", BASELINE_SOURCE)
+    current = run_child("current-installed", None)
+    baseline_rows = {row["id"]: row for row in baseline["rows"]}
+    current_rows = {row["id"]: row for row in current["rows"]}
+    comparison = []
+    for item_id, older in baseline_rows.items():
+        newer = current_rows[item_id]
+        comparison.append(
+            {
+                "id": item_id,
+                "text_equal": older["text"] == newer["text"],
+                "raw_text_equal": older["raw_text"] == newer["raw_text"],
+                "token_ids_equal": older["token_ids"] == newer["token_ids"],
+                "eos_equal": older["eos_token_id"] == newer["eos_token_id"],
+                "baseline": older,
+                "current": newer,
+            }
+        )
+    equality = {
+        "all_text_equal": all(item["text_equal"] for item in comparison),
+        "all_raw_text_equal": all(item["raw_text_equal"] for item in comparison),
+        "all_token_ids_equal": all(item["token_ids_equal"] for item in comparison),
+        "all_eos_equal": all(item["eos_equal"] for item in comparison),
+    }
+    return {
+        "schema_version": 1,
+        "date": evidence_date(),
+        "status": "passed" if all(equality.values()) else "failed",
+        "command": shlex.join([sys.executable, *sys.argv]),
+        "environment": {
+            "executable": sys.executable,
+            "current_source": current["runtime_module"],
+            "baseline_source_override": str(BASELINE_SOURCE),
+            **runtime_provenance(),
+        },
+        "source_sha256": {
+            "verifier": sha256(Path(__file__)),
+            "provenance": module_sha256("evidence_provenance"),
+            "current_runtime": current["runtime_sha256"],
+        },
+        "baseline": baseline,
+        "current": current,
+        "comparison": comparison,
+        **equality,
+        "failures": [] if all(equality.values()) else ["one or more exact parity gates failed"],
+        "performance_claim": False,
+    }
+
+
+def write_evidence(document: dict, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(document, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    subcommands = parser.add_subparsers(dest="mode", required=True)
+    single = subcommands.add_parser("single")
+    single.add_argument("--label", required=True)
+    single.add_argument("--source-override", action="store_true")
+    compare_parser = subcommands.add_parser("compare")
+    compare_parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    if args.mode == "single":
+        run_single(args.label, source_override=args.source_override)
+    else:
+        try:
+            document = compare()
+        except Exception as error:
+            document = {
+                "schema_version": 1,
+                "date": evidence_date(),
+                "status": "failed",
+                "command": shlex.join([sys.executable, *sys.argv]),
+                "source_sha256": {"verifier": sha256(Path(__file__))},
+                "failures": [{"type": type(error).__name__, "message": str(error)}],
+                "performance_claim": False,
+            }
+            write_evidence(document, args.output)
+            raise
+        write_evidence(document, args.output)
+        print(json.dumps({"status": document["status"], "output": str(args.output)}))
+        if document["status"] != "passed":
+            raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()

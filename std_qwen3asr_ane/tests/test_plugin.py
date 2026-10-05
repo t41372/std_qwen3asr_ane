@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -42,9 +43,11 @@ from std_qwen3asr_ane.plugin import (
     MODEL_ID,
     PROMPT_MAX_TOKENS,
     Qwen3ASREngine,
+    ShortDictationEngine,
     create_engine,
     detected_language,
 )
+from std_qwen3asr_ane.runtime import build_prompt, parse_output_details
 
 
 @pytest.fixture(autouse=True)
@@ -54,24 +57,26 @@ def mock_acquisition_policy(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def make_bundle(tmp_path: Path) -> Path:
-    """A complete file layout, intentionally not a usable model."""
+    """A manifest-valid bundle layout with placeholder, non-executable payloads."""
     tmp_path.mkdir(parents=True, exist_ok=True)
     files = {
         "frontend": "frontend.mlpackage",
         "encoder": "encoder.mlpackage",
-        "decoder": "decoder.mlpackage",
         "lm_head": "lm_head.mlpackage",
         "embedding": "embedding.npy",
         "tokenizer": "tokenizer.json",
         "mel_filters": "mel_filters.npy",
     }
-    for filename in files.values():
+    decoder_partitions = ["decoder_00.mlpackage"]
+    for filename in (*files.values(), *decoder_partitions):
         payload = tmp_path / filename
         if payload.suffix == ".mlpackage":
             data = payload / "Data/com.apple.CoreML"
             (data / "weights").mkdir(parents=True)
             (data / "model.mlmodel").write_bytes(b"model specification fixture")
             (data / "weights/custom-name.bin").write_bytes(b"weight fixture")
+            if filename == files["lm_head"]:
+                (data / "weights/weight.bin").write_bytes(b"x")
             (payload / "Manifest.json").write_text(
                 json.dumps(
                     {
@@ -93,6 +98,15 @@ def make_bundle(tmp_path: Path) -> Path:
                 "model_id": MODEL_ID,
                 "source_revision": "a" * 40,
                 "files": files,
+                "decoder_partitions": decoder_partitions,
+                "max_sequence_length": 1024,
+                "token_batch_size": 16,
+                "max_audio_seconds": 30.0,
+                "residual_scale": 1.0,
+                "head_dim": 2,
+                "rope_theta": 1_000_000.0,
+                "frontend": {"chunk_frames": 100},
+                "encoder": {"window_tokens": 104},
             }
         )
     )
@@ -111,8 +125,13 @@ def fake_runtime(monkeypatch: pytest.MonkeyPatch):
 
         def __init__(self, model_dir):
             self.model_dir = model_dir
-            self.token_batch_size = 16
+            manifest = json.loads((Path(model_dir) / "manifest.json").read_text())
+            self.token_batch_size = manifest.get("token_batch_size", 1)
+            self.max_audio_seconds = float(manifest["max_audio_seconds"])
+            self.head_output = manifest.get("head_output", {"kind": "logits"})
             self.calls = []
+            self.requests = []
+            self.prompt_texts = []
             self.active = 0
             self.max_active = 0
             self.closed = False
@@ -122,13 +141,29 @@ def fake_runtime(monkeypatch: pytest.MonkeyPatch):
             assert self.active == 0
             self.closed = True
 
-        def transcribe(self, samples, *, language, max_new_tokens, context=""):
+        def transcribe(self, samples, *, language, max_new_tokens, context="", **kwargs):
             self.active += 1
             self.max_active = max(self.max_active, self.active)
             try:
                 time.sleep(0.01)
                 self.calls.append((samples.copy(), language, max_new_tokens))
-                return SimpleNamespace(text="hello", language="English")
+                self.requests.append({"context": context, **kwargs})
+
+                class Tokenizer:
+                    def encode(inner_self, text, *, add_special_tokens=False):
+                        assert not add_special_tokens
+                        self.prompt_texts.append(text)
+                        return SimpleNamespace(ids=[1])
+
+                build_prompt(Tokenizer(), 1, language, context=context)
+                raw = "language English<asr_text>hello" if language is None else "hello"
+                parsed = parse_output_details(raw, language)
+                return SimpleNamespace(
+                    text=parsed.text,
+                    language=parsed.language,
+                    raw_model_language=parsed.raw_model_language,
+                    raw_text=raw,
+                )
             finally:
                 self.active -= 1
 
@@ -180,26 +215,28 @@ def test_config_environment_and_explicit_precedence(monkeypatch: pytest.MonkeyPa
     assert create_engine(model_dir="local/explicit").config.model_dir == Path("local/explicit")
 
 
-def test_short_profile_defaults_preserve_explicit_and_environment_values(monkeypatch):
-    engine = create_engine(profile="short-dictation")
+def test_short_profile_has_a_separate_entrypoint_and_general_rejects_it(monkeypatch):
+    from standard_asr.contract.exceptions import ConfigError
+
+    with pytest.raises(ConfigError, match="profile"):
+        create_engine(profile="short-dictation")
+    engine = ShortDictationEngine()
     assert (
         engine.config.model_dir
         == resolve_cache_dir() / "std-qwen3asr-ane/qwen3-asr-1.7b-short-dictation"
     )
     assert engine.config.max_new_tokens == 128
     monkeypatch.setenv("STANDARD_ASR_STD_QWEN3ASR_ANE__MAX_NEW_TOKENS", "200")
-    assert create_engine(profile="short-dictation").config.max_new_tokens == 200
-    assert create_engine(profile="short-dictation", max_new_tokens=64).config.max_new_tokens == 64
-    assert create_engine(profile="short-dictation", model_dir="custom").config.model_dir == Path(
-        "custom"
-    )
+    assert ShortDictationEngine().config.max_new_tokens == 200
+    assert ShortDictationEngine(max_new_tokens=64).config.max_new_tokens == 64
+    assert ShortDictationEngine(model_dir="custom").config.model_dir == Path("custom")
 
 
 def test_short_profile_rejects_a_general_bundle_before_native_loading(bundle, fake_runtime):
-    from standard_asr.contract.exceptions import ConfigError
-
-    with pytest.raises(ConfigError, match="cache-512"):
-        create_engine(profile="short-dictation", model_dir=bundle).prepare()
+    engine = ShortDictationEngine(model_dir=bundle)
+    with pytest.raises(ArtifactUnavailableError):
+        engine.prepare()
+    assert engine.artifact_status().requirements[0].state == "corrupt"
     assert not fake_runtime.instances
 
 
@@ -208,7 +245,9 @@ def test_missing_artifact_reports_actions_without_side_effects(
 ) -> None:
     root = tmp_path / "missing"
     engine = create_engine(model_dir=root)
-    monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: False)
+    monkeypatch.setattr(
+        "std_qwen3asr_ane.artifact_lifecycle.conversion_toolchain_available", lambda: False
+    )
     report = engine.artifact_status()
     (requirement,) = report.requirements
     assert report.readiness == "unavailable"
@@ -226,7 +265,9 @@ def test_missing_artifact_reports_actions_without_side_effects(
         engine.transcribe((np.zeros(1600, dtype=np.float32), 16000))
     assert not root.exists()
     # With the toolchain installed the framework may run the conversion itself.
-    monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: True)
+    monkeypatch.setattr(
+        "std_qwen3asr_ane.artifact_lifecycle.conversion_toolchain_available", lambda: True
+    )
     (requirement,) = engine.artifact_status().requirements
     assert requirement.can_acquire_now and requirement.acquisition_blocker is None
     assert requirement.required_actions == ()
@@ -254,7 +295,7 @@ def test_complete_bundle_acquisition_is_noop(bundle: Path) -> None:
         ({"schema_version": 2}, "corrupt"),
         ({"model_id": "Qwen/Qwen3-ASR-0.6B"}, "corrupt"),
         ({"source_revision": None}, "corrupt"),
-        ({"files": {}}, "incomplete"),
+        ({"files": {}}, "corrupt"),
     ],
 )
 def test_invalid_manifest(bundle: Path, change: dict, expected: str) -> None:
@@ -272,7 +313,7 @@ def test_batched_frontend_requires_its_additional_asset(bundle):
     manifest["frontend"] = {"offline_batch_size": 4}
     path.write_text(json.dumps(manifest))
     engine = create_engine(model_dir=bundle)
-    assert engine.artifact_status().requirements[0].state == "incomplete"
+    assert engine.artifact_status().requirements[0].state == "corrupt"
     shutil.copytree(bundle / "frontend.mlpackage", bundle / "frontend_batched.mlpackage")
     manifest["files"]["frontend_batched"] = "frontend_batched.mlpackage"
     path.write_text(json.dumps(manifest))
@@ -297,7 +338,7 @@ def test_schema_three_requires_embedding_scales(bundle):
     )
     path.write_text(json.dumps(manifest))
     engine = create_engine(model_dir=bundle)
-    assert engine.artifact_status().requirements[0].state == "incomplete"
+    assert engine.artifact_status().requirements[0].state == "corrupt"
     np.save(bundle / "scales.npy", np.ones(4, np.float32))
     manifest["files"]["embedding_scales"] = "scales.npy"
     path.write_text(json.dumps(manifest))
@@ -435,8 +476,10 @@ def test_batch_result_language_and_audio_contract(bundle: Path, fake_runtime) ->
     np.testing.assert_array_equal(received, samples)
     assert language is None
     assert max_tokens == 123
+    assert "language " not in instance.prompt_texts[0]
     forced = engine.transcribe((samples, 16000), RuntimeParams(language="yue"))
     assert instance.calls[-1][1] == "yue"
+    assert instance.prompt_texts[-1].endswith("language Cantonese<asr_text>")
     assert forced.detected_language is None
 
 
@@ -600,8 +643,10 @@ def test_context_manager_closes_when_body_raises(bundle: Path, fake_runtime):
     assert fake_runtime.instances[0].closed
 
 
-def draft_bundle(root: Path) -> Path:
-    """A complete draft-bundle layout, intentionally not usable models."""
+def draft_bundle(root: Path, target_root: Path | None = None) -> Path:
+    """A manifest-valid draft layout bound to placeholder target payloads."""
+    target_root = root.parent if target_root is None else target_root
+    target_manifest = json.loads((target_root / "manifest.json").read_text())
     root.mkdir()
     head = root / "verify_head.mlmodelc"
     (head / "weights").mkdir(parents=True)
@@ -609,8 +654,25 @@ def draft_bundle(root: Path) -> Path:
         (head / name).write_bytes(b"x")
     checkpoint = root / "Qwen3-ASR-0.6B"
     checkpoint.mkdir()
-    (checkpoint / "config.json").write_text("{}")
+    for name in (
+        "config.json",
+        "chat_template.json",
+        "generation_config.json",
+        "preprocessor_config.json",
+        "tokenizer_config.json",
+        "vocab.json",
+    ):
+        (checkpoint / name).write_text("{}")
+    (checkpoint / "merges.txt").write_text("merge")
     (checkpoint / "model.safetensors").write_bytes(b"x")
+    (checkpoint / "source.json").write_text(
+        json.dumps(
+            {
+                "model_id": "Qwen/Qwen3-ASR-0.6B",
+                "revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+            }
+        )
+    )
     (root / "manifest.json").write_text(
         json.dumps(
             {
@@ -618,11 +680,31 @@ def draft_bundle(root: Path) -> Path:
                 "kind": "qwen3-asr-ane-draft",
                 "draft": {
                     "model_id": "Qwen/Qwen3-ASR-0.6B",
-                    "revision": "b" * 40,
+                    "revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
                     "path": "Qwen3-ASR-0.6B",
                 },
-                "verify_head": {"path": "verify_head.mlmodelc", "token_batch_size": 16},
-                "target": {},
+                "verify_head": {
+                    "path": "verify_head.mlmodelc",
+                    "token_batch_size": 16,
+                    "vocabulary_chunk": 8192,
+                    "weight_sha256": [hashlib.sha256(b"x").hexdigest()],
+                },
+                "target": {
+                    "model_id": target_manifest["model_id"],
+                    "source_revision": target_manifest["source_revision"],
+                    "token_batch_size": target_manifest["token_batch_size"],
+                    "tokenizer_sha256": hashlib.sha256(
+                        (target_root / target_manifest["files"]["tokenizer"]).read_bytes()
+                    ).hexdigest(),
+                    "weight_compression": {
+                        "scheme": None,
+                        "bits": None,
+                        "group_size": None,
+                    },
+                    "manifest_sha256": hashlib.sha256(
+                        (target_root / "manifest.json").read_bytes()
+                    ).hexdigest(),
+                },
             }
         )
     )
@@ -637,7 +719,9 @@ def test_draft_requirement_is_reported_and_actionable(
     assert report.readiness != "ready"
     draft = [r for r in report.requirements if r.artifact_id == "qwen3-asr-0.6b-gpu-draft"]
     assert len(draft) == 1 and draft[0].state == "missing"
-    monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: False)
+    monkeypatch.setattr(
+        "std_qwen3asr_ane.artifact_lifecycle.conversion_toolchain_available", lambda: False
+    )
     draft = [
         r
         for r in engine.artifact_status().requirements
@@ -654,7 +738,7 @@ def test_draft_requirement_is_reported_and_actionable(
     draft_bundle(tmp_path / "draft")
     assert engine.artifact_status().readiness == "ready"
     (tmp_path / "draft/Qwen3-ASR-0.6B/model.safetensors").write_bytes(b"")
-    assert [r.state for r in engine.artifact_status().requirements][1] == "incomplete"
+    assert [r.state for r in engine.artifact_status().requirements][1] == "corrupt"
     engine_without = create_engine(model_dir=bundle)
     assert len(engine_without.artifact_status().requirements) == 1
 
@@ -686,6 +770,7 @@ def test_draft_path_verifies_on_the_runtime(
 
     fake_runtime.transcribe_speculative = transcribe_speculative
     engine = create_engine(model_dir=bundle, draft_dir=tmp_path / "draft", draft_lookahead=7)
+    monkeypatch.setattr(engine, "_check_draft_dependencies", lambda: None)
     engine.prepare()
     assert not loaded and engine._draft is None
     result = engine.transcribe((np.zeros(16000, dtype=np.float32), 16000), RuntimeParams())
@@ -712,6 +797,7 @@ def test_missing_mlx_is_a_configuration_error(
     module.DraftRuntime = fail
     monkeypatch.setitem(sys.modules, module.__name__, module)
     engine = create_engine(model_dir=bundle, draft_dir=tmp_path / "draft")
+    monkeypatch.setattr(engine, "_check_draft_dependencies", lambda: None)
     with pytest.raises(ConfigError) as info:
         engine.transcribe((np.zeros(16000, dtype=np.float32), 16000), RuntimeParams())
     assert "gpu-draft" in (info.value.hint or "")
@@ -738,21 +824,23 @@ def test_pull_runs_the_measured_recipe_in_a_work_directory(
 ) -> None:
     import std_qwen3asr_ane.conversion.draft as draft_build
     from std_qwen3asr_ane import compiled
+    from std_qwen3asr_ane.artifact_lifecycle import (
+        BUNDLE_ARTIFACT_ID,
+        DRAFT_ARTIFACT_ID,
+        ArtifactManager,
+    )
     from std_qwen3asr_ane.conversion import build, compress
+    from std_qwen3asr_ane.conversion.build import SOURCE_REVISION
+    from std_qwen3asr_ane.draft import DRAFT_MODEL_ID, DRAFT_REVISION
+    from std_qwen3asr_ane.source_validation import VerifiedSource
 
     calls = []
     source = tmp_path / "source"
     target = tmp_path / "bundle"
     draft = tmp_path / "draft"
 
-    def fake_download(destination, *, revision, model_id):
-        calls.append(("download", destination, revision, model_id))
-        destination.mkdir(parents=True)
-        (destination / "source.json").write_text(
-            json.dumps({"model_id": model_id, "revision": revision})
-        )
-
     def fake_build(src, output, **recipe):
+        recipe.pop("verified_source")
         calls.append(("build", src, output, recipe))
         output.mkdir(parents=True)
 
@@ -764,16 +852,35 @@ def test_pull_runs_the_measured_recipe_in_a_work_directory(
         calls.append(("compile", src, output))
         make_bundle(output)
 
-    def fake_draft(target_dir, src, output, *, draft_source):
+    def fake_draft(target_dir, src, output, *, draft_source, **_verified):
         calls.append(("draft", target_dir, src, output))
-        draft_bundle(output)
+        draft_bundle(output, target_dir)
 
-    monkeypatch.setattr(build, "download_source", fake_download)
+    def verified(root: Path, model_id: str, revision: str) -> VerifiedSource:
+        root.mkdir(parents=True, exist_ok=True)
+        return VerifiedSource(root, model_id, revision, (), "a" * 64)
+
+    def fake_ensure_source(self, emit, revision=SOURCE_REVISION):
+        if not source.exists():
+            calls.append(("download", source, revision, MODEL_ID))
+            emit("transferring", BUNDLE_ARTIFACT_ID)
+        return verified(source, MODEL_ID, revision)
+
+    def fake_ensure_draft_source(self, emit):
+        draft_source = tmp_path / "draft-source"
+        calls.append(("download", draft_source, DRAFT_REVISION, DRAFT_MODEL_ID))
+        emit("transferring", DRAFT_ARTIFACT_ID)
+        return verified(draft_source, DRAFT_MODEL_ID, DRAFT_REVISION)
+
     monkeypatch.setattr(build, "build_bundle", fake_build)
     monkeypatch.setattr(compress, "compress_bundle", fake_compress)
     monkeypatch.setattr(compiled, "compile_bundle", fake_compile)
     monkeypatch.setattr(draft_build, "build_draft_bundle", fake_draft)
-    monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: True)
+    monkeypatch.setattr(ArtifactManager, "ensure_source", fake_ensure_source)
+    monkeypatch.setattr(ArtifactManager, "_ensure_draft_source", fake_ensure_draft_source)
+    monkeypatch.setattr(
+        "std_qwen3asr_ane.artifact_lifecycle.conversion_toolchain_available", lambda: True
+    )
     engine = create_engine(
         model_dir=target,
         source_dir=source,
@@ -801,7 +908,16 @@ def test_pull_runs_the_measured_recipe_in_a_work_directory(
     assert not work.exists() and target.is_dir() and draft.is_dir()
     phases = [event.phase for event in events]
     assert phases[0] == "resolving" and phases[-1] == "finalizing"
-    assert phases[1:-1] == ["transferring", "converting", "verifying", "transferring", "converting"]
+    assert phases[1:-1] == [
+        "transferring",
+        "converting",
+        "converting",
+        "converting",
+        "verifying",
+        "transferring",
+        "converting",
+        "verifying",
+    ]
     # A second pull has nothing to do; an existing target is never overwritten.
     calls.clear()
     assert engine.acquire_artifacts().readiness == "ready" and calls == []
@@ -816,19 +932,24 @@ def test_pull_runs_the_measured_recipe_in_a_work_directory(
 def test_pull_failure_is_structured_and_keeps_no_partial_bundle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from std_qwen3asr_ane.artifact_lifecycle import ArtifactManager
     from std_qwen3asr_ane.conversion import build
+    from std_qwen3asr_ane.conversion.build import SOURCE_REVISION
+    from std_qwen3asr_ane.source_validation import VerifiedSource
 
     source = tmp_path / "source"
-    source.mkdir()
-    (source / "source.json").write_text(
-        json.dumps({"model_id": MODEL_ID, "revision": "7278e1e70fe206f11671096ffdd38061171dd6e5"})
-    )
 
     def failing_build(src, output, **recipe):
         raise RuntimeError("conversion exploded")
 
+    def fake_ensure_source(self, emit, revision=SOURCE_REVISION):
+        return VerifiedSource(source, MODEL_ID, revision, (), "a" * 64)
+
     monkeypatch.setattr(build, "build_bundle", failing_build)
-    monkeypatch.setattr("std_qwen3asr_ane.plugin._conversion_toolchain_available", lambda: True)
+    monkeypatch.setattr(ArtifactManager, "ensure_source", fake_ensure_source)
+    monkeypatch.setattr(
+        "std_qwen3asr_ane.artifact_lifecycle.conversion_toolchain_available", lambda: True
+    )
     engine = create_engine(model_dir=tmp_path / "bundle", source_dir=source)
     with pytest.raises(ArtifactAcquisitionError) as caught:
         engine.acquire_artifacts()

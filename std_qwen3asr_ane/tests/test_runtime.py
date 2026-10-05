@@ -51,6 +51,7 @@ def bundle(tmp_path: Path) -> Path:
             {
                 "schema_version": 1,
                 "model_id": "Qwen/Qwen3-ASR-1.7B",
+                "source_revision": "a" * 40,
                 "files": {
                     "frontend": "frontend.mlpackage",
                     "encoder": "encoder.mlpackage",

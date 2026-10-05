@@ -115,6 +115,31 @@ def test_louder_audio_changes_old_mel_floor_and_invalidates_completed_chunks(cac
     assert cached.context.timings["reused_frontend_chunks"] == 0
 
 
+def test_mel_timings_report_power_frame_work_without_feature_reuse_aliases():
+    owner = object()
+    context = AudioPrefixContext(
+        owner=owner,
+        hidden_width=8,
+        mel_filters=np.ones((201, 128), np.float32),
+    )
+    frontend, encoder = Frontend(), Encoder()
+    samples = np.random.default_rng(71).normal(size=48000).astype(np.float32)
+
+    initial = context.features(samples[:32000], owner=owner)
+    context.encode(initial, owner=owner, frontend=frontend, encoder=encoder)
+    current = context.features(samples, owner=owner)
+    context.encode(current, owner=owner, frontend=frontend, encoder=encoder)
+
+    assert context.timings["computed_power_frames"] == 200
+    assert context.timings["reused_power_frames"] == 100
+    assert (
+        context.timings["computed_power_frames"] + context.timings["reused_power_frames"]
+        == current.shape[1]
+    )
+    assert "computed_feature_frames" not in context.timings
+    assert "reused_feature_frames" not in context.timings
+
+
 def test_failure_discards_reuse_and_retry_matches_fresh_state(cached):
     features = np.zeros((128, 900), np.float32)
     cached.encode(features[:, :800])

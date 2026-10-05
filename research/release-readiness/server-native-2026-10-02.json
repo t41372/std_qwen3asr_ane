@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "recorded_date": "2026-10-02",
+  "recorded_at": "2026-10-02T15:25:52.292285+00:00",
+  "status": "passed",
+  "scope": "Installed-wheel loopback Uvicorn deployment with genuine Core ML inference, CPU forced alignment, and sherpa-onnx diarization.",
+  "reproduction": {
+    "command": ".venv/bin/python research/release-readiness/verify_server_native.py",
+    "build_output": "A unique artifacts/release-readiness/server-native-<UTC>-<PID>/dist directory.",
+    "installed_module": "<isolated-env>/site-packages/std_qwen3asr_ane/__init__.py"
+  },
+  "limitations": [
+    "This is a fixed official-fixture release test, not a corpus-quality benchmark.",
+    "No concurrency throughput or performance claim is made.",
+    "Cancellation is cooperative at native prediction boundaries."
+  ],
+  "resolved_during_verification": [
+    {
+      "defect": "The forced-alignment worker inherited the server wheel's site-packages through PYTHONPATH, allowing parent dependencies to shadow its pinned runtime.",
+      "observed_failure": "Parent tokenizers 0.23.2 shadowed worker tokenizers 0.22.2 and was rejected by pinned Transformers 4.57.6.",
+      "resolution": "Launch Python in isolated mode with a package-only importlib bootstrap and remove inherited PYTHONPATH."
+    }
+  ],
+  "platform": {
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "python": "3.12.11"
+  },
+  "wheel": {
+    "filename": "std_qwen3asr_ane-0.2.0a1-py3-none-any.whl",
+    "sha256": "3902eb40c7750f9ceb5225157abdea281343f475fb07341422263375708442fd",
+    "bytes": 164432,
+    "isolated_environment": true,
+    "extras": [
+      "server",
+      "diarization"
+    ]
+  },
+  "packages": {
+    "std-qwen3asr-ane": {
+      "version": "0.2.0a1",
+      "direct_url": {
+        "source": "local_wheel",
+        "filename": "std_qwen3asr_ane-0.2.0a1-py3-none-any.whl"
+      }
+    },
+    "standard-asr": {
+      "version": "0.2.0.dev0",
+      "direct_url": {
+        "url": "https://github.com/standard-voice/standard_asr.git",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "5f6eef25e35e5e66e9010474e6dee531021e61f1",
+          "requested_revision": "5f6eef25e35e5e66e9010474e6dee531021e61f1"
+        }
+      }
+    },
+    "coremltools": {
+      "version": "9.0",
+      "direct_url": null
+    },
+    "sherpa-onnx": {
+      "version": "1.13.8",
+      "direct_url": null
+    },
+    "sherpa-onnx-core": {
+      "version": "1.13.8",
+      "direct_url": null
+    },
+    "fastapi": {
+      "version": "0.142.2",
+      "direct_url": null
+    },
+    "uvicorn": {
+      "version": "0.54.0",
+      "direct_url": null
+    },
+    "websockets": {
+      "version": "17.1",
+      "direct_url": null
+    }
+  },
+  "inputs": {
+    "en": {
+      "path": "artifacts/evaluation/smoke/qwen_official_en.wav",
+      "sha256": "f9b4440ac8393e47c14a6240e9739dea09b645bb1592b8f2dd48feb9666cea7f",
+      "expected_text": "Uh huh. Oh yeah, yeah. He wasn't even that big when I started listening to him, but and his solo music didn't do overly well, but he did very well when he started writing for other people."
+    },
+    "zh": {
+      "path": "artifacts/evaluation/smoke/qwen_official_zh.wav",
+      "sha256": "46dbc998c9d1d48111267c40741dd3200f2e5bcf4075f8c4c97f4451160dce50",
+      "expected_text": "甚至出现交易几乎停滞的情况。"
+    }
+  },
+  "configs": {
+    "std-qwen3asr-ane/1.7b": {
+      "model_dir": "artifacts/qwen3-asr-1.7b",
+      "manifest_sha256": "6fb52962b00b709994915b857551c92a13074b2223e31de94ac3b73b284fa43f",
+      "alignment_dir": "artifacts/auxiliary/alignment",
+      "diarization_dir": "artifacts/auxiliary/diarization",
+      "use_alignment": true,
+      "use_diarization": true,
+      "stream_chunk_seconds": 2.0
+    },
+    "std-qwen3asr-ane/1.7b-short-dictation": {
+      "model_dir": "artifacts/qwen3-asr-1.7b-short-dictation",
+      "manifest_sha256": "23b1098b0ffd245558b94d30794b93a15b3481bd90061ed9e90b6b105104e3d2"
+    }
+  },
+  "readiness": {
+    "std-qwen3asr-ane/1.7b": {
+      "model": "std-qwen3asr-ane/1.7b",
+      "ready": true,
+      "readiness": "ready",
+      "mode": "batch"
+    },
+    "std-qwen3asr-ane/1.7b-short-dictation": {
+      "model": "std-qwen3asr-ane/1.7b-short-dictation",
+      "ready": true,
+      "readiness": "ready",
+      "mode": "batch"
+    }
+  },
+  "http_general_en": {
+    "status": 200,
+    "text": "Uh huh. Oh yeah, yeah. He wasn't even that big when I started listening to him, but and his solo music didn't do overly well, but he did very well when he started writing for other people.",
+    "detected_language": "en",
+    "timestamps": {
+      "count": 37,
+      "first_start": 0.4,
+      "last_end": 14.64,
+      "bounded_and_ordered": true
+    },
+    "speaker_labels": [
+      "speaker_00",
+      "unresolved_000000_speaker_01"
+    ],
+    "native_metrics_present": true
+  },
+  "http_short_zh": {
+    "status": 200,
+    "text": "甚至出现交易几乎停滞的情况。",
+    "detected_language": "zh"
+  },
+  "websocket_general_zh": {
+    "terminal_event": "done",
+    "event_types": [
+      "partial",
+      "partial",
+      "final",
+      "done"
+    ],
+    "closed_text": "甚至出现交易几乎停滞的情况。",
+    "timestamps": {
+      "count": 13,
+      "first_start": 0.4,
+      "last_end": 3.68,
+      "bounded_and_ordered": true
+    },
+    "audio_processed_until": 4.2039375,
+    "speaker_labels": [
+      "speaker_00"
+    ]
+  },
+  "websocket_disconnect_cancellation": {
+    "client_disconnected_during_native_recognition": true,
+    "session_teardown_called": true,
+    "public_cancel_calls": 0,
+    "native_cancellation_token_set": true,
+    "scope": "Cooperative cancellation after the current Core ML prediction boundary; this does not claim mid-prediction preemption."
+  },
+  "pool_before_shutdown": {
+    "engine_constructions": {
+      "general": 1,
+      "short-dictation": 1
+    },
+    "native_runtime_constructions": 2,
+    "forced_aligner_constructions": 1,
+    "diarization_backend_loaded": true,
+    "one_engine_per_configured_model": true,
+    "lease_reuse": "Readiness, repeated HTTP requests, completed WebSocket, and disconnected WebSocket used the same general-profile engine construction."
+  },
+  "shutdown": {
+    "uvicorn_thread_stopped": true,
+    "engine_close_calls": [
+      1,
+      1
+    ],
+    "native_runtime_close_calls": [
+      1,
+      1
+    ],
+    "forced_aligner_close_calls": [
+      1
+    ],
+    "auxiliary_close_calls": [
+      1
+    ],
+    "native_model_handles_closed": true,
+    "native_input_buffers_released": true,
+    "auxiliary_resources_released": true
+  }
+}

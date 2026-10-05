@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from test_runtime import bundle, fake_coreml  # noqa: F401 — shared toy runtime fixtures
 
-from std_qwen3asr_ane.bundle import SUPPORTED_SCHEMA_VERSIONS, lm_head_compression
+from std_qwen3asr_ane.bundle import SUPPORTED_SCHEMA_VERSIONS, digest, lm_head_compression
 from std_qwen3asr_ane.draft import (
     DRAFT_BUNDLE_KIND,
     DRAFT_REVISION,
@@ -37,12 +37,15 @@ def draft_manifest(target: CoreMLRuntime, **overrides) -> dict:
         "verify_head": {
             "path": "verify_head.mlmodelc",
             "token_batch_size": target.token_batch_size,
+            "vocabulary_chunk": 8192,
+            "weight_sha256": ["a" * 64],
         },
         "target": {
             "model_id": target.manifest["model_id"],
             "source_revision": target.manifest["source_revision"],
             "token_batch_size": target.token_batch_size,
             "tokenizer_sha256": target.tokenizer_sha256,
+            "manifest_sha256": digest(target.model_dir / "manifest.json"),
             "weight_compression": lm_head_compression(target.manifest),
         },
     }
@@ -114,17 +117,42 @@ def test_target_binding_uses_head_compression(bundle: Path, fake_coreml) -> None
 
 def test_draft_builder_admits_every_supported_bundle_schema(tmp_path: Path) -> None:
     from std_qwen3asr_ane.conversion.draft import build_draft_bundle
+    from std_qwen3asr_ane.source_validation import SourceValidationError
 
     target = tmp_path / "target"
     target.mkdir()
-    identity = {"model_id": "Qwen/Qwen3-ASR-1.7B", "source_revision": "a" * 40}
+    identity = {
+        "model_id": "Qwen/Qwen3-ASR-1.7B",
+        "source_revision": "a" * 40,
+        "files": {
+            "frontend": "frontend.mlpackage",
+            "encoder": "encoder.mlpackage",
+            "decoder": "decoder.mlpackage",
+            "lm_head": "lm_head.mlpackage",
+            "embedding": "embedding.npy",
+            "tokenizer": "tokenizer.json",
+            "mel_filters": "mel_filters.npy",
+        },
+        "decoder_partitions": ["decoder.mlpackage"],
+        "max_sequence_length": 1024,
+        "token_batch_size": 2,
+        "max_audio_seconds": 30,
+        "residual_scale": 1,
+        "head_dim": 64,
+        "rope_theta": 1000000,
+        "frontend": {"chunk_frames": 100},
+        "encoder": {"window_tokens": 104},
+    }
     for version in SUPPORTED_SCHEMA_VERSIONS:
-        (target / "manifest.json").write_text(json.dumps({"schema_version": version, **identity}))
+        manifest = {"schema_version": version, **identity}
+        if version > 1:
+            manifest["head_output"] = {"kind": "logits", "token_batch_size": 1}
+        (target / "manifest.json").write_text(json.dumps(manifest))
         # Past the identity gate, the builder reads the source checkpoint next.
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(SourceValidationError, match="source.json"):
             build_draft_bundle(target, tmp_path / "missing-source", tmp_path / f"out-{version}")
     (target / "manifest.json").write_text(json.dumps({"schema_version": 4, **identity}))
-    with pytest.raises(ValueError, match="1.7B bundle"):
+    with pytest.raises(ValueError, match="Unsupported bundle schema"):
         build_draft_bundle(target, tmp_path / "missing-source", tmp_path / "out-4")
 
 

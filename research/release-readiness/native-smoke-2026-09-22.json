@@ -1,0 +1,111 @@
+{
+  "recorded_at": "2026-09-22T08:57:08.848093+00:00",
+  "scope": "Direct CoreMLRuntime smoke of existing local artifacts. This is not a corpus-quality, placement, timestamp, or latency benchmark.",
+  "commands": [
+    {
+      "command": ".venv/bin/python research/standard-asr-audit-2026-09-22/probe_native_features.py",
+      "result": "Sandbox denied Core ML execution-plan creation for the compiled local model. No model, audio, or source artifact was changed."
+    },
+    {
+      "command": ".venv/bin/python research/standard-asr-audit-2026-09-22/probe_native_features.py",
+      "execution": "macOS sandbox escalation approved for existing Core ML artifacts",
+      "result": "completed"
+    },
+    {
+      "command": ".venv/bin/pytest -q std_qwen3asr_ane/tests/test_native_contract.py std_qwen3asr_ane/tests/test_runtime.py -k 'not real_tokenizer_prompt_parity' std_qwen3asr_ane/tests/test_draft.py std_qwen3asr_ane/tests/test_speculative.py std_qwen3asr_ane/tests/test_decoding_guidance.py std_qwen3asr_ane/tests/test_artifact_validation.py std_qwen3asr_ane/tests/test_source_validation.py",
+      "result": "154 passed, 1 deselected"
+    }
+  ],
+  "bundle": {
+    "path": "artifacts/qwen3-asr-1.7b",
+    "manifest_sha256": "6fb52962b00b709994915b857551c92a13074b2223e31de94ac3b73b284fa43f",
+    "model_id": "Qwen/Qwen3-ASR-1.7B",
+    "source_revision": "7278e1e70fe206f11671096ffdd38061171dd6e5",
+    "compute_units_requested": "cpu_and_ne",
+    "max_audio_seconds": 30.0,
+    "cache_length": 1024,
+    "token_batch_size": 16,
+    "head_output": "full logits (schema 1)"
+  },
+  "inputs": {
+    "qwen-official-en": {
+      "path": "artifacts/evaluation/smoke/qwen_official_en.wav",
+      "sha256": "f9b4440ac8393e47c14a6240e9739dea09b645bb1592b8f2dd48feb9666cea7f",
+      "source_sample_rate": 48000,
+      "native_sample_rate": 16000,
+      "native_samples": 240820,
+      "native_seconds": 15.05125,
+      "resampling": "scipy.signal.resample_poly, up=1, down=3"
+    },
+    "qwen-official-zh": {
+      "path": "artifacts/evaluation/smoke/qwen_official_zh.wav",
+      "sha256": "46dbc998c9d1d48111267c40741dd3200f2e5bcf4075f8c4c97f4451160dce50",
+      "source_sample_rate": 16000,
+      "native_sample_rate": 16000,
+      "native_samples": 67263,
+      "native_seconds": 4.2039375,
+      "resampling": "none"
+    }
+  },
+  "runs": {
+    "unguided_auto_en": {
+      "text": "Uh huh. Oh yeah, yeah. He wasn't even that big when I started listening to him, but and his solo music didn't do overly well, but he did very well when he started writing for other people.",
+      "language": "en",
+      "raw_model_language": "English",
+      "generated_tokens": 48,
+      "eos_token_id": 151645,
+      "head_calls": 49,
+      "total_seconds": 1.5390263340086676
+    },
+    "unguided_auto_zh": {
+      "text": "甚至出现交易几乎停滞的情况。",
+      "language": "zh",
+      "raw_model_language": "Chinese",
+      "generated_tokens": 10,
+      "eos_token_id": 151645,
+      "head_calls": 11,
+      "total_seconds": 0.37791529099922627
+    },
+    "forced_refinement_en_US": {
+      "text_equals_unguided_auto_en": true,
+      "language": "en-US",
+      "raw_model_language": null,
+      "generated_tokens": 45,
+      "eos_token_id": 151645,
+      "total_seconds": 1.4360319999977946
+    },
+    "candidate_English_auto_en": {
+      "text_equals_unguided_auto_en": true,
+      "language": "en",
+      "raw_model_language": "English",
+      "generated_tokens": 48,
+      "eos_token_id": 151645,
+      "total_seconds": 1.513312124996446
+    },
+    "phrase_music_auto_en": {
+      "text_equals_unguided_auto_en": true,
+      "language": "en",
+      "raw_model_language": "English",
+      "generated_tokens": 48,
+      "eos_token_id": 151645,
+      "total_seconds": 1.5108716250397265
+    }
+  },
+  "cancellation": {
+    "method": "The real PersistentInputModel LM-head predict method was wrapped to set a threading.Event only after its first complete prediction returned.",
+    "outcome": "InferenceCancelled",
+    "head_predictions_before_stop": 1,
+    "decoder_context_requires_fresh_states": true,
+    "audio_context_timings_after_stop": {},
+    "same_context_retry_matches_unguided_auto_en_text": true,
+    "claim": "This proves cooperative stop after a completed native prediction and reusable-state cleanup. It does not claim mid-prediction preemption."
+  },
+  "historical_smoke_comparison": {
+    "source": "artifacts/evaluation/smoke/coreml-first.jsonl",
+    "english_text_matches": false,
+    "chinese_text_matches": true,
+    "english_historical_text": "Oh yeah, yeah. He wasn't even that big when I started listening to him, but and his solo music didn't do overly well, but he did very well when he started writing for other people.",
+    "english_current_text": "Uh huh. Oh yeah, yeah. He wasn't even that big when I started listening to him, but and his solo music didn't do overly well, but he did very well when he started writing for other people.",
+    "interpretation": "The direct run differs from this historical English smoke record. This check did not establish a cause or a quality conclusion; its direct resampling path is recorded above."
+  }
+}

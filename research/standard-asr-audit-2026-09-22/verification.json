@@ -1,0 +1,86 @@
+{
+  "date": "2026-09-22",
+  "plugin_revision": "884c22e",
+  "upstream_pinned_revision": "8b124e8c8fbcb6b0382792262bee05595b895440",
+  "upstream_latest_revision": "1b2cf3fa5860c075e5160eb60b26b708a7c8bfea",
+  "upstream_delta": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/docs.yml"
+  ],
+  "installed_upstream_python_files_compared": 39,
+  "installed_upstream_python_differences": [],
+  "checks": [
+    {
+      "command": ".venv/bin/standard-asr compliance run",
+      "exit_code": 0,
+      "scope": "Entry-point and synthetic contract checks; does not inspect real batch results or recorded streaming events."
+    },
+    {
+      "command": "STANDARD_ASR_ALLOW_DOWNLOAD=0 .venv/bin/pytest -q",
+      "exit_code": 1,
+      "passed": 494,
+      "failed": 2,
+      "warnings": 49,
+      "seconds": 19.67,
+      "failure_cause": "Core ML could not create its compiler working directory under the filesystem sandbox.",
+      "failed_tests": [
+        "std_qwen3asr_ane/tests/test_activation_quantization.py::test_projection_quantization_does_not_rewrite_other_consumers",
+        "std_qwen3asr_ane/tests/test_compress.py::test_compress_bundle_compresses_only_decoder_and_head"
+      ]
+    },
+    {
+      "command": "STANDARD_ASR_ALLOW_DOWNLOAD=0 .venv/bin/pytest -q std_qwen3asr_ane/tests/test_activation_quantization.py::test_projection_quantization_does_not_rewrite_other_consumers std_qwen3asr_ane/tests/test_compress.py::test_compress_bundle_compresses_only_decoder_and_head",
+      "environment": "Sandbox escalation approved for the two small native CPU tests.",
+      "exit_code": 0,
+      "passed": 2,
+      "warnings": 10,
+      "seconds": 3.36,
+      "log": "native-test-recheck.log"
+    }
+  ],
+  "limitations": [
+    "This audit does not re-run full model transcription, conversion, corpus accuracy or energy measurements.",
+    "Fake-native probes establish adapter/framework behavior, not acoustic accuracy or ANE placement.",
+    "All 496 existing tests passed across the initial run and the two-test recheck; this is not a claim that a single unsandboxed full-suite run was performed."
+  ],
+  "audit_probes": [
+    {
+      "script": "probe_contracts.py",
+      "saved_output": "contracts-probe.log",
+      "exit_code": 0,
+      "scope": "Model-free public API / metadata reproduction; expected observations include current defects."
+    },
+    {
+      "script": "probe_artifacts.py",
+      "saved_output": "artifacts-probe.json",
+      "exit_code": 0,
+      "scope": "Model-free public API / metadata reproduction; expected observations include current defects."
+    },
+    {
+      "script": "probe_streaming.py",
+      "saved_output": "streaming-probe.json",
+      "exit_code": 0,
+      "scope": "Model-free public API / metadata reproduction; expected observations include current defects."
+    },
+    {
+      "script": "probe_audio_results.py",
+      "saved_output": "audio-results-probe.json",
+      "exit_code": 0,
+      "scope": "Model-free public API / metadata reproduction; expected observations include current defects."
+    },
+    {
+      "script": "probe_ecosystem.py",
+      "saved_output": "ecosystem-probe.log",
+      "exit_code": 0,
+      "scope": "Model-free public API / metadata reproduction; expected observations include current defects."
+    }
+  ],
+  "additional_checks": {
+    "probe_ruff": "passed",
+    "new_report_local_links": "passed",
+    "new_file_whitespace": "passed",
+    "git_diff_check": "passed",
+    "doctor": "No NumPy conflicts in current environment; not a general runtime/dependency readiness proof.",
+    "offline_default_status": "Both default preset cache paths absent; status correctly reports unavailable/downloads_disabled."
+  }
+}

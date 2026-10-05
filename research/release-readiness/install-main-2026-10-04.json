@@ -1,0 +1,589 @@
+{
+  "archives": [
+    {
+      "base_dependencies": [
+        "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@97bfdb28134c114088ec335596aa6bca53f9204f",
+        "coremltools>=9.0,<10",
+        "numpy>=2.0",
+        "tokenizers>=0.22",
+        "soundfile>=0.13",
+        "scipy>=1.15",
+        "uv>=0.12,<0.13"
+      ],
+      "bytes": 166382,
+      "file_count": 57,
+      "filename": "std_qwen3asr_ane-0.2.0a1-py3-none-any.whl",
+      "forbidden_workspace_entries": [],
+      "metadata_path": "std_qwen3asr_ane-0.2.0a1.dist-info/METADATA",
+      "optional_dependencies": {
+        "diarization": [
+          "sherpa-onnx==1.13.8",
+          "sherpa-onnx-core==1.13.8"
+        ],
+        "gpu-draft": [
+          "mlx-audio[stt]==0.5.3"
+        ],
+        "server": [
+          "standard-asr[server]"
+        ]
+      },
+      "required_content_present": [
+        "std_qwen3asr_ane/conversion_worker.py",
+        ".dist-info/METADATA",
+        ".dist-info/entry_points.txt",
+        ".dist-info/licenses/LICENSE",
+        ".dist-info/licenses/std_qwen3asr_ane/NOTICE"
+      ],
+      "requires_python": ">=3.12,<3.14",
+      "sha256": "ebcab341dbd6ec6731da295a823771574cdd21dbe5bed1c35610ef903bc96e76",
+      "source_file_count": 46,
+      "source_tree_sha256": "32d6e6e67930fad09e0534a693f998a33a2fbe9e00a8e2a779f2b047ceaa333d"
+    },
+    {
+      "base_dependencies": [
+        "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@97bfdb28134c114088ec335596aa6bca53f9204f",
+        "coremltools>=9.0,<10",
+        "numpy>=2.0",
+        "tokenizers>=0.22",
+        "soundfile>=0.13",
+        "scipy>=1.15",
+        "uv>=0.12,<0.13"
+      ],
+      "bytes": 145360,
+      "file_count": 52,
+      "filename": "std_qwen3asr_ane-0.2.0a1.tar.gz",
+      "forbidden_workspace_entries": [],
+      "metadata_path": "std_qwen3asr_ane-0.2.0a1/PKG-INFO",
+      "optional_dependencies": {
+        "diarization": [
+          "sherpa-onnx==1.13.8",
+          "sherpa-onnx-core==1.13.8"
+        ],
+        "gpu-draft": [
+          "mlx-audio[stt]==0.5.3"
+        ],
+        "server": [
+          "standard-asr[server]"
+        ]
+      },
+      "required_content_present": [
+        "/pyproject.toml",
+        "/README.md",
+        "/LICENSE",
+        "/std_qwen3asr_ane/NOTICE",
+        "/std_qwen3asr_ane/src/std_qwen3asr_ane/conversion_worker.py",
+        "/PKG-INFO"
+      ],
+      "requires_python": ">=3.12,<3.14",
+      "sha256": "c4184a03202399cce3b3684307f8e3fb11320603a8058e5107478284264974b7",
+      "source_file_count": 46,
+      "source_tree_sha256": "32d6e6e67930fad09e0534a693f998a33a2fbe9e00a8e2a779f2b047ceaa333d"
+    }
+  ],
+  "contracts": {
+    "base_and_server_converter_only_distributions_absent": [
+      "gradio",
+      "jiwer",
+      "qwen-asr",
+      "safetensors",
+      "torch",
+      "transformers"
+    ],
+    "base_runtime_transitive": {
+      "distribution": "huggingface-hub",
+      "reason": "tokenizers is a direct runtime dependency",
+      "required_by": "tokenizers"
+    },
+    "diarization_runtime": "sherpa-onnx and sherpa-onnx-core pinned together at 1.13.8",
+    "gpu_and_diarization_coexistence": true,
+    "offline_readiness": "unavailable with downloads_disabled; model root remains absent",
+    "source_tree_base_installs": [
+      "3.12",
+      "3.13"
+    ],
+    "wheel_profiles": [
+      "base",
+      "server",
+      "diarization",
+      "gpu-draft",
+      "server+diarization",
+      "server+gpu-draft",
+      "diarization+gpu-draft",
+      "server+diarization+gpu-draft"
+    ]
+  },
+  "generated_date": "2026-10-04",
+  "matrix": {
+    "cells": [
+      {
+        "extras": [],
+        "install_kind": "source",
+        "name": "source-py3.12-base",
+        "package_count": 35,
+        "passed": true,
+        "profile": "base",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.12.11",
+        "python_requested": "3.12",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "numpy": "2.5.3",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "extras": [],
+        "install_kind": "source",
+        "name": "source-py3.13-base",
+        "package_count": 35,
+        "passed": true,
+        "profile": "base",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.13.11",
+        "python_requested": "3.13",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "numpy": "2.5.3",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "extras": [],
+        "install_kind": "wheel",
+        "name": "wheel-py3.12-base",
+        "package_count": 35,
+        "passed": true,
+        "profile": "base",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.12.11",
+        "python_requested": "3.12",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "numpy": "2.5.3",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "extras": [
+          "server"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.12-server",
+        "package_count": 42,
+        "passed": true,
+        "profile": "server",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.12.11",
+        "python_requested": "3.12",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "fastapi": "0.142.2",
+          "numpy": "2.5.3",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "extras": [
+          "diarization"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.12-diarization",
+        "package_count": 37,
+        "passed": true,
+        "profile": "diarization",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.12.11",
+        "python_requested": "3.12",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "numpy": "2.5.3",
+          "sherpa-onnx": "1.13.8",
+          "sherpa-onnx-core": "1.13.8",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "error": "RuntimeError: Command failed with exit 1: ['/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.12-gpu-draft/environment/bin/python', '-c', '\\nimport importlib.metadata as metadata\\nimport json\\nimport sys\\n\\nexpected_extras = [\\'gpu-draft\\']\\nexpected_models = [\\'std-qwen3asr-ane/1.7b\\', \\'std-qwen3asr-ane/1.7b-short-dictation\\']\\nconverter_only_distributions = [\\'gradio\\', \\'jiwer\\', \\'qwen-asr\\', \\'safetensors\\', \\'torch\\', \\'transformers\\']\\ninstalled = {\\n    dist.metadata[\\'Name\\'].lower().replace(\\'_\\', \\'-\\').replace(\\'.\\', \\'-\\'): dist.version\\n    for dist in metadata.distributions()\\n    if dist.metadata.get(\\'Name\\')\\n}\\ndistribution = metadata.distribution(\\'std-qwen3asr-ane\\')\\nassert distribution.version == \\'0.2.0a1\\'\\nstandard_asr_distribution = metadata.distribution(\\'standard-asr\\')\\nstandard_asr_direct_url = json.loads(standard_asr_distribution.read_text(\\'direct_url.json\\'))\\nresolved_standard_asr_commit = standard_asr_direct_url[\\'vcs_info\\'][\\'commit_id\\']\\nassert resolved_standard_asr_commit == \\'97bfdb28134c114088ec335596aa6bca53f9204f\\'\\nentrypoints = {ep.name: ep.value for ep in distribution.entry_points}\\nassert entrypoints[\\'standard-asr\\'] == \\'standard_asr.toolchain.cli:main\\'\\nassert entrypoints[\\'qwen3-asr-ane\\'] == \\'std_qwen3asr_ane.cli:main\\'\\nmodels = {ep.name: ep.value for ep in distribution.entry_points if ep.group == \\'standard_asr.models\\'}\\nassert sorted(models) == sorted(expected_models)\\n\\nimport coremltools\\nimport numpy\\nimport scipy\\nimport soundfile\\nimport standard_asr\\nimport std_qwen3asr_ane\\nimport tokenizers\\n\\nif expected_extras in ([], [\\'server\\']):\\n    unexpected = sorted(set(converter_only_distributions) & set(installed))\\n    assert not unexpected, f\\'converter distributions leaked into {expected_extras or \"base\"}: {unexpected}\\'\\nif \\'server\\' in expected_extras:\\n    import fastapi\\n    import multipart\\n    import uvicorn\\n    import websockets\\nif \\'diarization\\' in expected_extras:\\n    import sherpa_onnx\\n    assert installed.get(\\'sherpa-onnx\\') == \\'1.13.8\\'\\n    assert installed.get(\\'sherpa-onnx-core\\') == \\'1.13.8\\'\\nelse:\\n    assert \\'sherpa-onnx\\' not in installed\\n    assert \\'sherpa-onnx-core\\' not in installed\\nif \\'gpu-draft\\' in expected_extras:\\n    import mlx.core\\n    from mlx_audio.stt import load as mlx_audio_load\\n    assert callable(mlx_audio_load)\\nelse:\\n    assert \\'mlx-audio\\' not in installed\\n\\nprint(json.dumps({\\n    \\'python\\': platform_python if (platform_python := sys.version.split()[0]) else None,\\n    \\'project_version\\': distribution.version,\\n    \\'entrypoints\\': entrypoints,\\n    \\'installed\\': dict(sorted(installed.items())),\\n    \\'extras\\': expected_extras,\\n    \\'standard_asr_vcs_commit\\': resolved_standard_asr_commit,\\n}, sort_keys=True))\\n']; see /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.12-gpu-draft/03.stdout.log and /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.12-gpu-draft/03.stderr.log",
+        "extras": [
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.12-gpu-draft",
+        "passed": false,
+        "profile": "gpu-draft",
+        "python_requested": "3.12"
+      },
+      {
+        "extras": [
+          "server",
+          "diarization"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.12-server+diarization",
+        "package_count": 44,
+        "passed": true,
+        "profile": "server+diarization",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.12.11",
+        "python_requested": "3.12",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "fastapi": "0.142.2",
+          "numpy": "2.5.3",
+          "sherpa-onnx": "1.13.8",
+          "sherpa-onnx-core": "1.13.8",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "error": "RuntimeError: Command failed with exit 1: ['/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.12-server+gpu-draft/environment/bin/python', '-c', '\\nimport importlib.metadata as metadata\\nimport json\\nimport sys\\n\\nexpected_extras = [\\'server\\', \\'gpu-draft\\']\\nexpected_models = [\\'std-qwen3asr-ane/1.7b\\', \\'std-qwen3asr-ane/1.7b-short-dictation\\']\\nconverter_only_distributions = [\\'gradio\\', \\'jiwer\\', \\'qwen-asr\\', \\'safetensors\\', \\'torch\\', \\'transformers\\']\\ninstalled = {\\n    dist.metadata[\\'Name\\'].lower().replace(\\'_\\', \\'-\\').replace(\\'.\\', \\'-\\'): dist.version\\n    for dist in metadata.distributions()\\n    if dist.metadata.get(\\'Name\\')\\n}\\ndistribution = metadata.distribution(\\'std-qwen3asr-ane\\')\\nassert distribution.version == \\'0.2.0a1\\'\\nstandard_asr_distribution = metadata.distribution(\\'standard-asr\\')\\nstandard_asr_direct_url = json.loads(standard_asr_distribution.read_text(\\'direct_url.json\\'))\\nresolved_standard_asr_commit = standard_asr_direct_url[\\'vcs_info\\'][\\'commit_id\\']\\nassert resolved_standard_asr_commit == \\'97bfdb28134c114088ec335596aa6bca53f9204f\\'\\nentrypoints = {ep.name: ep.value for ep in distribution.entry_points}\\nassert entrypoints[\\'standard-asr\\'] == \\'standard_asr.toolchain.cli:main\\'\\nassert entrypoints[\\'qwen3-asr-ane\\'] == \\'std_qwen3asr_ane.cli:main\\'\\nmodels = {ep.name: ep.value for ep in distribution.entry_points if ep.group == \\'standard_asr.models\\'}\\nassert sorted(models) == sorted(expected_models)\\n\\nimport coremltools\\nimport numpy\\nimport scipy\\nimport soundfile\\nimport standard_asr\\nimport std_qwen3asr_ane\\nimport tokenizers\\n\\nif expected_extras in ([], [\\'server\\']):\\n    unexpected = sorted(set(converter_only_distributions) & set(installed))\\n    assert not unexpected, f\\'converter distributions leaked into {expected_extras or \"base\"}: {unexpected}\\'\\nif \\'server\\' in expected_extras:\\n    import fastapi\\n    import multipart\\n    import uvicorn\\n    import websockets\\nif \\'diarization\\' in expected_extras:\\n    import sherpa_onnx\\n    assert installed.get(\\'sherpa-onnx\\') == \\'1.13.8\\'\\n    assert installed.get(\\'sherpa-onnx-core\\') == \\'1.13.8\\'\\nelse:\\n    assert \\'sherpa-onnx\\' not in installed\\n    assert \\'sherpa-onnx-core\\' not in installed\\nif \\'gpu-draft\\' in expected_extras:\\n    import mlx.core\\n    from mlx_audio.stt import load as mlx_audio_load\\n    assert callable(mlx_audio_load)\\nelse:\\n    assert \\'mlx-audio\\' not in installed\\n\\nprint(json.dumps({\\n    \\'python\\': platform_python if (platform_python := sys.version.split()[0]) else None,\\n    \\'project_version\\': distribution.version,\\n    \\'entrypoints\\': entrypoints,\\n    \\'installed\\': dict(sorted(installed.items())),\\n    \\'extras\\': expected_extras,\\n    \\'standard_asr_vcs_commit\\': resolved_standard_asr_commit,\\n}, sort_keys=True))\\n']; see /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.12-server+gpu-draft/03.stdout.log and /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.12-server+gpu-draft/03.stderr.log",
+        "extras": [
+          "server",
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.12-server+gpu-draft",
+        "passed": false,
+        "profile": "server+gpu-draft",
+        "python_requested": "3.12"
+      },
+      {
+        "error": "RuntimeError: Command failed with exit 1: ['/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.12-diarization+gpu-draft/environment/bin/python', '-c', '\\nimport importlib.metadata as metadata\\nimport json\\nimport sys\\n\\nexpected_extras = [\\'diarization\\', \\'gpu-draft\\']\\nexpected_models = [\\'std-qwen3asr-ane/1.7b\\', \\'std-qwen3asr-ane/1.7b-short-dictation\\']\\nconverter_only_distributions = [\\'gradio\\', \\'jiwer\\', \\'qwen-asr\\', \\'safetensors\\', \\'torch\\', \\'transformers\\']\\ninstalled = {\\n    dist.metadata[\\'Name\\'].lower().replace(\\'_\\', \\'-\\').replace(\\'.\\', \\'-\\'): dist.version\\n    for dist in metadata.distributions()\\n    if dist.metadata.get(\\'Name\\')\\n}\\ndistribution = metadata.distribution(\\'std-qwen3asr-ane\\')\\nassert distribution.version == \\'0.2.0a1\\'\\nstandard_asr_distribution = metadata.distribution(\\'standard-asr\\')\\nstandard_asr_direct_url = json.loads(standard_asr_distribution.read_text(\\'direct_url.json\\'))\\nresolved_standard_asr_commit = standard_asr_direct_url[\\'vcs_info\\'][\\'commit_id\\']\\nassert resolved_standard_asr_commit == \\'97bfdb28134c114088ec335596aa6bca53f9204f\\'\\nentrypoints = {ep.name: ep.value for ep in distribution.entry_points}\\nassert entrypoints[\\'standard-asr\\'] == \\'standard_asr.toolchain.cli:main\\'\\nassert entrypoints[\\'qwen3-asr-ane\\'] == \\'std_qwen3asr_ane.cli:main\\'\\nmodels = {ep.name: ep.value for ep in distribution.entry_points if ep.group == \\'standard_asr.models\\'}\\nassert sorted(models) == sorted(expected_models)\\n\\nimport coremltools\\nimport numpy\\nimport scipy\\nimport soundfile\\nimport standard_asr\\nimport std_qwen3asr_ane\\nimport tokenizers\\n\\nif expected_extras in ([], [\\'server\\']):\\n    unexpected = sorted(set(converter_only_distributions) & set(installed))\\n    assert not unexpected, f\\'converter distributions leaked into {expected_extras or \"base\"}: {unexpected}\\'\\nif \\'server\\' in expected_extras:\\n    import fastapi\\n    import multipart\\n    import uvicorn\\n    import websockets\\nif \\'diarization\\' in expected_extras:\\n    import sherpa_onnx\\n    assert installed.get(\\'sherpa-onnx\\') == \\'1.13.8\\'\\n    assert installed.get(\\'sherpa-onnx-core\\') == \\'1.13.8\\'\\nelse:\\n    assert \\'sherpa-onnx\\' not in installed\\n    assert \\'sherpa-onnx-core\\' not in installed\\nif \\'gpu-draft\\' in expected_extras:\\n    import mlx.core\\n    from mlx_audio.stt import load as mlx_audio_load\\n    assert callable(mlx_audio_load)\\nelse:\\n    assert \\'mlx-audio\\' not in installed\\n\\nprint(json.dumps({\\n    \\'python\\': platform_python if (platform_python := sys.version.split()[0]) else None,\\n    \\'project_version\\': distribution.version,\\n    \\'entrypoints\\': entrypoints,\\n    \\'installed\\': dict(sorted(installed.items())),\\n    \\'extras\\': expected_extras,\\n    \\'standard_asr_vcs_commit\\': resolved_standard_asr_commit,\\n}, sort_keys=True))\\n']; see /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.12-diarization+gpu-draft/03.stdout.log and /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.12-diarization+gpu-draft/03.stderr.log",
+        "extras": [
+          "diarization",
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.12-diarization+gpu-draft",
+        "passed": false,
+        "profile": "diarization+gpu-draft",
+        "python_requested": "3.12"
+      },
+      {
+        "error": "RuntimeError: Command failed with exit 1: ['/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.12-server+diarization+gpu-draft/environment/bin/python', '-c', '\\nimport importlib.metadata as metadata\\nimport json\\nimport sys\\n\\nexpected_extras = [\\'server\\', \\'diarization\\', \\'gpu-draft\\']\\nexpected_models = [\\'std-qwen3asr-ane/1.7b\\', \\'std-qwen3asr-ane/1.7b-short-dictation\\']\\nconverter_only_distributions = [\\'gradio\\', \\'jiwer\\', \\'qwen-asr\\', \\'safetensors\\', \\'torch\\', \\'transformers\\']\\ninstalled = {\\n    dist.metadata[\\'Name\\'].lower().replace(\\'_\\', \\'-\\').replace(\\'.\\', \\'-\\'): dist.version\\n    for dist in metadata.distributions()\\n    if dist.metadata.get(\\'Name\\')\\n}\\ndistribution = metadata.distribution(\\'std-qwen3asr-ane\\')\\nassert distribution.version == \\'0.2.0a1\\'\\nstandard_asr_distribution = metadata.distribution(\\'standard-asr\\')\\nstandard_asr_direct_url = json.loads(standard_asr_distribution.read_text(\\'direct_url.json\\'))\\nresolved_standard_asr_commit = standard_asr_direct_url[\\'vcs_info\\'][\\'commit_id\\']\\nassert resolved_standard_asr_commit == \\'97bfdb28134c114088ec335596aa6bca53f9204f\\'\\nentrypoints = {ep.name: ep.value for ep in distribution.entry_points}\\nassert entrypoints[\\'standard-asr\\'] == \\'standard_asr.toolchain.cli:main\\'\\nassert entrypoints[\\'qwen3-asr-ane\\'] == \\'std_qwen3asr_ane.cli:main\\'\\nmodels = {ep.name: ep.value for ep in distribution.entry_points if ep.group == \\'standard_asr.models\\'}\\nassert sorted(models) == sorted(expected_models)\\n\\nimport coremltools\\nimport numpy\\nimport scipy\\nimport soundfile\\nimport standard_asr\\nimport std_qwen3asr_ane\\nimport tokenizers\\n\\nif expected_extras in ([], [\\'server\\']):\\n    unexpected = sorted(set(converter_only_distributions) & set(installed))\\n    assert not unexpected, f\\'converter distributions leaked into {expected_extras or \"base\"}: {unexpected}\\'\\nif \\'server\\' in expected_extras:\\n    import fastapi\\n    import multipart\\n    import uvicorn\\n    import websockets\\nif \\'diarization\\' in expected_extras:\\n    import sherpa_onnx\\n    assert installed.get(\\'sherpa-onnx\\') == \\'1.13.8\\'\\n    assert installed.get(\\'sherpa-onnx-core\\') == \\'1.13.8\\'\\nelse:\\n    assert \\'sherpa-onnx\\' not in installed\\n    assert \\'sherpa-onnx-core\\' not in installed\\nif \\'gpu-draft\\' in expected_extras:\\n    import mlx.core\\n    from mlx_audio.stt import load as mlx_audio_load\\n    assert callable(mlx_audio_load)\\nelse:\\n    assert \\'mlx-audio\\' not in installed\\n\\nprint(json.dumps({\\n    \\'python\\': platform_python if (platform_python := sys.version.split()[0]) else None,\\n    \\'project_version\\': distribution.version,\\n    \\'entrypoints\\': entrypoints,\\n    \\'installed\\': dict(sorted(installed.items())),\\n    \\'extras\\': expected_extras,\\n    \\'standard_asr_vcs_commit\\': resolved_standard_asr_commit,\\n}, sort_keys=True))\\n']; see /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.12-server+diarization+gpu-draft/03.stdout.log and /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.12-server+diarization+gpu-draft/03.stderr.log",
+        "extras": [
+          "server",
+          "diarization",
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.12-server+diarization+gpu-draft",
+        "passed": false,
+        "profile": "server+diarization+gpu-draft",
+        "python_requested": "3.12"
+      },
+      {
+        "extras": [],
+        "install_kind": "wheel",
+        "name": "wheel-py3.13-base",
+        "package_count": 35,
+        "passed": true,
+        "profile": "base",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.13.11",
+        "python_requested": "3.13",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "numpy": "2.5.3",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "extras": [
+          "server"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.13-server",
+        "package_count": 42,
+        "passed": true,
+        "profile": "server",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.13.11",
+        "python_requested": "3.13",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "fastapi": "0.142.2",
+          "numpy": "2.5.3",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "extras": [
+          "diarization"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.13-diarization",
+        "package_count": 37,
+        "passed": true,
+        "profile": "diarization",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.13.11",
+        "python_requested": "3.13",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "numpy": "2.5.3",
+          "sherpa-onnx": "1.13.8",
+          "sherpa-onnx-core": "1.13.8",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "error": "RuntimeError: Command failed with exit 1: ['/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.13-gpu-draft/environment/bin/python', '-c', '\\nimport importlib.metadata as metadata\\nimport json\\nimport sys\\n\\nexpected_extras = [\\'gpu-draft\\']\\nexpected_models = [\\'std-qwen3asr-ane/1.7b\\', \\'std-qwen3asr-ane/1.7b-short-dictation\\']\\nconverter_only_distributions = [\\'gradio\\', \\'jiwer\\', \\'qwen-asr\\', \\'safetensors\\', \\'torch\\', \\'transformers\\']\\ninstalled = {\\n    dist.metadata[\\'Name\\'].lower().replace(\\'_\\', \\'-\\').replace(\\'.\\', \\'-\\'): dist.version\\n    for dist in metadata.distributions()\\n    if dist.metadata.get(\\'Name\\')\\n}\\ndistribution = metadata.distribution(\\'std-qwen3asr-ane\\')\\nassert distribution.version == \\'0.2.0a1\\'\\nstandard_asr_distribution = metadata.distribution(\\'standard-asr\\')\\nstandard_asr_direct_url = json.loads(standard_asr_distribution.read_text(\\'direct_url.json\\'))\\nresolved_standard_asr_commit = standard_asr_direct_url[\\'vcs_info\\'][\\'commit_id\\']\\nassert resolved_standard_asr_commit == \\'97bfdb28134c114088ec335596aa6bca53f9204f\\'\\nentrypoints = {ep.name: ep.value for ep in distribution.entry_points}\\nassert entrypoints[\\'standard-asr\\'] == \\'standard_asr.toolchain.cli:main\\'\\nassert entrypoints[\\'qwen3-asr-ane\\'] == \\'std_qwen3asr_ane.cli:main\\'\\nmodels = {ep.name: ep.value for ep in distribution.entry_points if ep.group == \\'standard_asr.models\\'}\\nassert sorted(models) == sorted(expected_models)\\n\\nimport coremltools\\nimport numpy\\nimport scipy\\nimport soundfile\\nimport standard_asr\\nimport std_qwen3asr_ane\\nimport tokenizers\\n\\nif expected_extras in ([], [\\'server\\']):\\n    unexpected = sorted(set(converter_only_distributions) & set(installed))\\n    assert not unexpected, f\\'converter distributions leaked into {expected_extras or \"base\"}: {unexpected}\\'\\nif \\'server\\' in expected_extras:\\n    import fastapi\\n    import multipart\\n    import uvicorn\\n    import websockets\\nif \\'diarization\\' in expected_extras:\\n    import sherpa_onnx\\n    assert installed.get(\\'sherpa-onnx\\') == \\'1.13.8\\'\\n    assert installed.get(\\'sherpa-onnx-core\\') == \\'1.13.8\\'\\nelse:\\n    assert \\'sherpa-onnx\\' not in installed\\n    assert \\'sherpa-onnx-core\\' not in installed\\nif \\'gpu-draft\\' in expected_extras:\\n    import mlx.core\\n    from mlx_audio.stt import load as mlx_audio_load\\n    assert callable(mlx_audio_load)\\nelse:\\n    assert \\'mlx-audio\\' not in installed\\n\\nprint(json.dumps({\\n    \\'python\\': platform_python if (platform_python := sys.version.split()[0]) else None,\\n    \\'project_version\\': distribution.version,\\n    \\'entrypoints\\': entrypoints,\\n    \\'installed\\': dict(sorted(installed.items())),\\n    \\'extras\\': expected_extras,\\n    \\'standard_asr_vcs_commit\\': resolved_standard_asr_commit,\\n}, sort_keys=True))\\n']; see /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.13-gpu-draft/03.stdout.log and /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.13-gpu-draft/03.stderr.log",
+        "extras": [
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.13-gpu-draft",
+        "passed": false,
+        "profile": "gpu-draft",
+        "python_requested": "3.13"
+      },
+      {
+        "extras": [
+          "server",
+          "diarization"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.13-server+diarization",
+        "package_count": 44,
+        "passed": true,
+        "profile": "server+diarization",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.13.11",
+        "python_requested": "3.13",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "fastapi": "0.142.2",
+          "numpy": "2.5.3",
+          "sherpa-onnx": "1.13.8",
+          "sherpa-onnx-core": "1.13.8",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "error": "RuntimeError: Command failed with exit 1: ['/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.13-server+gpu-draft/environment/bin/python', '-c', '\\nimport importlib.metadata as metadata\\nimport json\\nimport sys\\n\\nexpected_extras = [\\'server\\', \\'gpu-draft\\']\\nexpected_models = [\\'std-qwen3asr-ane/1.7b\\', \\'std-qwen3asr-ane/1.7b-short-dictation\\']\\nconverter_only_distributions = [\\'gradio\\', \\'jiwer\\', \\'qwen-asr\\', \\'safetensors\\', \\'torch\\', \\'transformers\\']\\ninstalled = {\\n    dist.metadata[\\'Name\\'].lower().replace(\\'_\\', \\'-\\').replace(\\'.\\', \\'-\\'): dist.version\\n    for dist in metadata.distributions()\\n    if dist.metadata.get(\\'Name\\')\\n}\\ndistribution = metadata.distribution(\\'std-qwen3asr-ane\\')\\nassert distribution.version == \\'0.2.0a1\\'\\nstandard_asr_distribution = metadata.distribution(\\'standard-asr\\')\\nstandard_asr_direct_url = json.loads(standard_asr_distribution.read_text(\\'direct_url.json\\'))\\nresolved_standard_asr_commit = standard_asr_direct_url[\\'vcs_info\\'][\\'commit_id\\']\\nassert resolved_standard_asr_commit == \\'97bfdb28134c114088ec335596aa6bca53f9204f\\'\\nentrypoints = {ep.name: ep.value for ep in distribution.entry_points}\\nassert entrypoints[\\'standard-asr\\'] == \\'standard_asr.toolchain.cli:main\\'\\nassert entrypoints[\\'qwen3-asr-ane\\'] == \\'std_qwen3asr_ane.cli:main\\'\\nmodels = {ep.name: ep.value for ep in distribution.entry_points if ep.group == \\'standard_asr.models\\'}\\nassert sorted(models) == sorted(expected_models)\\n\\nimport coremltools\\nimport numpy\\nimport scipy\\nimport soundfile\\nimport standard_asr\\nimport std_qwen3asr_ane\\nimport tokenizers\\n\\nif expected_extras in ([], [\\'server\\']):\\n    unexpected = sorted(set(converter_only_distributions) & set(installed))\\n    assert not unexpected, f\\'converter distributions leaked into {expected_extras or \"base\"}: {unexpected}\\'\\nif \\'server\\' in expected_extras:\\n    import fastapi\\n    import multipart\\n    import uvicorn\\n    import websockets\\nif \\'diarization\\' in expected_extras:\\n    import sherpa_onnx\\n    assert installed.get(\\'sherpa-onnx\\') == \\'1.13.8\\'\\n    assert installed.get(\\'sherpa-onnx-core\\') == \\'1.13.8\\'\\nelse:\\n    assert \\'sherpa-onnx\\' not in installed\\n    assert \\'sherpa-onnx-core\\' not in installed\\nif \\'gpu-draft\\' in expected_extras:\\n    import mlx.core\\n    from mlx_audio.stt import load as mlx_audio_load\\n    assert callable(mlx_audio_load)\\nelse:\\n    assert \\'mlx-audio\\' not in installed\\n\\nprint(json.dumps({\\n    \\'python\\': platform_python if (platform_python := sys.version.split()[0]) else None,\\n    \\'project_version\\': distribution.version,\\n    \\'entrypoints\\': entrypoints,\\n    \\'installed\\': dict(sorted(installed.items())),\\n    \\'extras\\': expected_extras,\\n    \\'standard_asr_vcs_commit\\': resolved_standard_asr_commit,\\n}, sort_keys=True))\\n']; see /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.13-server+gpu-draft/03.stdout.log and /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.13-server+gpu-draft/03.stderr.log",
+        "extras": [
+          "server",
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.13-server+gpu-draft",
+        "passed": false,
+        "profile": "server+gpu-draft",
+        "python_requested": "3.13"
+      },
+      {
+        "error": "RuntimeError: Command failed with exit 1: ['/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.13-diarization+gpu-draft/environment/bin/python', '-c', '\\nimport importlib.metadata as metadata\\nimport json\\nimport sys\\n\\nexpected_extras = [\\'diarization\\', \\'gpu-draft\\']\\nexpected_models = [\\'std-qwen3asr-ane/1.7b\\', \\'std-qwen3asr-ane/1.7b-short-dictation\\']\\nconverter_only_distributions = [\\'gradio\\', \\'jiwer\\', \\'qwen-asr\\', \\'safetensors\\', \\'torch\\', \\'transformers\\']\\ninstalled = {\\n    dist.metadata[\\'Name\\'].lower().replace(\\'_\\', \\'-\\').replace(\\'.\\', \\'-\\'): dist.version\\n    for dist in metadata.distributions()\\n    if dist.metadata.get(\\'Name\\')\\n}\\ndistribution = metadata.distribution(\\'std-qwen3asr-ane\\')\\nassert distribution.version == \\'0.2.0a1\\'\\nstandard_asr_distribution = metadata.distribution(\\'standard-asr\\')\\nstandard_asr_direct_url = json.loads(standard_asr_distribution.read_text(\\'direct_url.json\\'))\\nresolved_standard_asr_commit = standard_asr_direct_url[\\'vcs_info\\'][\\'commit_id\\']\\nassert resolved_standard_asr_commit == \\'97bfdb28134c114088ec335596aa6bca53f9204f\\'\\nentrypoints = {ep.name: ep.value for ep in distribution.entry_points}\\nassert entrypoints[\\'standard-asr\\'] == \\'standard_asr.toolchain.cli:main\\'\\nassert entrypoints[\\'qwen3-asr-ane\\'] == \\'std_qwen3asr_ane.cli:main\\'\\nmodels = {ep.name: ep.value for ep in distribution.entry_points if ep.group == \\'standard_asr.models\\'}\\nassert sorted(models) == sorted(expected_models)\\n\\nimport coremltools\\nimport numpy\\nimport scipy\\nimport soundfile\\nimport standard_asr\\nimport std_qwen3asr_ane\\nimport tokenizers\\n\\nif expected_extras in ([], [\\'server\\']):\\n    unexpected = sorted(set(converter_only_distributions) & set(installed))\\n    assert not unexpected, f\\'converter distributions leaked into {expected_extras or \"base\"}: {unexpected}\\'\\nif \\'server\\' in expected_extras:\\n    import fastapi\\n    import multipart\\n    import uvicorn\\n    import websockets\\nif \\'diarization\\' in expected_extras:\\n    import sherpa_onnx\\n    assert installed.get(\\'sherpa-onnx\\') == \\'1.13.8\\'\\n    assert installed.get(\\'sherpa-onnx-core\\') == \\'1.13.8\\'\\nelse:\\n    assert \\'sherpa-onnx\\' not in installed\\n    assert \\'sherpa-onnx-core\\' not in installed\\nif \\'gpu-draft\\' in expected_extras:\\n    import mlx.core\\n    from mlx_audio.stt import load as mlx_audio_load\\n    assert callable(mlx_audio_load)\\nelse:\\n    assert \\'mlx-audio\\' not in installed\\n\\nprint(json.dumps({\\n    \\'python\\': platform_python if (platform_python := sys.version.split()[0]) else None,\\n    \\'project_version\\': distribution.version,\\n    \\'entrypoints\\': entrypoints,\\n    \\'installed\\': dict(sorted(installed.items())),\\n    \\'extras\\': expected_extras,\\n    \\'standard_asr_vcs_commit\\': resolved_standard_asr_commit,\\n}, sort_keys=True))\\n']; see /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.13-diarization+gpu-draft/03.stdout.log and /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.13-diarization+gpu-draft/03.stderr.log",
+        "extras": [
+          "diarization",
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.13-diarization+gpu-draft",
+        "passed": false,
+        "profile": "diarization+gpu-draft",
+        "python_requested": "3.13"
+      },
+      {
+        "error": "RuntimeError: Command failed with exit 1: ['/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.13-server+diarization+gpu-draft/environment/bin/python', '-c', '\\nimport importlib.metadata as metadata\\nimport json\\nimport sys\\n\\nexpected_extras = [\\'server\\', \\'diarization\\', \\'gpu-draft\\']\\nexpected_models = [\\'std-qwen3asr-ane/1.7b\\', \\'std-qwen3asr-ane/1.7b-short-dictation\\']\\nconverter_only_distributions = [\\'gradio\\', \\'jiwer\\', \\'qwen-asr\\', \\'safetensors\\', \\'torch\\', \\'transformers\\']\\ninstalled = {\\n    dist.metadata[\\'Name\\'].lower().replace(\\'_\\', \\'-\\').replace(\\'.\\', \\'-\\'): dist.version\\n    for dist in metadata.distributions()\\n    if dist.metadata.get(\\'Name\\')\\n}\\ndistribution = metadata.distribution(\\'std-qwen3asr-ane\\')\\nassert distribution.version == \\'0.2.0a1\\'\\nstandard_asr_distribution = metadata.distribution(\\'standard-asr\\')\\nstandard_asr_direct_url = json.loads(standard_asr_distribution.read_text(\\'direct_url.json\\'))\\nresolved_standard_asr_commit = standard_asr_direct_url[\\'vcs_info\\'][\\'commit_id\\']\\nassert resolved_standard_asr_commit == \\'97bfdb28134c114088ec335596aa6bca53f9204f\\'\\nentrypoints = {ep.name: ep.value for ep in distribution.entry_points}\\nassert entrypoints[\\'standard-asr\\'] == \\'standard_asr.toolchain.cli:main\\'\\nassert entrypoints[\\'qwen3-asr-ane\\'] == \\'std_qwen3asr_ane.cli:main\\'\\nmodels = {ep.name: ep.value for ep in distribution.entry_points if ep.group == \\'standard_asr.models\\'}\\nassert sorted(models) == sorted(expected_models)\\n\\nimport coremltools\\nimport numpy\\nimport scipy\\nimport soundfile\\nimport standard_asr\\nimport std_qwen3asr_ane\\nimport tokenizers\\n\\nif expected_extras in ([], [\\'server\\']):\\n    unexpected = sorted(set(converter_only_distributions) & set(installed))\\n    assert not unexpected, f\\'converter distributions leaked into {expected_extras or \"base\"}: {unexpected}\\'\\nif \\'server\\' in expected_extras:\\n    import fastapi\\n    import multipart\\n    import uvicorn\\n    import websockets\\nif \\'diarization\\' in expected_extras:\\n    import sherpa_onnx\\n    assert installed.get(\\'sherpa-onnx\\') == \\'1.13.8\\'\\n    assert installed.get(\\'sherpa-onnx-core\\') == \\'1.13.8\\'\\nelse:\\n    assert \\'sherpa-onnx\\' not in installed\\n    assert \\'sherpa-onnx-core\\' not in installed\\nif \\'gpu-draft\\' in expected_extras:\\n    import mlx.core\\n    from mlx_audio.stt import load as mlx_audio_load\\n    assert callable(mlx_audio_load)\\nelse:\\n    assert \\'mlx-audio\\' not in installed\\n\\nprint(json.dumps({\\n    \\'python\\': platform_python if (platform_python := sys.version.split()[0]) else None,\\n    \\'project_version\\': distribution.version,\\n    \\'entrypoints\\': entrypoints,\\n    \\'installed\\': dict(sorted(installed.items())),\\n    \\'extras\\': expected_extras,\\n    \\'standard_asr_vcs_commit\\': resolved_standard_asr_commit,\\n}, sort_keys=True))\\n']; see /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.13-server+diarization+gpu-draft/03.stdout.log and /Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.13-server+diarization+gpu-draft/03.stderr.log",
+        "extras": [
+          "server",
+          "diarization",
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.13-server+diarization+gpu-draft",
+        "passed": false,
+        "profile": "server+diarization+gpu-draft",
+        "python_requested": "3.13"
+      }
+    ],
+    "passed": false,
+    "passed_cells": 10,
+    "total_cells": 18
+  },
+  "platform": {
+    "machine": "arm64",
+    "release": "27.0.0",
+    "system": "Darwin"
+  },
+  "project_commit": "9f0a325da4e66e4e3a24e01f6eb3b2ba0c1793b6",
+  "project_version": "0.2.0a1",
+  "schema_version": 1,
+  "uv_version": "uv 0.12.22 (Homebrew 2026-10-01 aarch64-apple-darwin)",
+  "verifier": {
+    "path": "research/release-readiness/verify_install_matrix.py",
+    "sha256": "d0b916ca80bdfe771d094933da3932f94024f90a2ab7ba0423711f18992073c3"
+  },
+  "worktree_dirty": true
+}

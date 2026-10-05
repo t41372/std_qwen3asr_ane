@@ -8,3 +8,18 @@ The conversion modules independently express the official architecture using
 static Core ML-compatible graphs. Reference implementation details and source
 revisions are recorded in the workspace research documents. Model weights are
 downloaded separately and are not included in this Python distribution.
+
+Optional forced alignment uses Qwen3-ForcedAligner-0.6B (Apache-2.0) through
+the separately installed qwen-asr runtime. That runtime and its dependencies
+retain their own licenses; their distributions are not included in this wheel.
+https://huggingface.co/Qwen/Qwen3-ForcedAligner-0.6B
+https://github.com/QwenLM/Qwen3-ASR
+https://github.com/lovit/soynlp/blob/master/LICENSE
+
+Optional CPU diarization uses sherpa-onnx (Apache-2.0), a separately acquired
+pyannote segmentation model (MIT), and a 3D-Speaker embedding model
+(Apache-2.0). Model identities, revisions, hashes, and license references are
+recorded in the acquisition metadata and diarization documentation.
+https://github.com/k2-fsa/sherpa-onnx
+https://huggingface.co/pyannote/segmentation-3.0
+https://github.com/modelscope/3D-Speaker

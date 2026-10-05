@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from .errors import ModelLimitError
+from .errors import CancellationToken, ModelLimitError, raise_if_cancelled
 
 
 class TokenDecoder(Protocol):
@@ -41,6 +41,7 @@ def greedy_speculative_decode(
     eos_token_ids: frozenset[int],
     max_new_tokens: int,
     lookahead: int,
+    cancel: CancellationToken | None = None,
 ) -> SpeculativeResult:
     """Verify up to ``lookahead`` draft tokens after a held target token.
 
@@ -59,6 +60,7 @@ def greedy_speculative_decode(
         raise ValueError("lookahead must be a nonnegative integer")
     if min(target_position, draft_position) < 0 or not eos_token_ids:
         raise ValueError("Nonnegative prompt positions and EOS tokens are required")
+    raise_if_cancelled(cancel)
     emitted: list[int] = []
     proposed_count = accepted_count = verifier_calls = draft_calls = 0
 
@@ -69,6 +71,7 @@ def greedy_speculative_decode(
 
     held = target.choose(initial_target_hidden)
     while held not in eos_token_ids:
+        raise_if_cancelled(cancel)
         start = len(emitted)
         emitted.append(held)
         if len(emitted) >= max_new_tokens:
@@ -77,7 +80,9 @@ def greedy_speculative_decode(
         count = min(lookahead, max_new_tokens - len(emitted) - 1)
         proposals: list[int] = []
         if count:
+            raise_if_cancelled(cancel)
             draft_hidden = draft.step([held], draft_position + start)[-1]
+            raise_if_cancelled(cancel)
             draft_calls += 1
             for index in range(count):
                 proposal = draft.choose(draft_hidden)
@@ -85,10 +90,14 @@ def greedy_speculative_decode(
                 if proposal in eos_token_ids:
                     break
                 if index + 1 < count:
+                    raise_if_cancelled(cancel)
                     draft_hidden = draft.step([proposal], draft_position + start + index + 1)[-1]
+                    raise_if_cancelled(cancel)
                     draft_calls += 1
         proposed_count += len(proposals)
+        raise_if_cancelled(cancel)
         hidden_rows = target.step([held, *proposals], target_position + start)
+        raise_if_cancelled(cancel)
         verifier_calls += 1
         if len(hidden_rows) != len(proposals) + 1:
             raise RuntimeError("Verifier returned an unexpected number of hidden rows")
@@ -106,7 +115,9 @@ def greedy_speculative_decode(
                 # Drafting left its final proposal unconsumed. On full acceptance
                 # fill that slot before the next held target token; on rejection
                 # it remains an invalid future slot and will simply be replaced.
+                raise_if_cancelled(cancel)
                 draft.step([proposals[-1]], draft_position + len(emitted) - 1)
+                raise_if_cancelled(cancel)
                 draft_calls += 1
             held = target.choose(hidden_rows[-1])
     return result()

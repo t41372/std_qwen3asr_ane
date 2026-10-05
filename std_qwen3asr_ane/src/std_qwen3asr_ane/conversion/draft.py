@@ -17,8 +17,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 
-from ..bundle import SUPPORTED_SCHEMA_VERSIONS, clone, digest, lm_head_compression
-from ..draft import DRAFT_BUNDLE_KIND, DRAFT_MODEL_ID, DRAFT_REVISION, weight_digests
+from ..artifact_validation import (
+    DRAFT_BUNDLE_KIND,
+    DRAFT_MODEL_ID,
+    DRAFT_REVISION,
+    validate_target_manifest,
+)
+from ..bundle import clone, digest, lm_head_compression
+from ..draft import weight_digests
+from ..source_validation import VerifiedSource, verify_source_checkpoint
 
 
 def build_compact_head(
@@ -61,30 +68,44 @@ def build_compact_head(
 
 
 def build_draft_bundle(
-    target: Path, source: Path, output: Path, *, draft_source: Path | None = None
+    target: Path,
+    source: Path,
+    output: Path,
+    *,
+    draft_source: Path | None = None,
+    verified_target_source: VerifiedSource | None = None,
+    verified_draft_source: VerifiedSource | None = None,
 ) -> dict:
     """Write ``output`` with the pinned 0.6B checkpoint and a compiled verify head."""
     import coremltools as ct
 
-    from .build import download_source
+    from .build import download_verified_source
     from .compress import compress_model, weight_bytes
 
     target, source, output = target.resolve(), source.resolve(), output.resolve()
     if output.exists():
         raise FileExistsError("Use a new directory to preserve previous artifacts")
     manifest = json.loads((target / "manifest.json").read_text())
+    target_info = validate_target_manifest(manifest)
+    if verified_target_source is None:
+        verified_target_source = verify_source_checkpoint(
+            source,
+            expected_model_id=target_info.model_id,
+            expected_revision=target_info.source_revision,
+            expected_content_sha256=target_info.source_content_sha256,
+        )
+    elif verified_target_source.root != source:
+        raise ValueError("verified_target_source belongs to a different source directory")
     if (
-        manifest.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS
-        or manifest.get("model_id") != "Qwen/Qwen3-ASR-1.7B"
+        verified_target_source.model_id != target_info.model_id
+        or verified_target_source.revision != target_info.source_revision
+        or (
+            target_info.source_content_sha256 is not None
+            and verified_target_source.content_sha256 != target_info.source_content_sha256
+        )
     ):
-        raise ValueError("The target must be a Qwen3-ASR 1.7B bundle")
-    provenance = json.loads((source / "source.json").read_text())
-    if (
-        provenance.get("model_id") != manifest["model_id"]
-        or provenance.get("revision") != manifest["source_revision"]
-    ):
-        raise ValueError("The source checkpoint must match the target bundle's revision")
-    width = int(manifest.get("token_batch_size", 1))
+        raise ValueError("verified_target_source differs from the selected target")
+    width = target_info.token_batch_size
     if width < 2:
         raise ValueError("The target must use a token batch size above 1 to verify proposals")
     # The head must mirror lm_head exactly: compressed only if lm_head was.
@@ -96,12 +117,32 @@ def build_draft_bundle(
     output.mkdir(parents=True)
     draft_path = output / "Qwen3-ASR-0.6B"
     if draft_source is not None:
-        record = json.loads((draft_source / "source.json").read_text())
-        if record != {"model_id": DRAFT_MODEL_ID, "revision": DRAFT_REVISION}:
-            raise ValueError(f"The draft checkpoint must be {DRAFT_MODEL_ID}@{DRAFT_REVISION}")
+        draft_source = draft_source.resolve()
+        if verified_draft_source is None:
+            verified_draft_source = verify_source_checkpoint(
+                draft_source,
+                expected_model_id=DRAFT_MODEL_ID,
+                expected_revision=DRAFT_REVISION,
+            )
+        elif verified_draft_source.root != draft_source:
+            raise ValueError("verified_draft_source belongs to a different source directory")
+        if (
+            verified_draft_source.model_id != DRAFT_MODEL_ID
+            or verified_draft_source.revision != DRAFT_REVISION
+        ):
+            raise ValueError("verified_draft_source is not the pinned draft checkpoint")
         clone(draft_source, draft_path)
+        # Bind the private copy even when the operator supplied a legacy
+        # identity-only source.json. The original source remains untouched.
+        (draft_path / "source.json").write_text(
+            json.dumps(verified_draft_source.provenance(), indent=2) + "\n"
+        )
     else:
-        download_source(draft_path, revision=DRAFT_REVISION, model_id=DRAFT_MODEL_ID)
+        if verified_draft_source is not None:
+            raise ValueError("verified_draft_source requires draft_source")
+        verified_draft_source = download_verified_source(
+            draft_path, revision=DRAFT_REVISION, model_id=DRAFT_MODEL_ID
+        )
     started = perf_counter()
     fp16 = output / "verify_head_fp16.mlpackage"
     head = build_compact_head(
@@ -134,7 +175,12 @@ def build_draft_bundle(
         "kind": DRAFT_BUNDLE_KIND,
         "created_at": datetime.now(UTC).isoformat(),
         "host": platform.platform(),
-        "draft": {"model_id": DRAFT_MODEL_ID, "revision": DRAFT_REVISION, "path": draft_path.name},
+        "draft": {
+            "model_id": DRAFT_MODEL_ID,
+            "revision": DRAFT_REVISION,
+            "content_sha256": verified_draft_source.content_sha256,
+            "path": draft_path.name,
+        },
         "verify_head": {
             "path": compiled.name,
             "token_batch_size": width,
@@ -148,6 +194,7 @@ def build_draft_bundle(
         "target": {
             "model_id": manifest["model_id"],
             "source_revision": manifest["source_revision"],
+            "source_content_sha256": verified_target_source.content_sha256,
             "token_batch_size": width,
             "tokenizer_sha256": digest(tokenizer),
             "weight_compression": compression,

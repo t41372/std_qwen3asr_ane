@@ -1,13 +1,19 @@
 [project]
 name = "std-qwen3asr-ane"
-version = "0.1.0a1"
+version = "0.2.0a1"
 description = "Qwen3-ASR 1.7B on Apple Neural Engine, with Standard ASR integration"
 license = "Apache-2.0"
 license-files = ["LICENSE", "std_qwen3asr_ane/NOTICE"]
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Operating System :: MacOS :: MacOS X",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
 dependencies = [
-  "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@8b124e8c8fbcb6b0382792262bee05595b895440",
+  "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@97bfdb28134c114088ec335596aa6bca53f9204f",
   "coremltools>=9.0,<10",
   "numpy>=2.0",
   "tokenizers>=0.22",
@@ -17,6 +23,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+server = ["standard-asr[server]"]
+# The 1.13.8 platform wheel needs the separately packaged ONNX Runtime library;
+# its source-distribution metadata omits that dependency during universal locking.
+diarization = ["sherpa-onnx==1.13.8", "sherpa-onnx-core==1.13.8"]
 # Exact speculative decoding with a 0.6B draft on the GPU. mlx-audio needs
 # transformers 5, which the convert group cannot use; install one or the other.
 gpu-draft = ["mlx-audio[stt]==0.5.3"]
@@ -33,6 +43,7 @@ qwen3-asr-ane = "std_qwen3asr_ane.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8.4", "ruff>=0.12"]
+server-test = ["standard-asr[server]", "httpx2>=2.0"]
 eval = ["jiwer>=4.0"]
 convert = ["torch>=2.7", "safetensors>=0.5", "huggingface-hub>=0.34", "transformers>=4.57,<5", "qwen-asr>=0.0.6", "jiwer>=4.0"]
 

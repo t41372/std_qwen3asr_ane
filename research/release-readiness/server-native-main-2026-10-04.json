@@ -1,0 +1,3065 @@
+{
+  "schema_version": 2,
+  "recorded_date": "2026-10-04",
+  "recorded_at": "2026-10-05T00:38:01.730954+00:00",
+  "status": "passed",
+  "scope": "Installed-wheel official main server; genuine Core ML, alignment and diarization.",
+  "limitations": [
+    "Fixed official fixtures, not a corpus-quality or throughput benchmark.",
+    "Each preset uses its own process and engine-scoped environment configuration.",
+    "No server pool, readiness endpoint, or engine-close contract is assumed.",
+    "Cancellation is cooperative at prediction boundaries."
+  ],
+  "platform": {
+    "system": "Darwin",
+    "machine": "arm64",
+    "python": "3.13.11"
+  },
+  "wheel": {
+    "filename": "std_qwen3asr_ane-0.2.0a1-py3-none-any.whl",
+    "sha256": "ebcab341dbd6ec6731da295a823771574cdd21dbe5bed1c35610ef903bc96e76",
+    "bytes": 166382,
+    "extras": [
+      "server",
+      "diarization"
+    ]
+  },
+  "presets": {
+    "general": {
+      "status": "passed",
+      "preset": "general",
+      "runtime_provenance": {
+        "standard_asr": {
+          "distribution": "standard-asr",
+          "version": "0.2.0.dev0",
+          "direct_url": {
+            "url": "https://github.com/standard-voice/standard_asr.git",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "97bfdb28134c114088ec335596aa6bca53f9204f",
+              "requested_revision": "97bfdb28134c114088ec335596aa6bca53f9204f"
+            }
+          },
+          "imported_init": "/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/server-native-20261005T003801Z-19159/venv/lib/python3.13/site-packages/standard_asr/__init__.py",
+          "source_kind": "installed",
+          "python_source_sha256": {
+            "__init__.py": "ab9b23d727863d54d2b4065f6acd1f0c401ce68ba1e8b2fd72095eee0f803cc9",
+            "audio/__init__.py": "14aa94431e7d0dbf48be53d076fc02543619e8fbe3750ac0f1e15795ec93c333",
+            "audio/conversion.py": "18f58867d671a3c238b01d9e44c2bf4fa25357c527f4d5d21054dd7020bafaef",
+            "audio/format.py": "a881ec5453f602fb03f0f3a6a622520be38cb76fbe99b207cc37a864578bd918",
+            "audio/input.py": "e7cab7fdaf4192c11a2d7ac0e278e77ae95b73a8e08c12c04a1505b38c85f0ef",
+            "audio/loader.py": "afab55fa0a41ee687cdd17879807fc4657a92c5b1e414b0f479929c05148db1c",
+            "audio/negotiation.py": "6eff2860a8c77d91cc690347564b5646f4d042770ab21ad8470a4f4753326374",
+            "audio/resampling.py": "8626182d92d79f83c800be393cfc20183f8af649f77da664dab4522c2e57cd6e",
+            "audio/wav.py": "cf507247f735aaec6cf228e4fe3fc7221b1354dfb60b4db763c84a32b4f00844",
+            "audio/wire.py": "cb1ec74009cdd8fb977161a1016b966f4d2a18311554a85313d4cf894789c383",
+            "compliance.py": "6f52c4c6683c12a36c237587a15936d681ed4d10c7633bb3a7807a3ebf3a80d4",
+            "contract/__init__.py": "9e73a160ea2af12824e3cedbd863d73be00b6faf66b5bfbb9ed7959e03caab4b",
+            "contract/_json_extra.py": "0b6cd92d41a37ae92e4f2e2edfbf22a02e51c0b68ec307b09e33e6b0a307a243",
+            "contract/artifacts.py": "a92f6167585791758359bc50d5b4464ccfe4911252ee71170cfce02565c245ef",
+            "contract/capabilities.py": "9df4c29a3bf228e011a598e7ba7b1066d10b31c8117e831363cf79c6dcfd4164",
+            "contract/exceptions.py": "1f58af5329f3cecc88f73d60459a61f07796ace3244917a2eae7020ef516c2d1",
+            "contract/identifiers.py": "df0daf8071a8530543347411613d74afe86bc4107d918354965d93512c85257f",
+            "contract/language.py": "a4b5804d102a291fc373ea5c445cf27c371a43a69030a4fa98202d468d0e9d5d",
+            "contract/metadata.py": "740190e86e440a981b0ff45ae98630f273557fb6344003e134e026716fa73947",
+            "contract/params.py": "ed734af14f5ddc8fcdb69a3ca981064088e651b99fd850d3f258e5dc54078e20",
+            "contract/properties.py": "611090b04598bb6966deafcd5dbc59ac9fe516878dc3649d2ffd0137e3f5abdb",
+            "contract/protocol_version.py": "72c5c94ff37dcabcedbf8144188a26bd3199b524a221a6ff7fae3c1f285bbf13",
+            "contract/results.py": "a5067d33c31d520674eb057c47c598da13a7ec1cfd1f985d045327214ac15fb0",
+            "engine.py": "22055b4d49ee13db5d26d5919eabea17ea4ac5c938f63522e481b095332908e0",
+            "plugins/__init__.py": "b84be63377de3340d5e74236d9da0a8a7ded61b72f325e794167ee3f58b7ad14",
+            "plugins/discovery.py": "35233829f08b00842cf0c678966c521098211cb2171ebb6501d6d3a18795fdd9",
+            "renderers.py": "c1af7f3a89900a36d544b9a2417486bf60fc3ad69412ccf30dcbd18eda27358f",
+            "runtime/__init__.py": "45bdbae6fefe8a7f75beb24b6c42389d92af0b966e0255d1ef883493eccf3448",
+            "runtime/_text.py": "344066c396ab35fe3c70b5b7ae1121ff8fcaae59509b46df5981f7519c694f7b",
+            "runtime/config.py": "c50d601f580240e8234b77d6ea368c53be3e59ce9ac8d59f474ff23c71d23d50",
+            "runtime/downloads.py": "5e4b4a55dc2f566e04299471a9422055caf7e09279478f0b6fece964a66236f3",
+            "runtime/gating.py": "ec391959e458f9955dc97f224b909e4a09c703fe897007f3834a7e53840b2898",
+            "runtime/interface.py": "10e8725da5b503eb5f06d53b6f456d5c5d31b80b06634d147bd0b165b6ab0fb3",
+            "runtime/protocol_boundary.py": "049fc04c87744935212d1c8f75b62b2d3e98b4dfd19a3d6920fa337cfd88631e",
+            "runtime/redaction.py": "20cfb896d1c71ab1f50e9a1c61c73f5e3d97d9be9bf0002645758ade8f4dac75",
+            "runtime/streaming.py": "b38b23a4052d1ff435c4afa884c49e562c6f638cfb0ae91b80d83fb193c45148",
+            "toolchain/__init__.py": "ec7529901ca03a94de350d39a3fd351c0b4a01547aaaab3a768b0da353d44c5e",
+            "toolchain/cli.py": "181fe4e9e7b8292849f1bd2115828135a0c2199e9f2f6a8635ae1d80853d57ba",
+            "toolchain/doctor.py": "3a78a974a5a39e21e24b9e6c7ff6b82e2659bf2b8c59620db0702c6d99b3b20a",
+            "toolchain/server.py": "2d51df5efeac674df493dd830c71f734aa2a25d893c33eac338bc2ca6465f12e"
+          }
+        },
+        "plugin": {
+          "distribution": "std-qwen3asr-ane",
+          "version": "0.2.0a1",
+          "direct_url": {
+            "url": "file:///Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/server-native-20261005T003801Z-19159/dist/std_qwen3asr_ane-0.2.0a1-py3-none-any.whl",
+            "archive_info": {}
+          },
+          "imported_init": "/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/server-native-20261005T003801Z-19159/venv/lib/python3.13/site-packages/std_qwen3asr_ane/__init__.py",
+          "source_kind": "installed",
+          "python_source_sha256": {
+            "__init__.py": "b0d8b9539a9c75bb7de4fb7f60b19fb84226c80354a6b86c5cca922b9d9c1204",
+            "acquisition.py": "c4f64c983fea61eeea313dc1dcfa605517b9da6e834ea8764229592705d2b1fa",
+            "alignment.py": "a108977178c2f31bd8263b88bf151da24daf47bd8eedab5e169c1822d7ca6191",
+            "alignment_worker.py": "20dc4484bace9e07ec1eebfa70673a1cb2fae310328b4b78e56cc84c05fccbbd",
+            "artifact_lifecycle.py": "5c848024bfda8536619526a82c49d892e8405da12b9d66d942ca8e0103d7eb76",
+            "artifact_validation.py": "b566619325926d9569e4cdb5364982837f9f68abd7583e135f4b08a3b45557c1",
+            "audio.py": "a4739c9ff8783c60d770329aa5c53c3d0c5dd2700e3e2cb543e9b4043227e46d",
+            "audio_batch.py": "213320a5f66b5092322b192630db91630c2e4ec1e43770354d6d7137550c8ad6",
+            "audio_context.py": "465574f2a85c483d4f944cf53a551d1ca4178b1ab3f91109868ff1aa420a9ca3",
+            "auxiliary.py": "fd1ebe8249a38af1f9c75ab30bec96acb1ec77259388deff0b2e4861713ba800",
+            "batching.py": "844cd44f88ce321f28a97dfc830342dfd9627f026004eb4d0cf7aee2c91ce7bd",
+            "bulk.py": "a537ed482b3307f1f6d543cf8d3a969824dcef6c700105f6a58f9a08fd5167ae",
+            "bundle.py": "8c781d20cca7b52ec5b50ecc113e77fa3022acc2981f88febf1b0870f00eb057",
+            "cli.py": "5dbdd5b9fd93ad2d29053408014478c6c130a8b90ebc5255e0f1d6a723b3fb7b",
+            "compiled.py": "130a2cb17b9b1355128a9a8f5847e7be85471744f7bb883dbf6e82706a562bfd",
+            "conversion/__init__.py": "3bef1ed894996d48ae8d1c83ecb462bf6a471cce0a096d5b7e52bc7d1aa49640",
+            "conversion/batch_head.py": "ea3f12265c71f272476919ab288b64cdd4898d664efb1a083fcb961f720d3701",
+            "conversion/build.py": "b9a227c493c419a0ecb389a6e6ef2dfe73a1e9af2f470018d30dec93f71ecbd9",
+            "conversion/compress.py": "573ead30f453372c05ea60909b1231aae9e9e7e5b4898f2cbb61c78ffb65fd7c",
+            "conversion/decoder.py": "9ec4b17169e2309ff737eeeb77f16c3aa5f48686c26c023af235dda1208c889d",
+            "conversion/draft.py": "3a417fa6b2f93e3a4288c454e606d52e81dbecbec2a170e31e98983590323d6d",
+            "conversion/embedding.py": "36a18a41468bd225b9fc969e93ccbee4fd2bed90703ff9cba01980da729552ff",
+            "conversion/encoder.py": "701c369eea5254b5bbdd381c01b51104a703c720ef85d322023f3cbd8ef37963",
+            "conversion/passes.py": "2128f36a8ece5b1eae94e603a0c4fedab5721d993848aa6fc17bedf1b431e210",
+            "conversion/toolchain.py": "40af00b571b667bf5cafe1f219bbd5506ba45951d642b7e48079ea1b1c1b1aed",
+            "conversion_worker.py": "82c42abc280b68521bc0e979d43a0c5a65013301afe72857fff0469cdf691a3a",
+            "decoding_guidance.py": "2542726e83928c0620d5ca3a4eb56fc0ac2d6759a0ce6fa6b07e7903b246e59a",
+            "deployment.py": "3463fb5c17eab86e3c4e83a0fec3fa9995c5509e420e6e0c6fddbfad258d4efb",
+            "diagnostics.py": "3c37aeb7a9bfd972bcd2d6ce711c76285769f5633067c3ce5d1caed728b6cb5c",
+            "diarization.py": "791dcd1586b73ab4f2de0fd4ff7107255df1cb4da6445bf53d886cc8b17edb2c",
+            "draft.py": "2a2a92fc7b31038687e21f9f0a3fe376c5e960129872ac8dac0f64b81eff4f67",
+            "embedding.py": "68be473bd331734fc5d58fc9540c4682e9be2488c1b940d833aa24081055e986",
+            "errors.py": "f1cc33131f968ec59b25defe3086a70c61fbfeb101330374f0afb43730244ad9",
+            "languages.py": "3666864a4318e6e2b5d17e47ad582e00531d47863c87b765ede452c5e63d8c73",
+            "longform.py": "ccd30d7be1a6e2e40753e8e8f98a56e5b3cd535a443a4e6dc65463fec7a3f370",
+            "plugin.py": "f29137a8891e9968ef8ee08eb89d88d8e6d76485be67506968ab35f44bcda816",
+            "postprocessing.py": "f2e418ed3a5313162811910d20cfd2edaa13cc7bd896477bf85b800c5a689e8a",
+            "profiles.py": "28383ae5968a06e4dc6a87da9a00854f25736d2b75b41d186220931d9d4771de",
+            "result_text.py": "ffd7f8c510f69d0eed49b91d3e9c88066091b30a627cb8c914760dc776fb7b48",
+            "runtime.py": "da7977b1692d6eb0861f73c85027f3a6b8cde423fc98b6e01a428532087d023f",
+            "source_validation.py": "7de412988205cd0c3a41739a08280f5e3135d768b5f0b606f172f03bb9dd0fc4",
+            "speculative.py": "36d51bb6682bc3e05f714be230a317bfdb6b56e6ae46d40ac44b84e3000f651e",
+            "streaming.py": "5f96cb98674d0866abea057ee0753276d1b186a3af85714cc6ecc2dd9d2a0a33",
+            "streaming_context.py": "792909ed178af0dc8256c1ccadc2a2d99245693f595e773f8751dbef009f54f6",
+            "transcript_draft.py": "d869fb33b5a9654bec5edaf96c602787b754bfae1ed0be582bda946117447e6a",
+            "worker_environment.py": "7557b544d2b34df5ec4eb3c0a0ef624cb6449e79b09ae0fb31719f0fda66f173"
+          }
+        }
+      },
+      "environment": {
+        "STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR": "<repository>/artifacts/qwen3-asr-1.7b",
+        "STANDARD_ASR_STD_QWEN3ASR_ANE__USE_ALIGNMENT": "true",
+        "STANDARD_ASR_STD_QWEN3ASR_ANE__ALIGNMENT_DIR": "<repository>/artifacts/auxiliary/alignment",
+        "STANDARD_ASR_STD_QWEN3ASR_ANE__USE_DIARIZATION": "true",
+        "STANDARD_ASR_STD_QWEN3ASR_ANE__DIARIZATION_DIR": "<repository>/artifacts/auxiliary/diarization",
+        "STANDARD_ASR_STD_QWEN3ASR_ANE__STREAM_CHUNK_SECONDS": "2.0"
+      },
+      "manifest_sha256": "a53b10689a1f27e5432435bac58cebc478550d4ccb8a535748194823bbe6f5c3",
+      "discovered_models": [
+        {
+          "key": "std-qwen3asr-ane/1.7b",
+          "engine_id": "std-qwen3asr-ane",
+          "model_name": "1.7b"
+        },
+        {
+          "key": "std-qwen3asr-ane/1.7b-short-dictation",
+          "engine_id": "std-qwen3asr-ane",
+          "model_name": "1.7b-short-dictation"
+        }
+      ],
+      "capabilities": {
+        "batch": {
+          "language": {
+            "runtime_override": {
+              "supported": true
+            },
+            "candidate_languages": {
+              "supported": true,
+              "constraints": {
+                "max": 8
+              }
+            },
+            "supported": true
+          },
+          "word_timestamps": {
+            "supported": true,
+            "granularities": [
+              "word",
+              "segment",
+              "char"
+            ]
+          },
+          "guidance": {
+            "prompt": {
+              "supported": true,
+              "constraints": {
+                "max_tokens": 128
+              }
+            },
+            "phrase_hints": {
+              "supported": true,
+              "constraints": {
+                "max_terms": 16,
+                "max_chars_per_term": 128,
+                "max_words_per_term": null
+              }
+            },
+            "supported": true
+          },
+          "diarization": {
+            "supported": true,
+            "always_on": {
+              "supported": false
+            },
+            "constraints": {
+              "max_speakers": 32
+            }
+          },
+          "x_qwen3asr_multi_input": {
+            "supported": true,
+            "constraints": {
+              "max_group_size": 16
+            }
+          },
+          "supported": true
+        },
+        "streaming": {
+          "language": {
+            "runtime_override": {
+              "supported": true
+            },
+            "candidate_languages": {
+              "supported": true,
+              "constraints": {
+                "max": 8
+              }
+            },
+            "supported": true
+          },
+          "word_timestamps": {
+            "supported": true,
+            "granularities": [
+              "word",
+              "segment",
+              "char"
+            ]
+          },
+          "diarization": {
+            "supported": true,
+            "always_on": {
+              "supported": false
+            },
+            "constraints": {
+              "max_speakers": 32
+            }
+          },
+          "guidance": {
+            "prompt": {
+              "supported": true,
+              "constraints": {
+                "max_tokens": 128
+              }
+            },
+            "phrase_hints": {
+              "supported": true,
+              "constraints": {
+                "max_terms": 16,
+                "max_chars_per_term": 128,
+                "max_words_per_term": null
+              }
+            },
+            "mutable_mid_stream": {
+              "supported": false
+            },
+            "supported": true
+          },
+          "emits_partials": {
+            "supported": true
+          },
+          "re_segments": {
+            "supported": false
+          },
+          "partial_stability": {
+            "supported": false
+          },
+          "reconnect": {
+            "mode": "unsupported",
+            "supported": false
+          },
+          "finality_level": {
+            "mode": "closed",
+            "supported": true
+          },
+          "timestamps": {
+            "mode": "post_align",
+            "supported": true
+          },
+          "supported": true
+        },
+        "streaming_input": {
+          "supported": true
+        },
+        "streaming_output": {
+          "supported": true
+        },
+        "self_resamples": {
+          "supported": false
+        }
+      },
+      "metadata": {
+        "artifacts": {
+          "applicable": true,
+          "supports_explicit_acquisition": true,
+          "may_acquire_during_inference": false
+        },
+        "x_qwen3asr_streaming": {
+          "algorithm": "bounded_windows_with_low_energy_boundaries_and_prefix_rollback",
+          "effective_session_audio_limit": "configured_recording_and_streaming_limits",
+          "decoder_prefix_reuse": "exact_embeddings_at_token_batch_boundaries",
+          "audio_graph_reuse": "exact_padded_inputs_and_masks",
+          "audio_feature_reuse": "aligned_stable_stft_power_with_full_width_mel_projection",
+          "context_limits": "session_configuration_and_bundle_audio_and_decoder_token_capacity",
+          "persistent_causal_encoder_state": false,
+          "segment_rollover_supported": true,
+          "native_window_seconds": 30.0
+        },
+        "x_qwen3asr_auxiliary": {
+          "compute": "cpu",
+          "alignment_languages": [
+            "zh",
+            "en",
+            "yue",
+            "fr",
+            "de",
+            "it",
+            "ja",
+            "ko",
+            "pt",
+            "ru",
+            "es"
+          ],
+          "diarization_requires_alignment": true,
+          "overlapping_word_attribution": "unassigned_when_evidence_is_ambiguous"
+        },
+        "x_qwen3asr_deployment": {
+          "os": "macos",
+          "minimum_os_major": 15,
+          "architectures": [
+            "arm64"
+          ]
+        },
+        "x_qwen3asr_batching": {
+          "method": "transcribe_many",
+          "transport": "python",
+          "execution": "packed_target_when_eligible_otherwise_serial_target",
+          "gpu_draft_used": false
+        }
+      },
+      "params-schema": {
+        "additionalProperties": false,
+        "description": "Per-request decoding budget; omitted values use the engine's defaults.",
+        "properties": {
+          "max_new_tokens": {
+            "anyOf": [
+              {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max New Tokens"
+          },
+          "disable_draft": {
+            "default": false,
+            "description": "Use the ANE target without a configured GPU draft for this request.",
+            "title": "Disable Draft",
+            "type": "boolean"
+          },
+          "include_metrics": {
+            "default": false,
+            "description": "Include native timings, token IDs and raw decoder output in result.extra.",
+            "title": "Include Metrics",
+            "type": "boolean"
+          }
+        },
+        "title": "Qwen3ASRParams",
+        "type": "object"
+      },
+      "config-schema": {
+        "additionalProperties": false,
+        "description": "Standard ASR cache defaults, with explicit paths for existing local bundles.",
+        "properties": {
+          "engine": {
+            "const": "std-qwen3asr-ane",
+            "default": "std-qwen3asr-ane",
+            "title": "Engine",
+            "type": "string"
+          },
+          "strict": {
+            "default": true,
+            "description": "Unsupported-parameter policy: True=strict, False=best_effort.",
+            "title": "Strict",
+            "type": "boolean"
+          },
+          "allow_private_urls": {
+            "default": false,
+            "description": "Opt-in to relax the SSRF policy so an AudioUrl may target a private/loopback/link-local address (HTTPS is still required). False by default; set True only for a trusted internal endpoint.",
+            "title": "Allow Private Urls",
+            "type": "boolean"
+          },
+          "default_language": {
+            "default": "auto",
+            "title": "Default Language",
+            "type": "string"
+          },
+          "default_candidate_languages": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Default candidate languages.",
+            "title": "Default Candidate Languages"
+          },
+          "download_root": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Root directory for downloaded inference artifacts.",
+            "title": "Download Root"
+          },
+          "profile": {
+            "const": "general",
+            "default": "general",
+            "title": "Profile",
+            "type": "string"
+          },
+          "model_dir": {
+            "description": "Bundle path; defaults to the selected profile in the Standard ASR cache.",
+            "format": "path",
+            "title": "Model Dir",
+            "type": "string"
+          },
+          "source_dir": {
+            "description": "Where `standard-asr pull` keeps the pinned official checkpoint it converts from; reused when present.",
+            "format": "path",
+            "title": "Source Dir",
+            "type": "string"
+          },
+          "max_new_tokens": {
+            "default": 256,
+            "maximum": 4096,
+            "minimum": 1,
+            "title": "Max New Tokens",
+            "type": "integer"
+          },
+          "use_draft": {
+            "default": false,
+            "description": "Enable the optional GPU draft using its managed cache path.",
+            "title": "Use Draft",
+            "type": "boolean"
+          },
+          "draft_source_dir": {
+            "description": "Pinned 0.6B checkpoint cache, used by explicit draft acquisition.",
+            "format": "path",
+            "title": "Draft Source Dir",
+            "type": "string"
+          },
+          "draft_dir": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional draft bundle from `qwen3-asr-ane build-draft`. When set, batch transcription proposes tokens with Qwen3-ASR 0.6B on the GPU and verifies them on the Neural Engine; output is unchanged. Needs the gpu-draft extra.",
+            "title": "Draft Dir"
+          },
+          "draft_lookahead": {
+            "default": 15,
+            "maximum": 15,
+            "minimum": 1,
+            "title": "Draft Lookahead",
+            "type": "integer"
+          },
+          "draft_bits": {
+            "anyOf": [
+              {
+                "enum": [
+                  4,
+                  8
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 4,
+            "description": "In-memory quantization of the draft decoder; None keeps bf16.",
+            "title": "Draft Bits"
+          },
+          "stream_chunk_seconds": {
+            "default": 2.0,
+            "maximum": 30.0,
+            "minimum": 0.1,
+            "title": "Stream Chunk Seconds",
+            "type": "number"
+          },
+          "stream_unfixed_chunks": {
+            "default": 2,
+            "minimum": 0,
+            "title": "Stream Unfixed Chunks",
+            "type": "integer"
+          },
+          "stream_unfixed_tokens": {
+            "default": 5,
+            "minimum": 0,
+            "title": "Stream Unfixed Tokens",
+            "type": "integer"
+          },
+          "max_recording_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Recording Seconds"
+          },
+          "stream_max_audio_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stream Max Audio Seconds"
+          },
+          "stream_audio_queue_size": {
+            "default": 4,
+            "maximum": 128,
+            "minimum": 1,
+            "title": "Stream Audio Queue Size",
+            "type": "integer"
+          },
+          "use_batching": {
+            "default": false,
+            "description": "Acquire a compact head for packed offline requests.",
+            "title": "Use Batching",
+            "type": "boolean"
+          },
+          "batch_head_dir": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional target-bound offline batch head.",
+            "title": "Batch Head Dir"
+          },
+          "use_alignment": {
+            "default": false,
+            "description": "Enable explicitly acquired Qwen forced alignment on the CPU.",
+            "title": "Use Alignment",
+            "type": "boolean"
+          },
+          "alignment_dir": {
+            "description": "Managed forced-aligner model and isolated runtime directory.",
+            "format": "path",
+            "title": "Alignment Dir",
+            "type": "string"
+          },
+          "use_diarization": {
+            "default": false,
+            "description": "Enable explicitly acquired speaker diarization on the CPU.",
+            "title": "Use Diarization",
+            "type": "boolean"
+          },
+          "diarization_dir": {
+            "description": "Directory containing the pinned segmentation and speaker-embedding models.",
+            "format": "path",
+            "title": "Diarization Dir",
+            "type": "string"
+          }
+        },
+        "title": "Qwen3ASRConfig",
+        "type": "object"
+      },
+      "http_input": {
+        "sha256": "f9b4440ac8393e47c14a6240e9739dea09b645bb1592b8f2dd48feb9666cea7f",
+        "expected_text": "Uh huh. Oh yeah, yeah. He wasn't even that big when I started listening to him, but and his solo music didn't do overly well, but he did very well when he started writing for other people."
+      },
+      "http": {
+        "status": 200,
+        "response": {
+          "model": "std-qwen3asr-ane/1.7b",
+          "result": {
+            "text": "Uh huh. Oh yeah, yeah. He wasn't even that big when I started listening to him, but and his solo music didn't do overly well, but he did very well when he started writing for other people.",
+            "detected_language": "en",
+            "language_confidence": null,
+            "duration": 15.05125,
+            "segments": [
+              {
+                "start": 0.4,
+                "end": 0.88,
+                "text": "Uh ",
+                "words": [
+                  {
+                    "start": 0.4,
+                    "end": 0.88,
+                    "text": "Uh",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "unresolved_000000_speaker_01",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 0,
+                      "source_end": 2,
+                      "alignment_granularity": "word"
+                    }
+                  }
+                ],
+                "speaker": "unresolved_000000_speaker_01",
+                "channel": null,
+                "avg_logprob": null,
+                "no_speech_prob": null,
+                "temperature": null,
+                "compression_ratio": null,
+                "extra": {
+                  "source_start": 0,
+                  "source_end": 3
+                }
+              },
+              {
+                "start": 1.04,
+                "end": 14.64,
+                "text": "huh. Oh yeah, yeah. He wasn't even that big when I started listening to him, but and his solo music didn't do overly well, but he did very well when he started writing for other people.",
+                "words": [
+                  {
+                    "start": 1.04,
+                    "end": 1.2,
+                    "text": "huh",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 3,
+                      "source_end": 6,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 1.2,
+                    "end": 1.28,
+                    "text": "Oh",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 8,
+                      "source_end": 10,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 1.28,
+                    "end": 1.52,
+                    "text": "yeah",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 11,
+                      "source_end": 15,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 1.52,
+                    "end": 1.92,
+                    "text": "yeah",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 17,
+                      "source_end": 21,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 2.32,
+                    "end": 2.4,
+                    "text": "He",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 23,
+                      "source_end": 25,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 2.4,
+                    "end": 2.8,
+                    "text": "wasn't",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 26,
+                      "source_end": 32,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 2.8,
+                    "end": 3.12,
+                    "text": "even",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 33,
+                      "source_end": 37,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 3.12,
+                    "end": 3.36,
+                    "text": "that",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 38,
+                      "source_end": 42,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 3.36,
+                    "end": 3.84,
+                    "text": "big",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 43,
+                      "source_end": 46,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 3.84,
+                    "end": 4.0,
+                    "text": "when",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 47,
+                      "source_end": 51,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 4.08,
+                    "end": 4.24,
+                    "text": "I",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 52,
+                      "source_end": 53,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 4.24,
+                    "end": 4.64,
+                    "text": "started",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 54,
+                      "source_end": 61,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 4.64,
+                    "end": 5.04,
+                    "text": "listening",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 62,
+                      "source_end": 71,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 5.12,
+                    "end": 5.2,
+                    "text": "to",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 72,
+                      "source_end": 74,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 5.28,
+                    "end": 5.52,
+                    "text": "him",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 75,
+                      "source_end": 78,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 6.0,
+                    "end": 6.56,
+                    "text": "but",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 80,
+                      "source_end": 83,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 6.64,
+                    "end": 6.8,
+                    "text": "and",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 84,
+                      "source_end": 87,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 6.8,
+                    "end": 6.96,
+                    "text": "his",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 88,
+                      "source_end": 91,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 6.96,
+                    "end": 7.44,
+                    "text": "solo",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 92,
+                      "source_end": 96,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 7.44,
+                    "end": 8.0,
+                    "text": "music",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 97,
+                      "source_end": 102,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 8.08,
+                    "end": 8.72,
+                    "text": "didn't",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 103,
+                      "source_end": 109,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 8.72,
+                    "end": 9.28,
+                    "text": "do",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 110,
+                      "source_end": 112,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 9.52,
+                    "end": 10.08,
+                    "text": "overly",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 113,
+                      "source_end": 119,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 10.08,
+                    "end": 10.56,
+                    "text": "well",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 120,
+                      "source_end": 124,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 11.12,
+                    "end": 11.28,
+                    "text": "but",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 126,
+                      "source_end": 129,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 11.28,
+                    "end": 11.44,
+                    "text": "he",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 130,
+                      "source_end": 132,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 11.44,
+                    "end": 11.68,
+                    "text": "did",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 133,
+                      "source_end": 136,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 11.68,
+                    "end": 12.24,
+                    "text": "very",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 137,
+                      "source_end": 141,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 12.24,
+                    "end": 12.64,
+                    "text": "well",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 142,
+                      "source_end": 146,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 12.64,
+                    "end": 12.8,
+                    "text": "when",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 147,
+                      "source_end": 151,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 12.8,
+                    "end": 12.88,
+                    "text": "he",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 152,
+                      "source_end": 154,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 12.88,
+                    "end": 13.28,
+                    "text": "started",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 155,
+                      "source_end": 162,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 13.28,
+                    "end": 13.68,
+                    "text": "writing",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 163,
+                      "source_end": 170,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 13.68,
+                    "end": 13.84,
+                    "text": "for",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 171,
+                      "source_end": 174,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 13.84,
+                    "end": 14.08,
+                    "text": "other",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 175,
+                      "source_end": 180,
+                      "alignment_granularity": "word"
+                    }
+                  },
+                  {
+                    "start": 14.08,
+                    "end": 14.64,
+                    "text": "people",
+                    "probability": null,
+                    "logprob": null,
+                    "speaker": "speaker_00",
+                    "channel": null,
+                    "extra": {
+                      "source_start": 181,
+                      "source_end": 187,
+                      "alignment_granularity": "word"
+                    }
+                  }
+                ],
+                "speaker": "speaker_00",
+                "channel": null,
+                "avg_logprob": null,
+                "no_speech_prob": null,
+                "temperature": null,
+                "compression_ratio": null,
+                "extra": {
+                  "source_start": 3,
+                  "source_end": 188
+                }
+              }
+            ],
+            "words": [
+              {
+                "start": 0.4,
+                "end": 0.88,
+                "text": "Uh",
+                "probability": null,
+                "logprob": null,
+                "speaker": "unresolved_000000_speaker_01",
+                "channel": null,
+                "extra": {
+                  "source_start": 0,
+                  "source_end": 2,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 1.04,
+                "end": 1.2,
+                "text": "huh",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 3,
+                  "source_end": 6,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 1.2,
+                "end": 1.28,
+                "text": "Oh",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 8,
+                  "source_end": 10,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 1.28,
+                "end": 1.52,
+                "text": "yeah",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 11,
+                  "source_end": 15,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 1.52,
+                "end": 1.92,
+                "text": "yeah",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 17,
+                  "source_end": 21,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 2.32,
+                "end": 2.4,
+                "text": "He",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 23,
+                  "source_end": 25,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 2.4,
+                "end": 2.8,
+                "text": "wasn't",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 26,
+                  "source_end": 32,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 2.8,
+                "end": 3.12,
+                "text": "even",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 33,
+                  "source_end": 37,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 3.12,
+                "end": 3.36,
+                "text": "that",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 38,
+                  "source_end": 42,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 3.36,
+                "end": 3.84,
+                "text": "big",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 43,
+                  "source_end": 46,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 3.84,
+                "end": 4.0,
+                "text": "when",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 47,
+                  "source_end": 51,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 4.08,
+                "end": 4.24,
+                "text": "I",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 52,
+                  "source_end": 53,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 4.24,
+                "end": 4.64,
+                "text": "started",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 54,
+                  "source_end": 61,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 4.64,
+                "end": 5.04,
+                "text": "listening",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 62,
+                  "source_end": 71,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 5.12,
+                "end": 5.2,
+                "text": "to",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 72,
+                  "source_end": 74,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 5.28,
+                "end": 5.52,
+                "text": "him",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 75,
+                  "source_end": 78,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 6.0,
+                "end": 6.56,
+                "text": "but",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 80,
+                  "source_end": 83,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 6.64,
+                "end": 6.8,
+                "text": "and",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 84,
+                  "source_end": 87,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 6.8,
+                "end": 6.96,
+                "text": "his",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 88,
+                  "source_end": 91,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 6.96,
+                "end": 7.44,
+                "text": "solo",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 92,
+                  "source_end": 96,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 7.44,
+                "end": 8.0,
+                "text": "music",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 97,
+                  "source_end": 102,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 8.08,
+                "end": 8.72,
+                "text": "didn't",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 103,
+                  "source_end": 109,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 8.72,
+                "end": 9.28,
+                "text": "do",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 110,
+                  "source_end": 112,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 9.52,
+                "end": 10.08,
+                "text": "overly",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 113,
+                  "source_end": 119,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 10.08,
+                "end": 10.56,
+                "text": "well",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 120,
+                  "source_end": 124,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 11.12,
+                "end": 11.28,
+                "text": "but",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 126,
+                  "source_end": 129,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 11.28,
+                "end": 11.44,
+                "text": "he",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 130,
+                  "source_end": 132,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 11.44,
+                "end": 11.68,
+                "text": "did",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 133,
+                  "source_end": 136,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 11.68,
+                "end": 12.24,
+                "text": "very",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 137,
+                  "source_end": 141,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 12.24,
+                "end": 12.64,
+                "text": "well",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 142,
+                  "source_end": 146,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 12.64,
+                "end": 12.8,
+                "text": "when",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 147,
+                  "source_end": 151,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 12.8,
+                "end": 12.88,
+                "text": "he",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 152,
+                  "source_end": 154,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 12.88,
+                "end": 13.28,
+                "text": "started",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 155,
+                  "source_end": 162,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 13.28,
+                "end": 13.68,
+                "text": "writing",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 163,
+                  "source_end": 170,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 13.68,
+                "end": 13.84,
+                "text": "for",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 171,
+                  "source_end": 174,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 13.84,
+                "end": 14.08,
+                "text": "other",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 175,
+                  "source_end": 180,
+                  "alignment_granularity": "word"
+                }
+              },
+              {
+                "start": 14.08,
+                "end": 14.64,
+                "text": "people",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 181,
+                  "source_end": 187,
+                  "alignment_granularity": "word"
+                }
+              }
+            ],
+            "channels": null,
+            "diagnostics": [
+              {
+                "level": "info",
+                "code": "audio_conversion",
+                "message": "Decoded encoded audio to a waveform array at 48000 Hz.",
+                "param": "audio",
+                "provided": null,
+                "effective": "array"
+              },
+              {
+                "level": "info",
+                "code": "resampled_with",
+                "message": "Resampled 48000 Hz -> 16000 Hz (scipy resample_poly).",
+                "param": "audio",
+                "provided": "48000->16000",
+                "effective": "scipy"
+              },
+              {
+                "level": "info",
+                "code": "speaker_identity_window_scoped",
+                "message": "Some diarization labels had insufficient exclusive speech for stable cross-window identity and are valid only within their source window.",
+                "param": "diarization",
+                "provided": null,
+                "effective": {
+                  "label_count": 1
+                }
+              }
+            ],
+            "extra": {
+              "input_start_seconds": 0.0,
+              "std_qwen3asr_ane_diarization_measurement": {
+                "input_start_seconds": 0.0,
+                "time_reference": "window_relative",
+                "raw_speaker_turns": [
+                  {
+                    "start": 0.4359687566757202,
+                    "end": 0.9084687829017639,
+                    "speaker": "speaker_01"
+                  },
+                  {
+                    "start": 0.9590938091278076,
+                    "end": 14.695343971252441,
+                    "speaker": "speaker_00"
+                  }
+                ],
+                "speaker_boundary_adjustments": []
+              },
+              "std_qwen3asr_ane_diarization_turns": [
+                {
+                  "start": 0.4359687566757202,
+                  "end": 0.9084687829017639,
+                  "speaker": "unresolved_000000_speaker_01"
+                },
+                {
+                  "start": 0.9590938091278076,
+                  "end": 14.695343971252441,
+                  "speaker": "speaker_00"
+                }
+              ]
+            }
+          }
+        },
+        "timestamps": {
+          "count": 37,
+          "first_start": 0.4,
+          "last_end": 14.64,
+          "bounded_and_ordered": true
+        }
+      },
+      "provider_params_rejected": {
+        "status": 422,
+        "response": {
+          "detail": [
+            {
+              "type": "extra_forbidden",
+              "loc": [
+                "options",
+                "provider_params"
+              ],
+              "msg": "Extra inputs are not permitted"
+            }
+          ]
+        }
+      },
+      "websocket": {
+        "input_sha256": "46dbc998c9d1d48111267c40741dd3200f2e5bcf4075f8c4c97f4451160dce50",
+        "events": [
+          {
+            "type": "partial",
+            "segment_id": "utterance-0",
+            "text": "甚至出现交易。",
+            "stable_text": "",
+            "finality": "final",
+            "words": null,
+            "speaker": null,
+            "start": null,
+            "end": null,
+            "audio_processed_until": 2.0,
+            "old_ids": [],
+            "new_ids": [],
+            "code": null,
+            "recoverable": null,
+            "retriable_after": null,
+            "reconnect": null,
+            "gap_start": null,
+            "gap_end": null,
+            "detected_language": "zh",
+            "extra": {
+              "audio_prefix_seconds": 2.0,
+              "input_start_seconds": 0.0,
+              "input_end_seconds": 2.0
+            }
+          },
+          {
+            "type": "partial",
+            "segment_id": "utterance-0",
+            "text": "甚至出现交易几乎停滞的情况。",
+            "stable_text": "",
+            "finality": "final",
+            "words": null,
+            "speaker": null,
+            "start": null,
+            "end": null,
+            "audio_processed_until": 4.0,
+            "old_ids": [],
+            "new_ids": [],
+            "code": null,
+            "recoverable": null,
+            "retriable_after": null,
+            "reconnect": null,
+            "gap_start": null,
+            "gap_end": null,
+            "detected_language": "zh",
+            "extra": {
+              "audio_prefix_seconds": 4.0,
+              "input_start_seconds": 0.0,
+              "input_end_seconds": 4.0
+            }
+          },
+          {
+            "type": "final",
+            "segment_id": "utterance-0",
+            "text": "甚至出现交易几乎停滞的情况。",
+            "stable_text": "甚至出现交易几乎停滞的情况。",
+            "finality": "closed",
+            "words": [
+              {
+                "start": 0.4,
+                "end": 0.72,
+                "text": "甚",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 0,
+                  "source_end": 1,
+                  "alignment_granularity": "char",
+                  "source_coordinate_space": "segment_text"
+                }
+              },
+              {
+                "start": 0.72,
+                "end": 0.96,
+                "text": "至",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 1,
+                  "source_end": 2,
+                  "alignment_granularity": "char",
+                  "source_coordinate_space": "segment_text"
+                }
+              },
+              {
+                "start": 0.96,
+                "end": 1.12,
+                "text": "出",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 2,
+                  "source_end": 3,
+                  "alignment_granularity": "char",
+                  "source_coordinate_space": "segment_text"
+                }
+              },
+              {
+                "start": 1.12,
+                "end": 1.52,
+                "text": "现",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 3,
+                  "source_end": 4,
+                  "alignment_granularity": "char",
+                  "source_coordinate_space": "segment_text"
+                }
+              },
+              {
+                "start": 1.52,
+                "end": 1.76,
+                "text": "交",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 4,
+                  "source_end": 5,
+                  "alignment_granularity": "char",
+                  "source_coordinate_space": "segment_text"
+                }
+              },
+              {
+                "start": 1.76,
+                "end": 2.0,
+                "text": "易",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 5,
+                  "source_end": 6,
+                  "alignment_granularity": "char",
+                  "source_coordinate_space": "segment_text"
+                }
+              },
+              {
+                "start": 2.0,
+                "end": 2.24,
+                "text": "几",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 6,
+                  "source_end": 7,
+                  "alignment_granularity": "char",
+                  "source_coordinate_space": "segment_text"
+                }
+              },
+              {
+                "start": 2.24,
+                "end": 2.48,
+                "text": "乎",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 7,
+                  "source_end": 8,
+                  "alignment_granularity": "char",
+                  "source_coordinate_space": "segment_text"
+                }
+              },
+              {
+                "start": 2.48,
+                "end": 2.72,
+                "text": "停",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 8,
+                  "source_end": 9,
+                  "alignment_granularity": "char",
+                  "source_coordinate_space": "segment_text"
+                }
+              },
+              {
+                "start": 2.72,
+                "end": 2.88,
+                "text": "滞",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 9,
+                  "source_end": 10,
+                  "alignment_granularity": "char",
+                  "source_coordinate_space": "segment_text"
+                }
+              },
+              {
+                "start": 2.88,
+                "end": 3.04,
+                "text": "的",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 10,
+                  "source_end": 11,
+                  "alignment_granularity": "char",
+                  "source_coordinate_space": "segment_text"
+                }
+              },
+              {
+                "start": 3.04,
+                "end": 3.36,
+                "text": "情",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 11,
+                  "source_end": 12,
+                  "alignment_granularity": "char",
+                  "source_coordinate_space": "segment_text"
+                }
+              },
+              {
+                "start": 3.36,
+                "end": 3.68,
+                "text": "况",
+                "probability": null,
+                "logprob": null,
+                "speaker": "speaker_00",
+                "channel": null,
+                "extra": {
+                  "source_start": 12,
+                  "source_end": 13,
+                  "alignment_granularity": "char",
+                  "source_coordinate_space": "segment_text"
+                }
+              }
+            ],
+            "speaker": "speaker_00",
+            "start": 0.4,
+            "end": 3.68,
+            "audio_processed_until": 4.2039375,
+            "old_ids": [],
+            "new_ids": [],
+            "code": null,
+            "recoverable": null,
+            "retriable_after": null,
+            "reconnect": null,
+            "gap_start": null,
+            "gap_end": null,
+            "detected_language": "zh",
+            "extra": {
+              "audio_prefix_seconds": 4.2039375,
+              "input_start_seconds": 0.0,
+              "input_end_seconds": 4.2039375,
+              "std_qwen3asr_ane_diarization_measurement": {
+                "input_start_seconds": 0.0,
+                "time_reference": "window_relative",
+                "raw_speaker_turns": [
+                  {
+                    "start": 0.09846875071525574,
+                    "end": 3.7265939712524414,
+                    "speaker": "speaker_01"
+                  }
+                ],
+                "speaker_boundary_adjustments": []
+              },
+              "std_qwen3asr_ane_diarization_turns": [
+                {
+                  "start": 0.09846875071525574,
+                  "end": 3.7265939712524414,
+                  "speaker": "speaker_00"
+                }
+              ],
+              "source_start": 0,
+              "source_end": 14,
+              "source_coordinate_space": "segment_text",
+              "speaker_turns": [
+                {
+                  "start": 0.09846875071525574,
+                  "end": 3.7265939712524414,
+                  "speaker": "speaker_00"
+                }
+              ],
+              "diarization_measurement": {
+                "input_start_seconds": 0.0,
+                "time_reference": "window_relative",
+                "raw_speaker_turns": [
+                  {
+                    "start": 0.09846875071525574,
+                    "end": 3.7265939712524414,
+                    "speaker": "speaker_01"
+                  }
+                ],
+                "speaker_boundary_adjustments": []
+              }
+            }
+          },
+          {
+            "type": "done",
+            "segment_id": null,
+            "text": null,
+            "stable_text": null,
+            "finality": "final",
+            "words": null,
+            "speaker": null,
+            "start": null,
+            "end": null,
+            "audio_processed_until": null,
+            "old_ids": [],
+            "new_ids": [],
+            "code": null,
+            "recoverable": null,
+            "retriable_after": null,
+            "reconnect": null,
+            "gap_start": null,
+            "gap_end": null,
+            "detected_language": "zh",
+            "extra": {
+              "std_qwen3asr_ane_input_duration_seconds": 4.2039375
+            }
+          }
+        ],
+        "timestamps": {
+          "count": 13,
+          "first_start": 0.4,
+          "last_end": 3.68,
+          "bounded_and_ordered": true
+        }
+      },
+      "cancellation": {
+        "client_disconnected_after_native_transcription_started": true,
+        "session_teardown_observed": true,
+        "native_cancellation_token_set": true,
+        "scope": "Cooperative cancellation at prediction boundaries, not preemption."
+      },
+      "uvicorn_thread_stopped": true
+    },
+    "short": {
+      "status": "passed",
+      "preset": "short",
+      "runtime_provenance": {
+        "standard_asr": {
+          "distribution": "standard-asr",
+          "version": "0.2.0.dev0",
+          "direct_url": {
+            "url": "https://github.com/standard-voice/standard_asr.git",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "97bfdb28134c114088ec335596aa6bca53f9204f",
+              "requested_revision": "97bfdb28134c114088ec335596aa6bca53f9204f"
+            }
+          },
+          "imported_init": "/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/server-native-20261005T003801Z-19159/venv/lib/python3.13/site-packages/standard_asr/__init__.py",
+          "source_kind": "installed",
+          "python_source_sha256": {
+            "__init__.py": "ab9b23d727863d54d2b4065f6acd1f0c401ce68ba1e8b2fd72095eee0f803cc9",
+            "audio/__init__.py": "14aa94431e7d0dbf48be53d076fc02543619e8fbe3750ac0f1e15795ec93c333",
+            "audio/conversion.py": "18f58867d671a3c238b01d9e44c2bf4fa25357c527f4d5d21054dd7020bafaef",
+            "audio/format.py": "a881ec5453f602fb03f0f3a6a622520be38cb76fbe99b207cc37a864578bd918",
+            "audio/input.py": "e7cab7fdaf4192c11a2d7ac0e278e77ae95b73a8e08c12c04a1505b38c85f0ef",
+            "audio/loader.py": "afab55fa0a41ee687cdd17879807fc4657a92c5b1e414b0f479929c05148db1c",
+            "audio/negotiation.py": "6eff2860a8c77d91cc690347564b5646f4d042770ab21ad8470a4f4753326374",
+            "audio/resampling.py": "8626182d92d79f83c800be393cfc20183f8af649f77da664dab4522c2e57cd6e",
+            "audio/wav.py": "cf507247f735aaec6cf228e4fe3fc7221b1354dfb60b4db763c84a32b4f00844",
+            "audio/wire.py": "cb1ec74009cdd8fb977161a1016b966f4d2a18311554a85313d4cf894789c383",
+            "compliance.py": "6f52c4c6683c12a36c237587a15936d681ed4d10c7633bb3a7807a3ebf3a80d4",
+            "contract/__init__.py": "9e73a160ea2af12824e3cedbd863d73be00b6faf66b5bfbb9ed7959e03caab4b",
+            "contract/_json_extra.py": "0b6cd92d41a37ae92e4f2e2edfbf22a02e51c0b68ec307b09e33e6b0a307a243",
+            "contract/artifacts.py": "a92f6167585791758359bc50d5b4464ccfe4911252ee71170cfce02565c245ef",
+            "contract/capabilities.py": "9df4c29a3bf228e011a598e7ba7b1066d10b31c8117e831363cf79c6dcfd4164",
+            "contract/exceptions.py": "1f58af5329f3cecc88f73d60459a61f07796ace3244917a2eae7020ef516c2d1",
+            "contract/identifiers.py": "df0daf8071a8530543347411613d74afe86bc4107d918354965d93512c85257f",
+            "contract/language.py": "a4b5804d102a291fc373ea5c445cf27c371a43a69030a4fa98202d468d0e9d5d",
+            "contract/metadata.py": "740190e86e440a981b0ff45ae98630f273557fb6344003e134e026716fa73947",
+            "contract/params.py": "ed734af14f5ddc8fcdb69a3ca981064088e651b99fd850d3f258e5dc54078e20",
+            "contract/properties.py": "611090b04598bb6966deafcd5dbc59ac9fe516878dc3649d2ffd0137e3f5abdb",
+            "contract/protocol_version.py": "72c5c94ff37dcabcedbf8144188a26bd3199b524a221a6ff7fae3c1f285bbf13",
+            "contract/results.py": "a5067d33c31d520674eb057c47c598da13a7ec1cfd1f985d045327214ac15fb0",
+            "engine.py": "22055b4d49ee13db5d26d5919eabea17ea4ac5c938f63522e481b095332908e0",
+            "plugins/__init__.py": "b84be63377de3340d5e74236d9da0a8a7ded61b72f325e794167ee3f58b7ad14",
+            "plugins/discovery.py": "35233829f08b00842cf0c678966c521098211cb2171ebb6501d6d3a18795fdd9",
+            "renderers.py": "c1af7f3a89900a36d544b9a2417486bf60fc3ad69412ccf30dcbd18eda27358f",
+            "runtime/__init__.py": "45bdbae6fefe8a7f75beb24b6c42389d92af0b966e0255d1ef883493eccf3448",
+            "runtime/_text.py": "344066c396ab35fe3c70b5b7ae1121ff8fcaae59509b46df5981f7519c694f7b",
+            "runtime/config.py": "c50d601f580240e8234b77d6ea368c53be3e59ce9ac8d59f474ff23c71d23d50",
+            "runtime/downloads.py": "5e4b4a55dc2f566e04299471a9422055caf7e09279478f0b6fece964a66236f3",
+            "runtime/gating.py": "ec391959e458f9955dc97f224b909e4a09c703fe897007f3834a7e53840b2898",
+            "runtime/interface.py": "10e8725da5b503eb5f06d53b6f456d5c5d31b80b06634d147bd0b165b6ab0fb3",
+            "runtime/protocol_boundary.py": "049fc04c87744935212d1c8f75b62b2d3e98b4dfd19a3d6920fa337cfd88631e",
+            "runtime/redaction.py": "20cfb896d1c71ab1f50e9a1c61c73f5e3d97d9be9bf0002645758ade8f4dac75",
+            "runtime/streaming.py": "b38b23a4052d1ff435c4afa884c49e562c6f638cfb0ae91b80d83fb193c45148",
+            "toolchain/__init__.py": "ec7529901ca03a94de350d39a3fd351c0b4a01547aaaab3a768b0da353d44c5e",
+            "toolchain/cli.py": "181fe4e9e7b8292849f1bd2115828135a0c2199e9f2f6a8635ae1d80853d57ba",
+            "toolchain/doctor.py": "3a78a974a5a39e21e24b9e6c7ff6b82e2659bf2b8c59620db0702c6d99b3b20a",
+            "toolchain/server.py": "2d51df5efeac674df493dd830c71f734aa2a25d893c33eac338bc2ca6465f12e"
+          }
+        },
+        "plugin": {
+          "distribution": "std-qwen3asr-ane",
+          "version": "0.2.0a1",
+          "direct_url": {
+            "url": "file:///Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/server-native-20261005T003801Z-19159/dist/std_qwen3asr_ane-0.2.0a1-py3-none-any.whl",
+            "archive_info": {}
+          },
+          "imported_init": "/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/server-native-20261005T003801Z-19159/venv/lib/python3.13/site-packages/std_qwen3asr_ane/__init__.py",
+          "source_kind": "installed",
+          "python_source_sha256": {
+            "__init__.py": "b0d8b9539a9c75bb7de4fb7f60b19fb84226c80354a6b86c5cca922b9d9c1204",
+            "acquisition.py": "c4f64c983fea61eeea313dc1dcfa605517b9da6e834ea8764229592705d2b1fa",
+            "alignment.py": "a108977178c2f31bd8263b88bf151da24daf47bd8eedab5e169c1822d7ca6191",
+            "alignment_worker.py": "20dc4484bace9e07ec1eebfa70673a1cb2fae310328b4b78e56cc84c05fccbbd",
+            "artifact_lifecycle.py": "5c848024bfda8536619526a82c49d892e8405da12b9d66d942ca8e0103d7eb76",
+            "artifact_validation.py": "b566619325926d9569e4cdb5364982837f9f68abd7583e135f4b08a3b45557c1",
+            "audio.py": "a4739c9ff8783c60d770329aa5c53c3d0c5dd2700e3e2cb543e9b4043227e46d",
+            "audio_batch.py": "213320a5f66b5092322b192630db91630c2e4ec1e43770354d6d7137550c8ad6",
+            "audio_context.py": "465574f2a85c483d4f944cf53a551d1ca4178b1ab3f91109868ff1aa420a9ca3",
+            "auxiliary.py": "fd1ebe8249a38af1f9c75ab30bec96acb1ec77259388deff0b2e4861713ba800",
+            "batching.py": "844cd44f88ce321f28a97dfc830342dfd9627f026004eb4d0cf7aee2c91ce7bd",
+            "bulk.py": "a537ed482b3307f1f6d543cf8d3a969824dcef6c700105f6a58f9a08fd5167ae",
+            "bundle.py": "8c781d20cca7b52ec5b50ecc113e77fa3022acc2981f88febf1b0870f00eb057",
+            "cli.py": "5dbdd5b9fd93ad2d29053408014478c6c130a8b90ebc5255e0f1d6a723b3fb7b",
+            "compiled.py": "130a2cb17b9b1355128a9a8f5847e7be85471744f7bb883dbf6e82706a562bfd",
+            "conversion/__init__.py": "3bef1ed894996d48ae8d1c83ecb462bf6a471cce0a096d5b7e52bc7d1aa49640",
+            "conversion/batch_head.py": "ea3f12265c71f272476919ab288b64cdd4898d664efb1a083fcb961f720d3701",
+            "conversion/build.py": "b9a227c493c419a0ecb389a6e6ef2dfe73a1e9af2f470018d30dec93f71ecbd9",
+            "conversion/compress.py": "573ead30f453372c05ea60909b1231aae9e9e7e5b4898f2cbb61c78ffb65fd7c",
+            "conversion/decoder.py": "9ec4b17169e2309ff737eeeb77f16c3aa5f48686c26c023af235dda1208c889d",
+            "conversion/draft.py": "3a417fa6b2f93e3a4288c454e606d52e81dbecbec2a170e31e98983590323d6d",
+            "conversion/embedding.py": "36a18a41468bd225b9fc969e93ccbee4fd2bed90703ff9cba01980da729552ff",
+            "conversion/encoder.py": "701c369eea5254b5bbdd381c01b51104a703c720ef85d322023f3cbd8ef37963",
+            "conversion/passes.py": "2128f36a8ece5b1eae94e603a0c4fedab5721d993848aa6fc17bedf1b431e210",
+            "conversion/toolchain.py": "40af00b571b667bf5cafe1f219bbd5506ba45951d642b7e48079ea1b1c1b1aed",
+            "conversion_worker.py": "82c42abc280b68521bc0e979d43a0c5a65013301afe72857fff0469cdf691a3a",
+            "decoding_guidance.py": "2542726e83928c0620d5ca3a4eb56fc0ac2d6759a0ce6fa6b07e7903b246e59a",
+            "deployment.py": "3463fb5c17eab86e3c4e83a0fec3fa9995c5509e420e6e0c6fddbfad258d4efb",
+            "diagnostics.py": "3c37aeb7a9bfd972bcd2d6ce711c76285769f5633067c3ce5d1caed728b6cb5c",
+            "diarization.py": "791dcd1586b73ab4f2de0fd4ff7107255df1cb4da6445bf53d886cc8b17edb2c",
+            "draft.py": "2a2a92fc7b31038687e21f9f0a3fe376c5e960129872ac8dac0f64b81eff4f67",
+            "embedding.py": "68be473bd331734fc5d58fc9540c4682e9be2488c1b940d833aa24081055e986",
+            "errors.py": "f1cc33131f968ec59b25defe3086a70c61fbfeb101330374f0afb43730244ad9",
+            "languages.py": "3666864a4318e6e2b5d17e47ad582e00531d47863c87b765ede452c5e63d8c73",
+            "longform.py": "ccd30d7be1a6e2e40753e8e8f98a56e5b3cd535a443a4e6dc65463fec7a3f370",
+            "plugin.py": "f29137a8891e9968ef8ee08eb89d88d8e6d76485be67506968ab35f44bcda816",
+            "postprocessing.py": "f2e418ed3a5313162811910d20cfd2edaa13cc7bd896477bf85b800c5a689e8a",
+            "profiles.py": "28383ae5968a06e4dc6a87da9a00854f25736d2b75b41d186220931d9d4771de",
+            "result_text.py": "ffd7f8c510f69d0eed49b91d3e9c88066091b30a627cb8c914760dc776fb7b48",
+            "runtime.py": "da7977b1692d6eb0861f73c85027f3a6b8cde423fc98b6e01a428532087d023f",
+            "source_validation.py": "7de412988205cd0c3a41739a08280f5e3135d768b5f0b606f172f03bb9dd0fc4",
+            "speculative.py": "36d51bb6682bc3e05f714be230a317bfdb6b56e6ae46d40ac44b84e3000f651e",
+            "streaming.py": "5f96cb98674d0866abea057ee0753276d1b186a3af85714cc6ecc2dd9d2a0a33",
+            "streaming_context.py": "792909ed178af0dc8256c1ccadc2a2d99245693f595e773f8751dbef009f54f6",
+            "transcript_draft.py": "d869fb33b5a9654bec5edaf96c602787b754bfae1ed0be582bda946117447e6a",
+            "worker_environment.py": "7557b544d2b34df5ec4eb3c0a0ef624cb6449e79b09ae0fb31719f0fda66f173"
+          }
+        }
+      },
+      "environment": {
+        "STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR": "<repository>/artifacts/qwen3-asr-1.7b-short-dictation",
+        "STANDARD_ASR_STD_QWEN3ASR_ANE__USE_ALIGNMENT": "false",
+        "STANDARD_ASR_STD_QWEN3ASR_ANE__ALIGNMENT_DIR": "<repository>/artifacts/auxiliary/alignment",
+        "STANDARD_ASR_STD_QWEN3ASR_ANE__USE_DIARIZATION": "false",
+        "STANDARD_ASR_STD_QWEN3ASR_ANE__DIARIZATION_DIR": "<repository>/artifacts/auxiliary/diarization",
+        "STANDARD_ASR_STD_QWEN3ASR_ANE__STREAM_CHUNK_SECONDS": "2.0"
+      },
+      "manifest_sha256": "880df1138df1002a6dba9ddc380f75b29ec99f8e15f891dce9d5845632db8c77",
+      "discovered_models": [
+        {
+          "key": "std-qwen3asr-ane/1.7b",
+          "engine_id": "std-qwen3asr-ane",
+          "model_name": "1.7b"
+        },
+        {
+          "key": "std-qwen3asr-ane/1.7b-short-dictation",
+          "engine_id": "std-qwen3asr-ane",
+          "model_name": "1.7b-short-dictation"
+        }
+      ],
+      "capabilities": {
+        "batch": {
+          "language": {
+            "runtime_override": {
+              "supported": true
+            },
+            "candidate_languages": {
+              "supported": true,
+              "constraints": {
+                "max": 8
+              }
+            },
+            "supported": true
+          },
+          "word_timestamps": {
+            "supported": true,
+            "granularities": [
+              "word",
+              "segment",
+              "char"
+            ]
+          },
+          "guidance": {
+            "prompt": {
+              "supported": true,
+              "constraints": {
+                "max_tokens": 128
+              }
+            },
+            "phrase_hints": {
+              "supported": true,
+              "constraints": {
+                "max_terms": 16,
+                "max_chars_per_term": 128,
+                "max_words_per_term": null
+              }
+            },
+            "supported": true
+          },
+          "diarization": {
+            "supported": true,
+            "always_on": {
+              "supported": false
+            },
+            "constraints": {
+              "max_speakers": 32
+            }
+          },
+          "x_qwen3asr_multi_input": {
+            "supported": true,
+            "constraints": {
+              "max_group_size": 16
+            }
+          },
+          "supported": true
+        },
+        "streaming": {
+          "language": {
+            "runtime_override": {
+              "supported": true
+            },
+            "candidate_languages": {
+              "supported": true,
+              "constraints": {
+                "max": 8
+              }
+            },
+            "supported": true
+          },
+          "word_timestamps": {
+            "supported": true,
+            "granularities": [
+              "word",
+              "segment",
+              "char"
+            ]
+          },
+          "diarization": {
+            "supported": true,
+            "always_on": {
+              "supported": false
+            },
+            "constraints": {
+              "max_speakers": 32
+            }
+          },
+          "guidance": {
+            "prompt": {
+              "supported": true,
+              "constraints": {
+                "max_tokens": 128
+              }
+            },
+            "phrase_hints": {
+              "supported": true,
+              "constraints": {
+                "max_terms": 16,
+                "max_chars_per_term": 128,
+                "max_words_per_term": null
+              }
+            },
+            "mutable_mid_stream": {
+              "supported": false
+            },
+            "supported": true
+          },
+          "emits_partials": {
+            "supported": true
+          },
+          "re_segments": {
+            "supported": false
+          },
+          "partial_stability": {
+            "supported": false
+          },
+          "reconnect": {
+            "mode": "unsupported",
+            "supported": false
+          },
+          "finality_level": {
+            "mode": "closed",
+            "supported": true
+          },
+          "timestamps": {
+            "mode": "post_align",
+            "supported": true
+          },
+          "supported": true
+        },
+        "streaming_input": {
+          "supported": true
+        },
+        "streaming_output": {
+          "supported": true
+        },
+        "self_resamples": {
+          "supported": false
+        }
+      },
+      "metadata": {
+        "artifacts": {
+          "applicable": true,
+          "supports_explicit_acquisition": true,
+          "may_acquire_during_inference": false
+        },
+        "x_qwen3asr_streaming": {
+          "algorithm": "bounded_windows_with_low_energy_boundaries_and_prefix_rollback",
+          "effective_session_audio_limit": "configured_recording_and_streaming_limits",
+          "decoder_prefix_reuse": "exact_embeddings_at_token_batch_boundaries",
+          "audio_graph_reuse": "exact_padded_inputs_and_masks",
+          "audio_feature_reuse": "aligned_stable_stft_power_with_full_width_mel_projection",
+          "context_limits": "session_configuration_and_bundle_audio_and_decoder_token_capacity",
+          "persistent_causal_encoder_state": false,
+          "segment_rollover_supported": true,
+          "native_window_seconds": 12.0
+        },
+        "x_qwen3asr_auxiliary": {
+          "compute": "cpu",
+          "alignment_languages": [
+            "zh",
+            "en",
+            "yue",
+            "fr",
+            "de",
+            "it",
+            "ja",
+            "ko",
+            "pt",
+            "ru",
+            "es"
+          ],
+          "diarization_requires_alignment": true,
+          "overlapping_word_attribution": "unassigned_when_evidence_is_ambiguous"
+        },
+        "x_qwen3asr_deployment": {
+          "os": "macos",
+          "minimum_os_major": 15,
+          "architectures": [
+            "arm64"
+          ]
+        },
+        "x_qwen3asr_batching": {
+          "method": "transcribe_many",
+          "transport": "python",
+          "execution": "packed_target_when_eligible_otherwise_serial_target",
+          "gpu_draft_used": false
+        }
+      },
+      "params-schema": {
+        "additionalProperties": false,
+        "description": "Per-request decoding budget; omitted values use the engine's defaults.",
+        "properties": {
+          "max_new_tokens": {
+            "anyOf": [
+              {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max New Tokens"
+          },
+          "disable_draft": {
+            "default": false,
+            "description": "Use the ANE target without a configured GPU draft for this request.",
+            "title": "Disable Draft",
+            "type": "boolean"
+          },
+          "include_metrics": {
+            "default": false,
+            "description": "Include native timings, token IDs and raw decoder output in result.extra.",
+            "title": "Include Metrics",
+            "type": "boolean"
+          }
+        },
+        "title": "Qwen3ASRParams",
+        "type": "object"
+      },
+      "config-schema": {
+        "additionalProperties": false,
+        "properties": {
+          "engine": {
+            "const": "std-qwen3asr-ane",
+            "default": "std-qwen3asr-ane",
+            "title": "Engine",
+            "type": "string"
+          },
+          "strict": {
+            "default": true,
+            "description": "Unsupported-parameter policy: True=strict, False=best_effort.",
+            "title": "Strict",
+            "type": "boolean"
+          },
+          "allow_private_urls": {
+            "default": false,
+            "description": "Opt-in to relax the SSRF policy so an AudioUrl may target a private/loopback/link-local address (HTTPS is still required). False by default; set True only for a trusted internal endpoint.",
+            "title": "Allow Private Urls",
+            "type": "boolean"
+          },
+          "default_language": {
+            "default": "auto",
+            "title": "Default Language",
+            "type": "string"
+          },
+          "default_candidate_languages": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Default candidate languages.",
+            "title": "Default Candidate Languages"
+          },
+          "download_root": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Root directory for downloaded inference artifacts.",
+            "title": "Download Root"
+          },
+          "profile": {
+            "const": "short-dictation",
+            "default": "short-dictation",
+            "title": "Profile",
+            "type": "string"
+          },
+          "model_dir": {
+            "description": "Bundle path; defaults to the selected profile in the Standard ASR cache.",
+            "format": "path",
+            "title": "Model Dir",
+            "type": "string"
+          },
+          "source_dir": {
+            "description": "Where `standard-asr pull` keeps the pinned official checkpoint it converts from; reused when present.",
+            "format": "path",
+            "title": "Source Dir",
+            "type": "string"
+          },
+          "max_new_tokens": {
+            "default": 128,
+            "maximum": 4096,
+            "minimum": 1,
+            "title": "Max New Tokens",
+            "type": "integer"
+          },
+          "use_draft": {
+            "default": false,
+            "description": "Enable the optional GPU draft using its managed cache path.",
+            "title": "Use Draft",
+            "type": "boolean"
+          },
+          "draft_source_dir": {
+            "description": "Pinned 0.6B checkpoint cache, used by explicit draft acquisition.",
+            "format": "path",
+            "title": "Draft Source Dir",
+            "type": "string"
+          },
+          "draft_dir": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional draft bundle from `qwen3-asr-ane build-draft`. When set, batch transcription proposes tokens with Qwen3-ASR 0.6B on the GPU and verifies them on the Neural Engine; output is unchanged. Needs the gpu-draft extra.",
+            "title": "Draft Dir"
+          },
+          "draft_lookahead": {
+            "default": 15,
+            "maximum": 15,
+            "minimum": 1,
+            "title": "Draft Lookahead",
+            "type": "integer"
+          },
+          "draft_bits": {
+            "anyOf": [
+              {
+                "enum": [
+                  4,
+                  8
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 4,
+            "description": "In-memory quantization of the draft decoder; None keeps bf16.",
+            "title": "Draft Bits"
+          },
+          "stream_chunk_seconds": {
+            "default": 2.0,
+            "maximum": 30.0,
+            "minimum": 0.1,
+            "title": "Stream Chunk Seconds",
+            "type": "number"
+          },
+          "stream_unfixed_chunks": {
+            "default": 2,
+            "minimum": 0,
+            "title": "Stream Unfixed Chunks",
+            "type": "integer"
+          },
+          "stream_unfixed_tokens": {
+            "default": 5,
+            "minimum": 0,
+            "title": "Stream Unfixed Tokens",
+            "type": "integer"
+          },
+          "max_recording_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Recording Seconds"
+          },
+          "stream_max_audio_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stream Max Audio Seconds"
+          },
+          "stream_audio_queue_size": {
+            "default": 4,
+            "maximum": 128,
+            "minimum": 1,
+            "title": "Stream Audio Queue Size",
+            "type": "integer"
+          },
+          "use_batching": {
+            "default": false,
+            "description": "Acquire a compact head for packed offline requests.",
+            "title": "Use Batching",
+            "type": "boolean"
+          },
+          "batch_head_dir": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional target-bound offline batch head.",
+            "title": "Batch Head Dir"
+          },
+          "use_alignment": {
+            "default": false,
+            "description": "Enable explicitly acquired Qwen forced alignment on the CPU.",
+            "title": "Use Alignment",
+            "type": "boolean"
+          },
+          "alignment_dir": {
+            "description": "Managed forced-aligner model and isolated runtime directory.",
+            "format": "path",
+            "title": "Alignment Dir",
+            "type": "string"
+          },
+          "use_diarization": {
+            "default": false,
+            "description": "Enable explicitly acquired speaker diarization on the CPU.",
+            "title": "Use Diarization",
+            "type": "boolean"
+          },
+          "diarization_dir": {
+            "description": "Directory containing the pinned segmentation and speaker-embedding models.",
+            "format": "path",
+            "title": "Diarization Dir",
+            "type": "string"
+          }
+        },
+        "title": "ShortDictationConfig",
+        "type": "object"
+      },
+      "http_input": {
+        "sha256": "46dbc998c9d1d48111267c40741dd3200f2e5bcf4075f8c4c97f4451160dce50",
+        "expected_text": "甚至出现交易几乎停滞的情况。"
+      },
+      "http": {
+        "status": 200,
+        "response": {
+          "model": "std-qwen3asr-ane/1.7b-short-dictation",
+          "result": {
+            "text": "甚至出现交易几乎停滞的情况。",
+            "detected_language": "zh",
+            "language_confidence": null,
+            "duration": 4.2039375,
+            "segments": null,
+            "words": null,
+            "channels": null,
+            "diagnostics": [
+              {
+                "level": "info",
+                "code": "audio_conversion",
+                "message": "Decoded encoded audio to a waveform array at 16000 Hz.",
+                "param": "audio",
+                "provided": null,
+                "effective": "array"
+              }
+            ],
+            "extra": {
+              "input_start_seconds": 0.0
+            }
+          }
+        }
+      },
+      "provider_params_rejected": {
+        "status": 422,
+        "response": {
+          "detail": [
+            {
+              "type": "extra_forbidden",
+              "loc": [
+                "options",
+                "provider_params"
+              ],
+              "msg": "Extra inputs are not permitted"
+            }
+          ]
+        }
+      },
+      "websocket": {
+        "input_sha256": "46dbc998c9d1d48111267c40741dd3200f2e5bcf4075f8c4c97f4451160dce50",
+        "events": [
+          {
+            "type": "partial",
+            "segment_id": "utterance-0",
+            "text": "甚至出现交易。",
+            "stable_text": "",
+            "finality": "final",
+            "words": null,
+            "speaker": null,
+            "start": null,
+            "end": null,
+            "audio_processed_until": null,
+            "old_ids": [],
+            "new_ids": [],
+            "code": null,
+            "recoverable": null,
+            "retriable_after": null,
+            "reconnect": null,
+            "gap_start": null,
+            "gap_end": null,
+            "detected_language": "zh",
+            "extra": {
+              "audio_prefix_seconds": 2.0,
+              "input_start_seconds": 0.0,
+              "input_end_seconds": 2.0
+            }
+          },
+          {
+            "type": "partial",
+            "segment_id": "utterance-0",
+            "text": "甚至出现交易几乎停滞的情况。",
+            "stable_text": "",
+            "finality": "final",
+            "words": null,
+            "speaker": null,
+            "start": null,
+            "end": null,
+            "audio_processed_until": null,
+            "old_ids": [],
+            "new_ids": [],
+            "code": null,
+            "recoverable": null,
+            "retriable_after": null,
+            "reconnect": null,
+            "gap_start": null,
+            "gap_end": null,
+            "detected_language": "zh",
+            "extra": {
+              "audio_prefix_seconds": 4.0,
+              "input_start_seconds": 0.0,
+              "input_end_seconds": 4.0
+            }
+          },
+          {
+            "type": "final",
+            "segment_id": "utterance-0",
+            "text": "甚至出现交易几乎停滞的情况。",
+            "stable_text": "甚至出现交易几乎停滞的情况。",
+            "finality": "closed",
+            "words": null,
+            "speaker": null,
+            "start": null,
+            "end": null,
+            "audio_processed_until": null,
+            "old_ids": [],
+            "new_ids": [],
+            "code": null,
+            "recoverable": null,
+            "retriable_after": null,
+            "reconnect": null,
+            "gap_start": null,
+            "gap_end": null,
+            "detected_language": "zh",
+            "extra": {
+              "audio_prefix_seconds": 4.2039375,
+              "input_start_seconds": 0.0,
+              "input_end_seconds": 4.2039375,
+              "source_start": 0,
+              "source_end": 14,
+              "source_coordinate_space": "segment_text"
+            }
+          },
+          {
+            "type": "done",
+            "segment_id": null,
+            "text": null,
+            "stable_text": null,
+            "finality": "final",
+            "words": null,
+            "speaker": null,
+            "start": null,
+            "end": null,
+            "audio_processed_until": null,
+            "old_ids": [],
+            "new_ids": [],
+            "code": null,
+            "recoverable": null,
+            "retriable_after": null,
+            "reconnect": null,
+            "gap_start": null,
+            "gap_end": null,
+            "detected_language": "zh",
+            "extra": {
+              "std_qwen3asr_ane_input_duration_seconds": 4.2039375
+            }
+          }
+        ]
+      },
+      "uvicorn_thread_stopped": true
+    }
+  },
+  "runtime_provenance": {
+    "standard_asr": {
+      "distribution": "standard-asr",
+      "version": "0.2.0.dev0",
+      "direct_url": {
+        "url": "https://github.com/standard-voice/standard_asr.git",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "97bfdb28134c114088ec335596aa6bca53f9204f",
+          "requested_revision": "97bfdb28134c114088ec335596aa6bca53f9204f"
+        }
+      },
+      "imported_init": "/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/server-native-20261005T003801Z-19159/venv/lib/python3.13/site-packages/standard_asr/__init__.py",
+      "source_kind": "installed",
+      "python_source_sha256": {
+        "__init__.py": "ab9b23d727863d54d2b4065f6acd1f0c401ce68ba1e8b2fd72095eee0f803cc9",
+        "audio/__init__.py": "14aa94431e7d0dbf48be53d076fc02543619e8fbe3750ac0f1e15795ec93c333",
+        "audio/conversion.py": "18f58867d671a3c238b01d9e44c2bf4fa25357c527f4d5d21054dd7020bafaef",
+        "audio/format.py": "a881ec5453f602fb03f0f3a6a622520be38cb76fbe99b207cc37a864578bd918",
+        "audio/input.py": "e7cab7fdaf4192c11a2d7ac0e278e77ae95b73a8e08c12c04a1505b38c85f0ef",
+        "audio/loader.py": "afab55fa0a41ee687cdd17879807fc4657a92c5b1e414b0f479929c05148db1c",
+        "audio/negotiation.py": "6eff2860a8c77d91cc690347564b5646f4d042770ab21ad8470a4f4753326374",
+        "audio/resampling.py": "8626182d92d79f83c800be393cfc20183f8af649f77da664dab4522c2e57cd6e",
+        "audio/wav.py": "cf507247f735aaec6cf228e4fe3fc7221b1354dfb60b4db763c84a32b4f00844",
+        "audio/wire.py": "cb1ec74009cdd8fb977161a1016b966f4d2a18311554a85313d4cf894789c383",
+        "compliance.py": "6f52c4c6683c12a36c237587a15936d681ed4d10c7633bb3a7807a3ebf3a80d4",
+        "contract/__init__.py": "9e73a160ea2af12824e3cedbd863d73be00b6faf66b5bfbb9ed7959e03caab4b",
+        "contract/_json_extra.py": "0b6cd92d41a37ae92e4f2e2edfbf22a02e51c0b68ec307b09e33e6b0a307a243",
+        "contract/artifacts.py": "a92f6167585791758359bc50d5b4464ccfe4911252ee71170cfce02565c245ef",
+        "contract/capabilities.py": "9df4c29a3bf228e011a598e7ba7b1066d10b31c8117e831363cf79c6dcfd4164",
+        "contract/exceptions.py": "1f58af5329f3cecc88f73d60459a61f07796ace3244917a2eae7020ef516c2d1",
+        "contract/identifiers.py": "df0daf8071a8530543347411613d74afe86bc4107d918354965d93512c85257f",
+        "contract/language.py": "a4b5804d102a291fc373ea5c445cf27c371a43a69030a4fa98202d468d0e9d5d",
+        "contract/metadata.py": "740190e86e440a981b0ff45ae98630f273557fb6344003e134e026716fa73947",
+        "contract/params.py": "ed734af14f5ddc8fcdb69a3ca981064088e651b99fd850d3f258e5dc54078e20",
+        "contract/properties.py": "611090b04598bb6966deafcd5dbc59ac9fe516878dc3649d2ffd0137e3f5abdb",
+        "contract/protocol_version.py": "72c5c94ff37dcabcedbf8144188a26bd3199b524a221a6ff7fae3c1f285bbf13",
+        "contract/results.py": "a5067d33c31d520674eb057c47c598da13a7ec1cfd1f985d045327214ac15fb0",
+        "engine.py": "22055b4d49ee13db5d26d5919eabea17ea4ac5c938f63522e481b095332908e0",
+        "plugins/__init__.py": "b84be63377de3340d5e74236d9da0a8a7ded61b72f325e794167ee3f58b7ad14",
+        "plugins/discovery.py": "35233829f08b00842cf0c678966c521098211cb2171ebb6501d6d3a18795fdd9",
+        "renderers.py": "c1af7f3a89900a36d544b9a2417486bf60fc3ad69412ccf30dcbd18eda27358f",
+        "runtime/__init__.py": "45bdbae6fefe8a7f75beb24b6c42389d92af0b966e0255d1ef883493eccf3448",
+        "runtime/_text.py": "344066c396ab35fe3c70b5b7ae1121ff8fcaae59509b46df5981f7519c694f7b",
+        "runtime/config.py": "c50d601f580240e8234b77d6ea368c53be3e59ce9ac8d59f474ff23c71d23d50",
+        "runtime/downloads.py": "5e4b4a55dc2f566e04299471a9422055caf7e09279478f0b6fece964a66236f3",
+        "runtime/gating.py": "ec391959e458f9955dc97f224b909e4a09c703fe897007f3834a7e53840b2898",
+        "runtime/interface.py": "10e8725da5b503eb5f06d53b6f456d5c5d31b80b06634d147bd0b165b6ab0fb3",
+        "runtime/protocol_boundary.py": "049fc04c87744935212d1c8f75b62b2d3e98b4dfd19a3d6920fa337cfd88631e",
+        "runtime/redaction.py": "20cfb896d1c71ab1f50e9a1c61c73f5e3d97d9be9bf0002645758ade8f4dac75",
+        "runtime/streaming.py": "b38b23a4052d1ff435c4afa884c49e562c6f638cfb0ae91b80d83fb193c45148",
+        "toolchain/__init__.py": "ec7529901ca03a94de350d39a3fd351c0b4a01547aaaab3a768b0da353d44c5e",
+        "toolchain/cli.py": "181fe4e9e7b8292849f1bd2115828135a0c2199e9f2f6a8635ae1d80853d57ba",
+        "toolchain/doctor.py": "3a78a974a5a39e21e24b9e6c7ff6b82e2659bf2b8c59620db0702c6d99b3b20a",
+        "toolchain/server.py": "2d51df5efeac674df493dd830c71f734aa2a25d893c33eac338bc2ca6465f12e"
+      }
+    },
+    "plugin": {
+      "distribution": "std-qwen3asr-ane",
+      "version": "0.2.0a1",
+      "direct_url": {
+        "url": "file:///Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/server-native-20261005T003801Z-19159/dist/std_qwen3asr_ane-0.2.0a1-py3-none-any.whl",
+        "archive_info": {}
+      },
+      "imported_init": "/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/server-native-20261005T003801Z-19159/venv/lib/python3.13/site-packages/std_qwen3asr_ane/__init__.py",
+      "source_kind": "installed",
+      "python_source_sha256": {
+        "__init__.py": "b0d8b9539a9c75bb7de4fb7f60b19fb84226c80354a6b86c5cca922b9d9c1204",
+        "acquisition.py": "c4f64c983fea61eeea313dc1dcfa605517b9da6e834ea8764229592705d2b1fa",
+        "alignment.py": "a108977178c2f31bd8263b88bf151da24daf47bd8eedab5e169c1822d7ca6191",
+        "alignment_worker.py": "20dc4484bace9e07ec1eebfa70673a1cb2fae310328b4b78e56cc84c05fccbbd",
+        "artifact_lifecycle.py": "5c848024bfda8536619526a82c49d892e8405da12b9d66d942ca8e0103d7eb76",
+        "artifact_validation.py": "b566619325926d9569e4cdb5364982837f9f68abd7583e135f4b08a3b45557c1",
+        "audio.py": "a4739c9ff8783c60d770329aa5c53c3d0c5dd2700e3e2cb543e9b4043227e46d",
+        "audio_batch.py": "213320a5f66b5092322b192630db91630c2e4ec1e43770354d6d7137550c8ad6",
+        "audio_context.py": "465574f2a85c483d4f944cf53a551d1ca4178b1ab3f91109868ff1aa420a9ca3",
+        "auxiliary.py": "fd1ebe8249a38af1f9c75ab30bec96acb1ec77259388deff0b2e4861713ba800",
+        "batching.py": "844cd44f88ce321f28a97dfc830342dfd9627f026004eb4d0cf7aee2c91ce7bd",
+        "bulk.py": "a537ed482b3307f1f6d543cf8d3a969824dcef6c700105f6a58f9a08fd5167ae",
+        "bundle.py": "8c781d20cca7b52ec5b50ecc113e77fa3022acc2981f88febf1b0870f00eb057",
+        "cli.py": "5dbdd5b9fd93ad2d29053408014478c6c130a8b90ebc5255e0f1d6a723b3fb7b",
+        "compiled.py": "130a2cb17b9b1355128a9a8f5847e7be85471744f7bb883dbf6e82706a562bfd",
+        "conversion/__init__.py": "3bef1ed894996d48ae8d1c83ecb462bf6a471cce0a096d5b7e52bc7d1aa49640",
+        "conversion/batch_head.py": "ea3f12265c71f272476919ab288b64cdd4898d664efb1a083fcb961f720d3701",
+        "conversion/build.py": "b9a227c493c419a0ecb389a6e6ef2dfe73a1e9af2f470018d30dec93f71ecbd9",
+        "conversion/compress.py": "573ead30f453372c05ea60909b1231aae9e9e7e5b4898f2cbb61c78ffb65fd7c",
+        "conversion/decoder.py": "9ec4b17169e2309ff737eeeb77f16c3aa5f48686c26c023af235dda1208c889d",
+        "conversion/draft.py": "3a417fa6b2f93e3a4288c454e606d52e81dbecbec2a170e31e98983590323d6d",
+        "conversion/embedding.py": "36a18a41468bd225b9fc969e93ccbee4fd2bed90703ff9cba01980da729552ff",
+        "conversion/encoder.py": "701c369eea5254b5bbdd381c01b51104a703c720ef85d322023f3cbd8ef37963",
+        "conversion/passes.py": "2128f36a8ece5b1eae94e603a0c4fedab5721d993848aa6fc17bedf1b431e210",
+        "conversion/toolchain.py": "40af00b571b667bf5cafe1f219bbd5506ba45951d642b7e48079ea1b1c1b1aed",
+        "conversion_worker.py": "82c42abc280b68521bc0e979d43a0c5a65013301afe72857fff0469cdf691a3a",
+        "decoding_guidance.py": "2542726e83928c0620d5ca3a4eb56fc0ac2d6759a0ce6fa6b07e7903b246e59a",
+        "deployment.py": "3463fb5c17eab86e3c4e83a0fec3fa9995c5509e420e6e0c6fddbfad258d4efb",
+        "diagnostics.py": "3c37aeb7a9bfd972bcd2d6ce711c76285769f5633067c3ce5d1caed728b6cb5c",
+        "diarization.py": "791dcd1586b73ab4f2de0fd4ff7107255df1cb4da6445bf53d886cc8b17edb2c",
+        "draft.py": "2a2a92fc7b31038687e21f9f0a3fe376c5e960129872ac8dac0f64b81eff4f67",
+        "embedding.py": "68be473bd331734fc5d58fc9540c4682e9be2488c1b940d833aa24081055e986",
+        "errors.py": "f1cc33131f968ec59b25defe3086a70c61fbfeb101330374f0afb43730244ad9",
+        "languages.py": "3666864a4318e6e2b5d17e47ad582e00531d47863c87b765ede452c5e63d8c73",
+        "longform.py": "ccd30d7be1a6e2e40753e8e8f98a56e5b3cd535a443a4e6dc65463fec7a3f370",
+        "plugin.py": "f29137a8891e9968ef8ee08eb89d88d8e6d76485be67506968ab35f44bcda816",
+        "postprocessing.py": "f2e418ed3a5313162811910d20cfd2edaa13cc7bd896477bf85b800c5a689e8a",
+        "profiles.py": "28383ae5968a06e4dc6a87da9a00854f25736d2b75b41d186220931d9d4771de",
+        "result_text.py": "ffd7f8c510f69d0eed49b91d3e9c88066091b30a627cb8c914760dc776fb7b48",
+        "runtime.py": "da7977b1692d6eb0861f73c85027f3a6b8cde423fc98b6e01a428532087d023f",
+        "source_validation.py": "7de412988205cd0c3a41739a08280f5e3135d768b5f0b606f172f03bb9dd0fc4",
+        "speculative.py": "36d51bb6682bc3e05f714be230a317bfdb6b56e6ae46d40ac44b84e3000f651e",
+        "streaming.py": "5f96cb98674d0866abea057ee0753276d1b186a3af85714cc6ecc2dd9d2a0a33",
+        "streaming_context.py": "792909ed178af0dc8256c1ccadc2a2d99245693f595e773f8751dbef009f54f6",
+        "transcript_draft.py": "d869fb33b5a9654bec5edaf96c602787b754bfae1ed0be582bda946117447e6a",
+        "worker_environment.py": "7557b544d2b34df5ec4eb3c0a0ef624cb6449e79b09ae0fb31719f0fda66f173"
+      }
+    }
+  },
+  "packages": {
+    "std-qwen3asr-ane": {
+      "version": "0.2.0a1",
+      "direct_url": {
+        "source": "local_wheel",
+        "filename": "std_qwen3asr_ane-0.2.0a1-py3-none-any.whl"
+      }
+    },
+    "standard-asr": {
+      "version": "0.2.0.dev0",
+      "direct_url": {
+        "url": "https://github.com/standard-voice/standard_asr.git",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "97bfdb28134c114088ec335596aa6bca53f9204f",
+          "requested_revision": "97bfdb28134c114088ec335596aa6bca53f9204f"
+        }
+      }
+    },
+    "coremltools": {
+      "version": "9.0",
+      "direct_url": null
+    },
+    "sherpa-onnx": {
+      "version": "1.13.8",
+      "direct_url": null
+    },
+    "sherpa-onnx-core": {
+      "version": "1.13.8",
+      "direct_url": null
+    },
+    "fastapi": {
+      "version": "0.142.2",
+      "direct_url": null
+    },
+    "uvicorn": {
+      "version": "0.54.0",
+      "direct_url": null
+    },
+    "websockets": {
+      "version": "17.2",
+      "direct_url": null
+    }
+  }
+}

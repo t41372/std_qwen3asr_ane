@@ -9,6 +9,12 @@ from pathlib import Path
 
 from ..bundle import validate_offline_frontend_batch_size
 from ..profiles import PROFILES, ProfileName
+from ..source_validation import (
+    HashProgress,
+    VerifiedSource,
+    verify_source_checkpoint,
+    write_source_provenance,
+)
 
 SUPPORTED_CHECKPOINTS = {"Qwen/Qwen3-ASR-1.7B", "Qwen/Qwen3-ASR-0.6B"}
 # The 1.7B revision every measurement in research/ used.
@@ -25,6 +31,7 @@ def build_bundle(
     layers_per_partition=4,
     profile: ProfileName | None = None,
     frontend_batch_size: int | None = None,
+    verified_source: VerifiedSource | None = None,
 ):
     import numpy as np
     import torch
@@ -46,8 +53,11 @@ def build_bundle(
     source, output = source.resolve(), output.resolve()
     if not (source / "config.json").is_file():
         raise FileNotFoundError(f"Download the official checkpoint first: {source}")
-    provenance = json.loads((source / "source.json").read_text())
-    if provenance.get("model_id") not in SUPPORTED_CHECKPOINTS or not provenance.get("revision"):
+    if verified_source is None:
+        verified_source = verify_source_checkpoint(source)
+    elif verified_source.root != source:
+        raise ValueError("verified_source belongs to a different source directory")
+    if verified_source.model_id not in SUPPORTED_CHECKPOINTS:
         raise ValueError("Source metadata must identify a supported pinned Qwen3-ASR checkpoint")
     torch.set_num_threads(4)
     output.mkdir(parents=True, exist_ok=True)
@@ -56,7 +66,11 @@ def build_bundle(
     manifest_path = output / "manifest.json"
     if manifest_path.exists():
         raise FileExistsError(f"A completed bundle already exists at {output}; use a new directory")
-    identity = {key: provenance.get(key) for key in ("model_id", "revision")}
+    identity = {
+        "model_id": verified_source.model_id,
+        "revision": verified_source.revision,
+        "content_sha256": verified_source.content_sha256,
+    }
     if reuse_encoder:
         encoder = json.loads((output / "encoder-manifest.json").read_text())
         # The finished manifest names one checkpoint for the whole bundle, so an
@@ -104,8 +118,9 @@ def build_bundle(
     files.update(tokenizer="tokenizer.json", mel_filters="mel_filters.npy")
     manifest = {
         "schema_version": 1,
-        "model_id": provenance["model_id"],
-        "source_revision": provenance["revision"],
+        "model_id": verified_source.model_id,
+        "source_revision": verified_source.revision,
+        "source_content_sha256": verified_source.content_sha256,
         "files": files,
         "created_at": datetime.now(UTC).isoformat(),
         "max_audio_seconds": settings.max_audio_seconds if settings else 30,
@@ -135,7 +150,13 @@ def build_bundle(
     return manifest
 
 
-def download_source(destination: Path, *, revision="main", model_id="Qwen/Qwen3-ASR-1.7B"):
+def download_verified_source(
+    destination: Path,
+    *,
+    revision="main",
+    model_id="Qwen/Qwen3-ASR-1.7B",
+    progress: HashProgress | None = None,
+) -> VerifiedSource:
     from huggingface_hub import HfApi, snapshot_download
     from standard_asr.contract.exceptions import ArtifactAcquisitionError
     from standard_asr.engine import allow_downloads
@@ -159,6 +180,26 @@ def download_source(destination: Path, *, revision="main", model_id="Qwen/Qwen3-
         local_dir=destination,
         allow_patterns=["*.json", "*.safetensors", "*.txt", "*.jinja", "README.md"],
     )
-    provenance = {"model_id": model_id, "revision": commit}
-    (destination / "source.json").write_text(json.dumps(provenance, indent=2) + "\n")
-    return provenance
+    verified = write_source_provenance(
+        destination,
+        model_id=model_id,
+        revision=commit,
+        progress=progress,
+    )
+    return verified
+
+
+def download_source(
+    destination: Path,
+    *,
+    revision="main",
+    model_id="Qwen/Qwen3-ASR-1.7B",
+    progress: HashProgress | None = None,
+):
+    """Download a source checkpoint and return its JSON-compatible provenance."""
+    return download_verified_source(
+        destination,
+        revision=revision,
+        model_id=model_id,
+        progress=progress,
+    ).provenance()

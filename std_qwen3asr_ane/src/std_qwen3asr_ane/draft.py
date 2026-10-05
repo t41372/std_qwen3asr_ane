@@ -15,16 +15,36 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from .artifact_validation import (
+    DRAFT_BUNDLE_KIND,
+    DRAFT_MODEL_ID,
+    DRAFT_REVISION,
+    ArtifactManifestError,
+    DraftManifestInfo,
+    resolve_manifest_path,
+    validate_draft_manifest,
+    verify_draft_weight_binding,
+)
 from .audio import MIN_SAMPLES
-from .bundle import digest, lm_head_compression
+from .bundle import digest
+from .errors import CancellationToken, raise_if_cancelled
 
 if TYPE_CHECKING:
     from .runtime import CoreMLRuntime
 
-DRAFT_MODEL_ID = "Qwen/Qwen3-ASR-0.6B"
-DRAFT_REVISION = "5eb144179a02acc5e5ba31e748d22b0cf3e303b0"
-DRAFT_BUNDLE_KIND = "qwen3-asr-ane-draft"
 MLX_QUANTIZATION_GROUP = 64
+
+__all__ = (
+    "DRAFT_BUNDLE_KIND",
+    "DRAFT_MODEL_ID",
+    "DRAFT_REVISION",
+    "DraftDependencyError",
+    "DraftRuntime",
+    "MLXDraft",
+    "check_draft_target",
+    "load_draft_manifest",
+    "weight_digests",
+)
 
 
 class DraftDependencyError(ImportError):
@@ -46,38 +66,28 @@ def weight_digests(package: Path) -> list[str]:
     return [digest(path) for path in sorted(package.rglob("weight.bin"))]
 
 
-def check_draft_target(manifest: dict, target: CoreMLRuntime, root: Path | None = None) -> None:
-    """Refuse a verify head built for a different target bundle.
-
-    The compact head must reproduce the target's own vocabulary projection. The
-    manifest binds the target's identity and settings; when ``root`` is given the
-    head's weight payload must also be byte-identical to the target ``lm_head``
-    weights, which covers every compression detail the manifest does not name.
-    """
-    draft = manifest["draft"]
-    if draft.get("model_id") != DRAFT_MODEL_ID or draft.get("revision") != DRAFT_REVISION:
-        raise ValueError(f"Draft checkpoint must be {DRAFT_MODEL_ID}@{DRAFT_REVISION}")
-    expected = manifest["target"]
-    actual = {
-        "model_id": target.manifest["model_id"],
-        "source_revision": target.manifest["source_revision"],
-        "token_batch_size": target.token_batch_size,
-        "tokenizer_sha256": target.tokenizer_sha256,
-        "weight_compression": lm_head_compression(target.manifest),
-    }
-    for key, value in actual.items():
-        if expected.get(key) != value:
-            raise ValueError(
-                f"Draft bundle was built for a different target ({key}: "
-                f"{expected.get(key)!r} != {value!r})"
+def check_draft_target(
+    manifest: dict, target: CoreMLRuntime, root: Path | None = None
+) -> DraftManifestInfo:
+    """Validate a draft's cheap and, when rooted, explicit target binding."""
+    if target.target_manifest is None:
+        raise ValueError("Draft verification requires a validated Qwen3-ASR 1.7B target bundle")
+    try:
+        info = validate_draft_manifest(
+            manifest,
+            target=target.target_manifest,
+            target_root=target.model_dir,
+        )
+        if root is not None:
+            info = verify_draft_weight_binding(
+                info,
+                draft_root=root,
+                target=target.target_manifest,
+                target_root=target.model_dir,
             )
-    if root is not None:
-        head = (root / manifest["verify_head"]["path"]).resolve()
-        lm_head = target._path(target.manifest["files"]["lm_head"])
-        if weight_digests(head) != weight_digests(lm_head) or not weight_digests(head):
-            raise ValueError(
-                "Verify head weights differ from the target lm_head weights (weight.bin sha256)"
-            )
+    except ArtifactManifestError as error:
+        raise ValueError(str(error)) from error
+    return info
 
 
 class MLXDraft:
@@ -115,23 +125,36 @@ class MLXDraft:
         self.embed = inner.model.embed_tokens
         self.audio_token_id = int(inner.config.audio_token_id)
         self.cache: list | None = None
+        self._cancel: CancellationToken | None = None
         self.prompt_length = 0
         self.load_seconds = perf_counter() - started
         self.step_calls = 0
         self.step_seconds = 0.0
 
-    def prepare(self, samples: np.ndarray, token_ids: list[int]) -> dict[str, float]:
+    def prepare(
+        self,
+        samples: np.ndarray,
+        token_ids: list[int],
+        *,
+        cancel: CancellationToken | None = None,
+    ) -> dict[str, float]:
         """Encode audio, merge it into the target's prompt IDs and prefill the cache."""
         mx = self.mx
+        self._cancel = cancel
+        raise_if_cancelled(cancel)
         mx.synchronize()
+        raise_if_cancelled(cancel)
         started = perf_counter()
         samples = np.asarray(samples, dtype=np.float32)
         samples = np.pad(samples, (0, max(0, MIN_SAMPLES - samples.size)))
         features, mask, _ = self.inner._preprocess_audio(samples)
+        raise_if_cancelled(cancel)
         audio = self.inner.get_audio_features(features, mask)
+        raise_if_cancelled(cancel)
         if audio.ndim == 3:
             audio = audio[0]
         mx.eval(audio)
+        raise_if_cancelled(cancel)
         encoded = perf_counter()
         positions = [index for index, token in enumerate(token_ids) if token == self.audio_token_id]
         if not positions or positions != list(range(positions[0], positions[0] + len(positions))):
@@ -148,9 +171,12 @@ class MLXDraft:
             axis=0,
         )
         self.cache = self.inner.make_cache()
+        raise_if_cancelled(cancel)
         hidden = self.text(inputs_embeds=embeddings[None], cache=self.cache)
+        raise_if_cancelled(cancel)
         mx.eval(hidden, *[layer.keys for layer in self.cache])
         mx.synchronize()
+        raise_if_cancelled(cancel)
         self.prompt_length = len(token_ids)
         finished = perf_counter()
         return {
@@ -162,6 +188,7 @@ class MLXDraft:
         """Rewind to ``position`` if needed, consume ``tokens`` and return greedy IDs."""
         if self.cache is None:
             raise RuntimeError("prepare() must run before step()")
+        raise_if_cancelled(self._cancel)
         mx = self.mx
         started = perf_counter()
         for layer in self.cache:
@@ -171,8 +198,11 @@ class MLXDraft:
                 layer.trim(layer.offset - position)
         ids = mx.array(np.asarray([list(tokens)], dtype=np.int32))
         hidden = self.text(input_ids=ids, cache=self.cache)
+        raise_if_cancelled(self._cancel)
         logits = self.embed.as_linear(hidden[0])
+        raise_if_cancelled(self._cancel)
         chosen = mx.argmax(logits, axis=-1).tolist()
+        raise_if_cancelled(self._cancel)
         self.step_calls += 1
         self.step_seconds += perf_counter() - started
         return [int(token) for token in chosen]
@@ -180,8 +210,14 @@ class MLXDraft:
     def choose(self, hidden) -> int:
         return int(hidden)
 
-    def close(self) -> None:
+    def reset(self) -> None:
+        """Discard mutable request state after cancellation or before a retry."""
         self.cache = None
+        self.prompt_length = 0
+        self._cancel = None
+
+    def close(self) -> None:
+        self.reset()
         self.model = self.inner = self.text = self.embed = None
 
 
@@ -193,12 +229,13 @@ class DraftRuntime:
 
         self.root = Path(root).expanduser().resolve()
         self.manifest = load_draft_manifest(self.root)
-        head_path = (self.root / self.manifest["verify_head"]["path"]).resolve()
-        draft_path = (self.root / self.manifest["draft"]["path"]).resolve()
-        for path in (head_path, draft_path):
-            if not path.is_relative_to(self.root) or path == self.root:
-                raise ValueError("Draft bundle paths must stay inside the bundle")
-        check_draft_target(self.manifest, target, self.root)
+        self.draft_manifest = check_draft_target(self.manifest, target, self.root)
+        head_path = resolve_manifest_path(
+            self.root, self.draft_manifest.verify_head_path, field="verify_head.path"
+        )
+        draft_path = resolve_manifest_path(
+            self.root, self.draft_manifest.draft_path, field="draft.path"
+        )
         try:
             import mlx.core  # noqa: F401 — fail before any Core ML model is loaded
         except ImportError as error:
@@ -221,3 +258,7 @@ class DraftRuntime:
     def close(self, *, timeout: float = 5.0) -> None:
         self.head.close(timeout=timeout)
         self.model.close()
+
+    def reset(self) -> None:
+        """Discard the draft's mutable cache without unloading its model."""
+        self.model.reset()

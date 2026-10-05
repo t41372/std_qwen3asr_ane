@@ -41,6 +41,10 @@ def _power_frames(samples: np.ndarray, start_frame: int = 0) -> np.ndarray:
 
 def _log_mel_frames(samples: np.ndarray, filters: np.ndarray, start_frame: int = 0) -> np.ndarray:
     power = _power_frames(samples, start_frame)
+    return _log_mel_power(power, filters)
+
+
+def _log_mel_power(power: np.ndarray, filters: np.ndarray) -> np.ndarray:
     mel = filters.T @ power.T
     return np.log10(np.maximum(mel, np.float32(1e-10)))
 
@@ -54,9 +58,10 @@ class MelPrefixContext:
     """Cache only STFT frames whose full support is inside unchanged real audio.
 
     Recompute the reflected/right-padded tail with aligned FFT batches. Keep raw
-    log-mel before clipping, then normalize the assembled current prefix anew:
-    its global maximum can rise or fall as the provisional tail changes. Exact
-    parity tests cover FFT/matrix batch tails on the supported numerical stack.
+    power for stable frames, then project the entire current prefix through the
+    mel matrix in one operation. Both the matrix batch shape and the global
+    normalization therefore match offline extraction exactly on the supported
+    numerical stack.
     """
 
     def __init__(self, mel_filters: np.ndarray):
@@ -68,8 +73,10 @@ class MelPrefixContext:
 
     def reset(self) -> None:
         self._samples = np.empty(0, np.float32)
-        self._raw = np.empty((MEL_BINS, 0), np.float32)
+        self._power = np.empty((0, FFT_SIZE // 2 + 1), np.float32)
         self._stable_frames = 0
+        # These counters describe FFT/power work. Mel projection covers every
+        # frame so that its operation shape remains identical to offline use.
         self.computed_frames = 0
         self.reused_frames = 0
 
@@ -85,15 +92,15 @@ class MelPrefixContext:
         # change rounding, even when each frame's sample support is unchanged.
         reused = (self._stable_frames // 100) * 100 if unchanged else 0
         padded = np.pad(samples, (0, max(0, MIN_SAMPLES - samples.size)))
-        raw_tail = _log_mel_frames(padded, self.filters, reused)
-        raw = np.concatenate((self._raw[:, :reused], raw_tail), axis=1)
-        features = _normalize_log_mel(raw)
+        power_tail = _power_frames(padded, reused)
+        power = np.concatenate((self._power[:reused], power_tail), axis=0)
+        features = _normalize_log_mel(_log_mel_power(power, self.filters))
         self._samples = np.array(samples, copy=True)
-        self._raw = raw
         # Conservative by one frame: also protects the reflected left boundary
         # while the first 200 real samples have not arrived yet.
         self._stable_frames = max(0, (samples.size - FFT_SIZE // 2) // HOP_LENGTH)
-        self.computed_frames = raw_tail.shape[1]
+        self._power = np.array(power[: self._stable_frames], copy=True)
+        self.computed_frames = power_tail.shape[0]
         self.reused_frames = reused
         return features
 

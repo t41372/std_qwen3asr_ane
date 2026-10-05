@@ -1,0 +1,128 @@
+{
+  "date": "2026-10-04",
+  "status": "ready_for_review",
+  "product_commit": "695207f8b402d6169be42d4c30b5288b296b7574",
+  "standard_asr": {
+    "url": "https://github.com/standard-voice/standard_asr.git",
+    "vcs_info": {
+      "vcs": "git",
+      "commit_id": "97bfdb28134c114088ec335596aa6bca53f9204f",
+      "requested_revision": "97bfdb28134c114088ec335596aa6bca53f9204f"
+    }
+  },
+  "plugin_python_sha256": {
+    "__init__.py": "b0d8b9539a9c75bb7de4fb7f60b19fb84226c80354a6b86c5cca922b9d9c1204",
+    "acquisition.py": "c4f64c983fea61eeea313dc1dcfa605517b9da6e834ea8764229592705d2b1fa",
+    "alignment.py": "a108977178c2f31bd8263b88bf151da24daf47bd8eedab5e169c1822d7ca6191",
+    "alignment_worker.py": "20dc4484bace9e07ec1eebfa70673a1cb2fae310328b4b78e56cc84c05fccbbd",
+    "artifact_lifecycle.py": "5c848024bfda8536619526a82c49d892e8405da12b9d66d942ca8e0103d7eb76",
+    "artifact_validation.py": "b566619325926d9569e4cdb5364982837f9f68abd7583e135f4b08a3b45557c1",
+    "audio.py": "a4739c9ff8783c60d770329aa5c53c3d0c5dd2700e3e2cb543e9b4043227e46d",
+    "audio_batch.py": "213320a5f66b5092322b192630db91630c2e4ec1e43770354d6d7137550c8ad6",
+    "audio_context.py": "465574f2a85c483d4f944cf53a551d1ca4178b1ab3f91109868ff1aa420a9ca3",
+    "auxiliary.py": "fd1ebe8249a38af1f9c75ab30bec96acb1ec77259388deff0b2e4861713ba800",
+    "batching.py": "844cd44f88ce321f28a97dfc830342dfd9627f026004eb4d0cf7aee2c91ce7bd",
+    "bulk.py": "a537ed482b3307f1f6d543cf8d3a969824dcef6c700105f6a58f9a08fd5167ae",
+    "bundle.py": "8c781d20cca7b52ec5b50ecc113e77fa3022acc2981f88febf1b0870f00eb057",
+    "cli.py": "5dbdd5b9fd93ad2d29053408014478c6c130a8b90ebc5255e0f1d6a723b3fb7b",
+    "compiled.py": "130a2cb17b9b1355128a9a8f5847e7be85471744f7bb883dbf6e82706a562bfd",
+    "conversion/__init__.py": "3bef1ed894996d48ae8d1c83ecb462bf6a471cce0a096d5b7e52bc7d1aa49640",
+    "conversion/batch_head.py": "ea3f12265c71f272476919ab288b64cdd4898d664efb1a083fcb961f720d3701",
+    "conversion/build.py": "b9a227c493c419a0ecb389a6e6ef2dfe73a1e9af2f470018d30dec93f71ecbd9",
+    "conversion/compress.py": "573ead30f453372c05ea60909b1231aae9e9e7e5b4898f2cbb61c78ffb65fd7c",
+    "conversion/decoder.py": "9ec4b17169e2309ff737eeeb77f16c3aa5f48686c26c023af235dda1208c889d",
+    "conversion/draft.py": "3a417fa6b2f93e3a4288c454e606d52e81dbecbec2a170e31e98983590323d6d",
+    "conversion/embedding.py": "36a18a41468bd225b9fc969e93ccbee4fd2bed90703ff9cba01980da729552ff",
+    "conversion/encoder.py": "701c369eea5254b5bbdd381c01b51104a703c720ef85d322023f3cbd8ef37963",
+    "conversion/passes.py": "2128f36a8ece5b1eae94e603a0c4fedab5721d993848aa6fc17bedf1b431e210",
+    "conversion/toolchain.py": "40af00b571b667bf5cafe1f219bbd5506ba45951d642b7e48079ea1b1c1b1aed",
+    "conversion_worker.py": "82c42abc280b68521bc0e979d43a0c5a65013301afe72857fff0469cdf691a3a",
+    "decoding_guidance.py": "2542726e83928c0620d5ca3a4eb56fc0ac2d6759a0ce6fa6b07e7903b246e59a",
+    "deployment.py": "3463fb5c17eab86e3c4e83a0fec3fa9995c5509e420e6e0c6fddbfad258d4efb",
+    "diagnostics.py": "3c37aeb7a9bfd972bcd2d6ce711c76285769f5633067c3ce5d1caed728b6cb5c",
+    "diarization.py": "791dcd1586b73ab4f2de0fd4ff7107255df1cb4da6445bf53d886cc8b17edb2c",
+    "draft.py": "2a2a92fc7b31038687e21f9f0a3fe376c5e960129872ac8dac0f64b81eff4f67",
+    "embedding.py": "68be473bd331734fc5d58fc9540c4682e9be2488c1b940d833aa24081055e986",
+    "errors.py": "f1cc33131f968ec59b25defe3086a70c61fbfeb101330374f0afb43730244ad9",
+    "languages.py": "3666864a4318e6e2b5d17e47ad582e00531d47863c87b765ede452c5e63d8c73",
+    "longform.py": "ccd30d7be1a6e2e40753e8e8f98a56e5b3cd535a443a4e6dc65463fec7a3f370",
+    "plugin.py": "f29137a8891e9968ef8ee08eb89d88d8e6d76485be67506968ab35f44bcda816",
+    "postprocessing.py": "f2e418ed3a5313162811910d20cfd2edaa13cc7bd896477bf85b800c5a689e8a",
+    "profiles.py": "28383ae5968a06e4dc6a87da9a00854f25736d2b75b41d186220931d9d4771de",
+    "result_text.py": "ffd7f8c510f69d0eed49b91d3e9c88066091b30a627cb8c914760dc776fb7b48",
+    "runtime.py": "da7977b1692d6eb0861f73c85027f3a6b8cde423fc98b6e01a428532087d023f",
+    "source_validation.py": "7de412988205cd0c3a41739a08280f5e3135d768b5f0b606f172f03bb9dd0fc4",
+    "speculative.py": "36d51bb6682bc3e05f714be230a317bfdb6b56e6ae46d40ac44b84e3000f651e",
+    "streaming.py": "5f96cb98674d0866abea057ee0753276d1b186a3af85714cc6ecc2dd9d2a0a33",
+    "streaming_context.py": "792909ed178af0dc8256c1ccadc2a2d99245693f595e773f8751dbef009f54f6",
+    "transcript_draft.py": "d869fb33b5a9654bec5edaf96c602787b754bfae1ed0be582bda946117447e6a",
+    "worker_environment.py": "7557b544d2b34df5ec4eb3c0a0ef624cb6449e79b09ae0fb31719f0fda66f173"
+  },
+  "tests": {
+    "3.13": {
+      "tests": 729,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "3.12": {
+      "tests": 137,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "independent_review": {
+    "task": "official_main_review",
+    "confirmed_findings": [],
+    "focused_tests_passed": 102
+  },
+  "reports": {
+    "research/release-readiness/capability-snapshot-main-2026-10-04.json": {
+      "sha256": "6c1d04784a850a10a2386b6ef1a128fd00fe1c9636ce9dc48cc7d94a46dd525d",
+      "status": null,
+      "passed": null
+    },
+    "research/release-readiness/native-baseline-main-2026-10-04.json": {
+      "sha256": "2a9d1d5202c0c331b983c7916f50cef718974cabff4bb1db5dbb08318c97d4dd",
+      "status": "passed",
+      "passed": null
+    },
+    "research/release-readiness/longform-main-2026-10-04.json": {
+      "sha256": "083b579aba4ccb0b3efff57eaa4056dd65e722b253e6e87f8395033252b38b13",
+      "status": "passed",
+      "passed": null
+    },
+    "research/release-readiness/packed-main-2026-10-04.json": {
+      "sha256": "f2397f886eec5b7768356a2397fd2341ca3077fd152e5b78193f24d131d7fc03",
+      "status": "passed",
+      "passed": null
+    },
+    "research/release-readiness/server-native-main-2026-10-04.json": {
+      "sha256": "4e46d2bba91a15249e178a4e52d1aa7acc36078d3ad71360d0c29270b287ad6c",
+      "status": "passed",
+      "passed": null
+    },
+    "research/release-readiness/install-main-2026-10-04.json": {
+      "sha256": "001ed4a799eb1d6e837b98cc379447c610b1acb126b14825ba37cdb744ed6d4c",
+      "status": null,
+      "passed": null
+    },
+    "research/release-readiness/install-main-gpu-2026-10-04.json": {
+      "sha256": "2ec00f30f03d10f5cfc091b2eef1be2b29615a755d3a11275f721f3ffeb78a75",
+      "status": null,
+      "passed": null
+    },
+    "research/release-readiness/managed-worker-main-2026-10-04.json": {
+      "sha256": "6c5c2f983396f0072a36e6c53851bf90acb2a4763e7ec7cb4e55d9df8fee9d14",
+      "status": "passed"
+    }
+  },
+  "wheel_sha256": "ebcab341dbd6ec6731da295a823771574cdd21dbe5bed1c35610ef903bc96e76",
+  "scope": "Local plugin adaptation to official main only; no upstream modifications or remote publication.",
+  "limits": [
+    "Fixed native fixtures, not a general quality or speed claim.",
+    "Full Python 3.12 conversion suite not rerun because its offline dependency set was incomplete.",
+    "Initial GPU installation probes failed without Metal access; the eight affected cells passed on the local-device rerun."
+  ]
+}

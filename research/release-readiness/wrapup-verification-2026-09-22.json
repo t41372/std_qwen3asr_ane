@@ -1,0 +1,36 @@
+{
+  "date": "2026-09-22",
+  "scope": "Final wrap-up of completed work; release gates listed in docs/handoff-2026-09-22.md remain pending.",
+  "upstream_commit": "1e09da15af31657845c4b8e205f67c6855fda259",
+  "upstream_branch": "feat/native-engine-release-readiness",
+  "upstream_pushed": true,
+  "project_branch": "feat/standard-asr-release-readiness",
+  "prepared_package_version": "0.2.0a1",
+  "release_published": false,
+  "product_tests": {
+    "tests": 671,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "product_test_seconds": 12.277,
+  "product_test_command": "STANDARD_ASR_ALLOW_DOWNLOAD=0 .venv/bin/pytest -q --junitxml=artifacts/release-readiness/wrapup-tests.xml",
+  "product_test_environment": "Python 3.12, locked convert + server-test + diarization; installed Git dependency at recorded commit; sandbox escalation for native Core ML CPU tests.",
+  "ruff": "passed",
+  "git_diff_check": "passed",
+  "upstream_prek": "passed",
+  "upstream_pytest_reported_tests": 2634,
+  "upstream_coverage_percent": 99,
+  "server_wheel_validation": "Completed by ecosystem subagent: isolated server-test environment, discovered HTTP/WS over fake native boundary, wheel [server] install, list and serve --help.",
+  "longform_validation": "research/release-readiness/longform-validation-2026-09-22.json",
+  "raw_logs_directory": "artifacts/release-readiness",
+  "wrapup_fixes": [
+    "Explicit sherpa-onnx-core dependency prevents universal-lock omission of the platform runtime.",
+    "Artifact test premises now explicitly distinguish mocked online acquisition ordering and fully cached local sources."
+  ],
+  "limits": [
+    "No PR/remote CI or release publication yet.",
+    "Final clean wheel/installation matrix and standalone batch-head pull remain handoff work.",
+    "Native evidence covers fixed cases, not all languages/hardware or a general performance claim."
+  ]
+}
