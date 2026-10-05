@@ -234,7 +234,6 @@ def _segments(
                 start=group[0].start,
                 end=group[-1].end,
                 text=text[group[0].text_start : group[-1].text_end],
-                text_separator="",
                 words=segment_words,
                 speaker=group[0].attribution.speaker,
                 extra={

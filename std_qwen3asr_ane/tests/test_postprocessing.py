@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 from standard_asr import Diagnostic, Segment, TranscriptionResult
-from standard_asr.contract.results import compose_segment_text
 
 from std_qwen3asr_ane.alignment import AlignmentSpan
 from std_qwen3asr_ane.diarization import SpeakerTurn
@@ -29,13 +28,12 @@ def test_english_punctuation_and_whitespace_reconstruct_exactly():
     annotated = annotate_result(source, spans, offset_seconds=4.0)
 
     assert annotated.text == source.text
-    assert compose_segment_text(annotated.segments or []) == source.text
+    assert "".join(segment.text for segment in annotated.segments or []) == source.text
     assert annotated.segments == [
         Segment(
             start=4.1,
             end=5.2,
             text="  Hello,  world!\n",
-            text_separator="",
             words=annotated.words,
             speaker=None,
             extra={"source_start": 0, "source_end": len(source.text)},
@@ -80,7 +78,7 @@ def test_chinese_text_partitions_at_measured_speaker_changes_without_loss():
         "speaker_01",
         "speaker_01",
     ]
-    assert compose_segment_text(annotated.segments or []) == source.text
+    assert "".join(segment.text for segment in annotated.segments or []) == source.text
 
 
 def test_simultaneous_speakers_are_ambiguous_instead_of_arbitrarily_selected():
@@ -204,7 +202,7 @@ def test_timestamp_granularities_compose_with_optional_diarization_without_loss(
     )
 
     assert annotated.segments is not None
-    assert compose_segment_text(annotated.segments) == text
+    assert "".join(segment.text for segment in annotated.segments) == text
     assert [(segment.start, segment.end) for segment in annotated.segments] == (
         [(2.1, 2.4), (2.6, 2.9)] if with_diarization else [(2.1, 2.9)]
     )

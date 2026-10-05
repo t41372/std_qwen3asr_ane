@@ -21,7 +21,6 @@ from standard_asr.engine import (
     Segment,
     TranscriptionEvent,
     TranscriptionSession,
-    compose_segment_text,
 )
 
 from .audio import SAMPLE_RATE
@@ -29,7 +28,6 @@ from .decoding_guidance import GuidanceRequestError
 from .errors import InferenceCancelled, ModelLimitError
 from .languages import classify_model_language
 from .longform import AudioSpan, LongFormAudioLimit, LongFormCoordinator
-from .result_text import needs_join_space, shift_source_offsets
 from .runtime import rollback_prefix
 
 if TYPE_CHECKING:
@@ -93,11 +91,10 @@ class Qwen3ASRSession(TranscriptionSession):
         self._active_partial_emitted = False
         self._next_partial_end_sample = self._chunk_samples
         self._segment_index = 0
-        self._closed_text = ""
         self._unmapped_language_noted = False
         self._speaker_tracker = None
         self._request_artifacts_checked = False
-        self._audio_progress_supported = engine.supports("streaming.audio_progress")
+        self._audio_progress_supported = engine.supports("streaming.timestamps")
         self._pcm_tail = b""
         self._decoder_context = None
         self._audio_context = None
@@ -278,8 +275,9 @@ class Qwen3ASRSession(TranscriptionSession):
                     yield event
                 for event in await self._close_span(tail):
                     yield event
-            self._set_input_duration(self._received_samples / SAMPLE_RATE)
-            # The base emits done and reduces the recorded events.
+            yield TranscriptionEvent.done(
+                extra={"std_qwen3asr_ane_input_duration_seconds": self._received_samples / SAMPLE_RATE}
+            )
         except _Cancelled:
             yield TranscriptionEvent.make_error(
                 "cancelled", extra={"message": "Recognition cancelled."}
@@ -354,18 +352,19 @@ class Qwen3ASRSession(TranscriptionSession):
         self._emit_finalizer_diagnostics(result.diagnostics)
         detected, language_extra = self._language_fields(raw_result)
         segments = self._result_segments(result)
-        separators = tuple(
-            self._segment_text_separator(index, segment) for index, segment in enumerate(segments)
-        )
-        window_text_offset = len(self._closed_text) + (len(separators[0]) if separators else 0)
-        segments = tuple(
-            self._rebase_segment_source_offsets(segment, window_text_offset) for segment in segments
-        )
+        # Word source ranges travel through the standard reducer. Keep them
+        # relative to their own segment text, independent of the reducer's
+        # documented whitespace normalization between segments.
+        source_offset = 0
+        projected_segments = []
+        for segment in segments:
+            projected_segments.append(self._segment_source_offsets(segment, source_offset))
+            source_offset += len(segment.text)
+        segments = tuple(projected_segments)
         events = tuple(
             TranscriptionEvent.closed(
                 self._segment_event_id(index),
                 segment.text,
-                text_separator=separators[index],
                 detected_language=detected,
                 audio_processed_until=(
                     self._processed_samples / SAMPLE_RATE
@@ -386,10 +385,6 @@ class Qwen3ASRSession(TranscriptionSession):
             for index, segment in enumerate(segments)
         )
         self._processed_samples = max(self._processed_samples, span.end_sample)
-        self._closed_text += "".join(
-            separator + segment.text
-            for separator, segment in zip(separators, segments, strict=True)
-        )
         self._reset_active_context()
         self._segment_index += 1
         return events
@@ -449,7 +444,7 @@ class Qwen3ASRSession(TranscriptionSession):
                         "An empty finalized segment list cannot carry transcript text"
                     )
                 return self._empty_correction_segment()
-            if compose_segment_text(result.segments) != result.text:
+            if "".join(segment.text for segment in result.segments) != result.text:
                 raise RuntimeError("Finalized segments do not reconstruct the transcript text")
             return tuple(result.segments)
         if not result.text and result.words is None:
@@ -469,30 +464,34 @@ class Qwen3ASRSession(TranscriptionSession):
         """Clear a published provisional segment; true silence emits no segment."""
         if not self._active_partial_emitted:
             return ()
-        return (Segment(start=None, end=None, text="", text_separator=""),)
+        return (Segment(start=None, end=None, text=""),)
 
     def _segment_event_id(self, index: int) -> str:
         """Keep the partial's id for the first segment and suffix later splits."""
         return self._segment_id if index == 0 else f"{self._segment_id}.{index}"
 
     @staticmethod
-    def _rebase_segment_source_offsets(segment: Segment, offset: int) -> Segment:
-        """Move window-local transcript ranges into the complete session text."""
-        update: dict[str, object] = {"extra": shift_source_offsets(segment.extra, offset)}
+    def _segment_source_offsets(segment: Segment, window_offset: int) -> Segment:
+        """Make emitted word ranges refer to the containing event/segment text."""
+        words = None
         if segment.words is not None:
-            update["words"] = [
-                word.model_copy(update={"extra": shift_source_offsets(word.extra, offset)})
-                for word in segment.words
-            ]
-        return segment.model_copy(update=update)
-
-    def _segment_text_separator(self, index: int, segment: Segment) -> str:
-        """Declare exact within-window joins and explicit long-form boundaries."""
-        if index > 0:
-            return segment.text_separator
-        if not self._closed_text or not segment.text:
-            return ""
-        return " " if needs_join_space(self._closed_text[-1], segment.text[0]) else ""
+            words = []
+            for word in segment.words:
+                extra = dict(word.extra)
+                if "source_start" in extra and "source_end" in extra:
+                    extra["source_start"] -= window_offset
+                    extra["source_end"] -= window_offset
+                    extra["source_coordinate_space"] = "segment_text"
+                words.append(word.model_copy(update={"extra": extra}))
+        return segment.model_copy(update={
+            "words": words,
+            "extra": {
+                **segment.extra,
+                "source_start": 0,
+                "source_end": len(segment.text),
+                "source_coordinate_space": "segment_text",
+            },
+        })
 
     def _closed_event_extra(self, span, language_extra, result_extra, segment_extra) -> dict:
         """Merge window, result, and segment metadata without overwriting evidence."""
@@ -566,7 +565,3 @@ class Qwen3ASRSession(TranscriptionSession):
         self._decode_count = 0
         self._last_raw = ""
         self._last_result = None
-
-    def _set_input_duration(self, seconds: float) -> None:
-        """Record the exact complete input length for the stream result."""
-        self.set_input_duration(seconds)

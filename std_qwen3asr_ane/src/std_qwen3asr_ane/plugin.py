@@ -6,6 +6,7 @@ import importlib.util
 import json
 import shlex
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from threading import Lock, RLock
 from typing import TYPE_CHECKING, ClassVar, Literal, Self
@@ -20,7 +21,6 @@ from standard_asr.contract.exceptions import (
     TranscriptionError,
     UnsupportedFeatureError,
 )
-from standard_asr.contract.results import compose_segment_text
 from standard_asr.engine import (
     ArtifactContext,
     ArtifactDeclaration,
@@ -268,7 +268,6 @@ class Qwen3ASREngine(EngineBase):
             ),
             emits_partials=FlagCap(supported=True),
             finality_level=FinalityCap(mode="closed"),
-            audio_progress=FlagCap(supported=True),
             word_timestamps=WordTimestampsCap(
                 supported=True, granularities=["word", "segment", "char"]
             ),
@@ -337,13 +336,48 @@ class Qwen3ASREngine(EngineBase):
         self._auxiliary = None
         self._artifacts = ArtifactManager(self.config, self.properties.model_id)
 
-    def _max_audio_duration(self, mode: str) -> float | None:
+    def _recording_limit(self, mode: str) -> float | None:
         """Apply recording policy separately from the native decoding window."""
         limits = [self.config.max_recording_seconds]
         if mode == "streaming":
             limits.append(self.config.stream_max_audio_seconds)
         finite = [value for value in limits if value is not None]
         return min(finite) if finite else None
+
+    def _check_recording_duration(self, prepared: PreparedAudio, *, mode: str) -> None:
+        limit = self._recording_limit(mode)
+        if limit is not None and len(prepared.array) / prepared.sample_rate > limit:
+            raise AudioProcessingError(
+                f"Audio exceeds the configured recording limit of {limit} seconds."
+            )
+
+    def _prepare_audio(self, audio) -> PreparedAudio:
+        """Use standard negotiation, then adapt delivered arrays to the mono model."""
+        import numpy as np
+
+        prepared = super()._prepare_audio(audio)
+        samples = prepared.array
+        if samples is None or not samples.size or not np.isfinite(samples).all():
+            raise AudioProcessingError("Qwen3-ASR requires nonempty, finite audio samples.")
+        diagnostics = list(prepared.diagnostics)
+        if samples.ndim == 2 and samples.shape[1] > 0:
+            diagnostics.append(
+                Diagnostic(
+                    code="qwen_audio_downmixed",
+                    message="Qwen3-ASR downmixed the supplied channels by their arithmetic mean.",
+                    param="audio",
+                    provided={"channels": samples.shape[1]},
+                    effective={"channels": 1},
+                )
+            )
+            samples = samples.mean(axis=1, dtype=np.float64)
+        elif samples.ndim != 1:
+            raise AudioProcessingError("Provide mono audio or a (samples, channels) array.")
+        prepared = replace(
+            prepared, array=np.ascontiguousarray(samples, dtype=np.float32), diagnostics=diagnostics
+        )
+        self._check_recording_duration(prepared, mode="batch")
+        return prepared
 
     @property
     def effective_capabilities(self) -> DeclaredCapabilities:
@@ -807,6 +841,8 @@ class Qwen3ASREngine(EngineBase):
     ) -> TranscriptionSession:
         from .streaming import Qwen3ASRSession
 
+        if prepared_audio is not None:
+            self._check_recording_duration(prepared_audio, mode="streaming")
         return Qwen3ASRSession(self, gated_params, audio_format, prepared_audio)
 
 
@@ -850,12 +886,13 @@ def _merge_chunk_results(chunks: list[TranscriptionResult], duration: float) -> 
         offset = len(text) + len(separator)
         chunk_segments = chunk.segments
         if chunk_segments is None:
-            chunk_segments = [Segment(text=chunk.text, start=None, end=None, text_separator="")]
-        for index, segment in enumerate(chunk_segments):
+            chunk_segments = [Segment(text=chunk.text, start=None, end=None)]
+        if "".join(segment.text for segment in chunk_segments) != chunk.text:
+            raise RuntimeError("Window segments do not preserve the complete transcript text")
+        for segment in chunk_segments:
             segments.append(
                 segment.model_copy(
                     update={
-                        "text_separator": separator if index == 0 else segment.text_separator,
                         "extra": shift_source_offsets(segment.extra, offset),
                         "words": [
                             word.model_copy(
@@ -873,9 +910,6 @@ def _merge_chunk_results(chunks: list[TranscriptionResult], duration: float) -> 
             for word in (chunk.words or [])
         )
         text += separator + chunk.text
-    composed = compose_segment_text(segments)
-    if composed != text:
-        raise RuntimeError("Window segments do not preserve the complete transcript text")
     languages = list(
         dict.fromkeys(chunk.detected_language for chunk in chunks if chunk.detected_language)
     )
@@ -891,7 +925,7 @@ def _merge_chunk_results(chunks: list[TranscriptionResult], duration: float) -> 
             )
         )
     return TranscriptionResult(
-        text=composed,
+        text=text,
         detected_language=languages[0] if len(languages) == 1 else None,
         duration=duration,
         segments=segments,

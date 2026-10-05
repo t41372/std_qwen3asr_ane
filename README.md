@@ -131,7 +131,9 @@ Both presets automatically divide longer recordings and streams into bounded, no
 
 Batch and streaming support language selection, automatic detection, context prompts, candidate-language restriction, phrase score hints and optional measured word, segment and character timing. Candidate lists are hard constraints on the model's language header and accept at most 8 languages. Phrase hints are bounded soft next-token score biases, at most 16 terms and 128 characters per term; they do not guarantee that a phrase appears. Both features require the target's full vocabulary logits. A target bundle built with a compact vocabulary head reports them unsupported instead of pretending to apply them; this is separate from the optional packed-batch head described below.
 
-Streaming accepts mono 16 kHz PCM (`pcm_s16le` or `pcm_f32le`). Partials are revisable. Each completed window is independently rescored from its full audio rather than being locked to provisional partial text, then emitted as one or more closed segments with an input-processing cursor. Speaker boundaries and exact text survive result reduction. A successful final result carries the complete input duration. `partial_stability`, `reconnect`, `re_segments` and mutable mid-stream guidance remain false: they are reserved Standard ASR semantics, not aliases for window rollover or revisable partials.
+Streaming accepts mono 16 kHz PCM (`pcm_s16le` or `pcm_f32le`). Partials are revisable (`stable_text=""`). Each completed window is independently rescored and emitted as one or more closed segments. Standard ASR preserves measured segment and word details and joins trimmed segment texts with spaces in `session.result()`, including at CJK segment boundaries. Read the terminal event to distinguish completion from failure: `result()` is a snapshot of finalized segments, not a success verdict. Word details are in `result.segments[*].words`.
+
+With alignment enabled, the standard processing cursor accompanies measured timestamps. Without alignment, input window positions remain available in event extras. The `done` event includes `extra["std_qwen3asr_ane_input_duration_seconds"]`; the standard streaming result does not populate duration. `partial_stability`, reconnect, re-segmentation and mutable mid-stream guidance remain unsupported.
 
 ## Optional forced alignment and speaker diarization
 
@@ -179,24 +181,17 @@ standard-asr pull std-qwen3asr-ane/1.7b --set use_batching=true
 
 Python applications can then submit independent recordings through `engine.transcribe_many(...)`. It returns ordered `BulkTranscriptionOutcome` values containing `result`, `error`, `execution` and `fallback_reason`; `result_or_raise()` re-raises the original typed error for one item. Eligible groups use packed target execution and other inputs disclose their serial fallback. The Standard ASR per-file `transcribe` method and CLI remain the canonical single-recording interface.
 
-## HTTP and WebSocket server
+## Reference server
 
-Install the `server` extra, acquire the configured artifacts, and place operator-owned settings in a JSON file:
-
-```json
-{
-  "std-qwen3asr-ane/1.7b": {
-    "use_alignment": true,
-    "model_dir": "/absolute/path/to/qwen3-asr-1.7b"
-  }
-}
-```
+Install the `server` extra, acquire the model with `standard-asr pull`, and run:
 
 ```sh
-standard-asr serve --engine-configs engines.json
+standard-asr serve
 ```
 
-The reference server pools one engine per configured model, reports safe readiness at `/v1/readiness/{model}`, accepts files over REST and PCM over WebSocket, and validates `provider_params` against the selected plugin schema. The `max_new_tokens`, `disable_draft` and `include_metrics` fields are accepted in Python, CLI JSON options and both wire transports; batch results include the requested native metrics under `result.extra["native"]`.
+The reference server accepts encoded audio over REST and PCM over WebSocket. Portable options such as language, prompt, phrase hints, timestamps and diarization use Standard ASR's wire schema. Typed `Qwen3ASRParams` are available in Python; CLI and server JSON deliberately reject `provider_params`. For the CLI, set the default decoding budget with `--set max_new_tokens=128`.
+
+Configure server engine defaults through the documented environment variables, for example `STANDARD_ASR_STD_QWEN3ASR_ANE__USE_ALIGNMENT=true` after acquiring the aligner. The server constructs an engine for each request; it does not promise a shared model pool, a readiness endpoint, or per-model JSON initialization maps. Python applications that need a warm engine can retain an instance and call its explicit `prepare()` and `close()` methods.
 
 ## Existing local bundles
 
@@ -211,7 +206,7 @@ The earlier `artifacts/` location is no longer an implicit lookup relative to yo
 ## Development and evidence
 
 - [Development and manual conversion](CONTRIBUTING.md)
-- [Release readiness ledger](docs/release-readiness-2026-09-22.md)
+- [Release readiness ledger](docs/release-readiness-2026-10-04.md)
 - [Standard ASR capability coverage and limits](docs/standard-asr-capability-coverage.md)
 - [Historical Standard ASR contract audit](docs/standard-asr-audit.md)
 - [Research results](research/results-2026-09-13.md), [round 2 evidence](research/evidence/round2/README.md), and [experiment workflows](experiments/workflows/README.md)

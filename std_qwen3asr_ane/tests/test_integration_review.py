@@ -158,7 +158,6 @@ def test_longform_merge_preserves_exact_segment_composition_and_global_source_of
                     start=words[0].start,
                     end=words[0].end,
                     text=first,
-                    text_separator="",
                     words=[words[0]],
                     extra={"source_start": 0, "source_end": split},
                 ),
@@ -166,7 +165,6 @@ def test_longform_merge_preserves_exact_segment_composition_and_global_source_of
                     start=words[1].start,
                     end=words[1].end,
                     text=second,
-                    text_separator="",
                     words=[words[1]],
                     extra={"source_start": split, "source_end": len(text)},
                 ),
@@ -185,9 +183,7 @@ def test_longform_merge_preserves_exact_segment_composition_and_global_source_of
 
     assert merged.text == "hello world again now"
     assert merged.segments is not None
-    first, *rest = merged.segments
-    composed = first.text + "".join(segment.text_separator + segment.text for segment in rest)
-    assert composed == merged.text
+    assert [segment.text for segment in merged.segments] == ["hello ", "world", "again ", "now"]
     for segment in merged.segments:
         start = segment.extra["source_start"]
         end = segment.extra["source_end"]

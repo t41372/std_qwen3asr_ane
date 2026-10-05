@@ -11,7 +11,6 @@ from standard_asr import AudioArray
 from standard_asr.contract.exceptions import (
     AudioProcessingError,
     ConfigError,
-    StreamFailedError,
     TranscriptionError,
     UnsupportedFeatureError,
 )
@@ -226,7 +225,7 @@ def test_native_value_error_is_runtime_failure_but_bad_array_is_audio_error() ->
 
     healthy = _ReleaseRuntime()
     engine = _engine(Qwen3ASREngine, healthy)
-    with pytest.raises(AudioProcessingError, match="at least one sample"):
+    with pytest.raises(AudioProcessingError, match="nonempty"):
         engine.transcribe(AudioArray(np.empty(0, np.float32), 16000))
     assert not healthy.calls
 
@@ -237,25 +236,26 @@ def test_streaming_native_value_error_is_engine_error_not_invalid_pcm() -> None:
     events, session = asyncio.run(_record_whole_input(engine, RuntimeParams()))
     assert events[-1].type == "error"
     assert events[-1].code == "engine_error"
-    with pytest.raises(StreamFailedError) as caught:
-        session.result()
-    assert caught.value.code == "engine_error"
+    # Official main returns the finalized snapshot even after an error.
+    assert session.result().text == ""
 
 
 @pytest.mark.parametrize("engine_type", [Qwen3ASREngine, ShortDictationEngine])
-def test_public_array_boundary_canonicalizes_raw_stereo(
+def test_public_array_boundary_downmixes_without_clipping_finite_audio(
     engine_type: type[Qwen3ASREngine],
 ) -> None:
     runtime = _ReleaseRuntime()
     engine = _engine(engine_type, runtime)
-    stereo = np.array([[2.0, np.nan], [-2.0, np.inf]], dtype=np.float32)
+    stereo = np.array([[2.0, 4.0], [-2.0, 0.0]], dtype=np.float32)
     result = engine.transcribe(AudioArray(stereo, 16000))
-    np.testing.assert_array_equal(runtime.calls[-1]["samples"], np.array([0.5, 0.0], np.float32))
-    assert [item.code for item in result.diagnostics[:3]] == [
-        "audio_conversion",
-        "non_finite_audio",
-        "audio_clipped",
-    ]
+    np.testing.assert_array_equal(runtime.calls[-1]["samples"], np.array([3.0, -1.0], np.float32))
+    assert "qwen_audio_downmixed" in [item.code for item in result.diagnostics]
+    assert runtime.calls[-1]["samples"].flags.c_contiguous
+    invalid = stereo.copy()
+    invalid[0, 0] = np.nan
+    with pytest.raises(AudioProcessingError, match="finite"):
+        engine.transcribe(AudioArray(invalid, 16000))
+    assert len(runtime.calls) == 1
 
 
 def test_general_profile_rejects_short_alias_and_presets_are_statically_unbounded() -> None:
@@ -271,7 +271,7 @@ def test_optional_recording_guard_rejects_before_native_runtime(
 ) -> None:
     runtime = _ReleaseRuntime(max_audio_seconds=0.1)
     engine = _engine(engine_type, runtime, max_recording_seconds=0.01)
-    with pytest.raises(AudioProcessingError, match="max_audio_duration"):
+    with pytest.raises(AudioProcessingError, match="recording limit"):
         engine.transcribe((np.zeros(161, np.float32), 16000))
     assert not runtime.calls
 

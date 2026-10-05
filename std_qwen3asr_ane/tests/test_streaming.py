@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from standard_asr import StreamFailedError, SyncSession
+from standard_asr import SyncSession
 from standard_asr.compliance import (
     check_event_sequence,
     check_streaming_param_gating,
@@ -22,6 +22,7 @@ from standard_asr.engine import (
     TranscriptionResult,
     Word,
 )
+from standard_asr.runtime.streaming import StreamReducer
 from tokenizers import Tokenizer, models, pre_tokenizers
 
 from std_qwen3asr_ane.errors import InferenceCancelled
@@ -134,7 +135,7 @@ async def recorded(session, chunks=None):
 
 
 def assert_compliant(events, engine):
-    report = check_event_sequence(events, capabilities=engine.declared_capabilities)
+    report = check_event_sequence(events, capabilities=engine.effective_capabilities)
     assert report.passed, report.issues
 
 
@@ -172,7 +173,10 @@ def test_incremental_pcm_tail_prefix_and_closed_event(engine):
         event.start is None and event.end is None and event.words is None for event in events
     )
     content = [event for event in events if event.type in ("partial", "final")]
-    assert all(event.audio_processed_until == event.extra["input_end_seconds"] for event in content)
+    assert all(event.audio_processed_until is None for event in content)
+    assert all(
+        event.extra["input_end_seconds"] > event.extra["input_start_seconds"] for event in content
+    )
     assert session.result().text == "hello world again today"
     assert not session.diagnostics()
     assert_compliant(events, engine)
@@ -191,8 +195,7 @@ def test_live_session_enforces_effective_partial_capability(engine, monkeypatch)
     assert events[-1].code == "engine_error"
     assert not any(event.type == "partial" for event in events)
     assert "emits_partials" in events[-1].extra["detail"]
-    with pytest.raises(StreamFailedError):
-        session.result()
+    assert session.result().text == ""
 
 
 def test_whole_audio_streaming_output_and_language_override(engine):
@@ -230,12 +233,13 @@ def test_finish_flush_and_fresh_session_reset(engine):
     assert_compliant(second, engine)
 
 
-def test_successful_incremental_session_sets_the_exact_input_duration(engine):
+def test_successful_incremental_session_reports_exact_input_duration_in_done(engine):
     session = engine.start_transcription(audio_format=FORMAT)
     events = asyncio.run(recorded(session, [np.zeros(8100, dtype="<f4").tobytes()]))
 
     assert events[-1].type == "done"
-    assert session.result().duration == 8100 / 16000
+    assert events[-1].extra["std_qwen3asr_ane_input_duration_seconds"] == 8100 / 16000
+    assert session.result().duration is None
     assert_compliant(events, engine)
 
 
@@ -273,7 +277,7 @@ def test_cancel_interrupts_delivery_and_releases_audio_backpressure(engine):
             events = await asyncio.wait_for(consumer, 0.5)
             await asyncio.gather(blocked, return_exceptions=True)
             assert events[-1].code == "cancelled"
-            assert session.partial_result().text == ""
+            assert session.result().text == ""
             engine._runtime.release.set()
             return events
 
@@ -566,7 +570,6 @@ def test_closed_windows_use_measured_finalizer_output_and_one_session_speaker_tr
                     start=first.start,
                     end=first.end,
                     text="hello ",
-                    text_separator="",
                     words=[first],
                     speaker="A",
                     extra={"source_start": 0, "source_end": 6},
@@ -575,7 +578,6 @@ def test_closed_windows_use_measured_finalizer_output_and_one_session_speaker_tr
                     start=second.start,
                     end=second.end,
                     text="world",
-                    text_separator="",
                     words=[second],
                     speaker="B",
                     extra={"source_start": 6, "source_end": 11},
@@ -618,17 +620,20 @@ def test_closed_windows_use_measured_finalizer_output_and_one_session_speaker_tr
         "utterance-1.1",
     ]
     assert [event.text for event in closed] == ["hello ", "world", "hello ", "world"]
-    assert [event.text_separator for event in closed] == ["", "", " ", ""]
     assert [event.start for event in closed] == [0.01, 0.10, 0.26, 0.35]
     assert [event.end for event in closed] == [0.08, 0.20, 0.33, 0.45]
     assert all(event.words and len(event.words) == 1 for event in closed)
     closed_words = [word for event in closed for word in event.words or []]
     assert [word.speaker for word in closed_words] == ["A", "B", "A", "B"]
     assert [event.speaker for event in closed] == ["A", "B", "A", "B"]
-    assert [event.extra["source_start"] for event in closed] == [0, 6, 12, 18]
-    assert [event.extra["source_end"] for event in closed] == [6, 11, 18, 23]
-    assert [word.extra["source_start"] for word in closed_words] == [0, 6, 12, 18]
-    assert [word.extra["source_end"] for word in closed_words] == [5, 11, 17, 23]
+    assert [event.extra["source_start"] for event in closed] == [0, 0, 0, 0]
+    assert [event.extra["source_end"] for event in closed] == [6, 5, 6, 5]
+    assert [word.extra["source_start"] for word in closed_words] == [0, 0, 0, 0]
+    assert [word.extra["source_end"] for word in closed_words] == [5, 5, 5, 5]
+    assert all(word.extra["source_coordinate_space"] == "segment_text" for word in closed_words)
+    for event in closed:
+        for word in event.words or []:
+            assert event.text[word.extra["source_start"] : word.extra["source_end"]] == word.text
     assert all(event.extra["speaker_turns"] for event in closed)
     window_notes = [
         diagnostic for diagnostic in session.diagnostics() if diagnostic.code == "window_finalized"
@@ -637,16 +642,20 @@ def test_closed_windows_use_measured_finalizer_output_and_one_session_speaker_tr
     reduced = session.result()
     assert reduced.text == "hello world hello world"
     assert [segment.speaker for segment in reduced.segments or []] == ["A", "B", "A", "B"]
-    assert [segment.text_separator for segment in reduced.segments or []] == ["", "", " ", ""]
-    assert [segment.extra["source_start"] for segment in reduced.segments or []] == [0, 6, 12, 18]
-    assert [word.speaker for word in reduced.words or []] == ["A", "B", "A", "B"]
-    assert [word.extra["source_start"] for word in reduced.words or []] == [0, 6, 12, 18]
+    assert all(segment.extra == {} for segment in reduced.segments or [])
+    assert reduced.words is None
+    reduced_words = [word for segment in reduced.segments or [] for word in segment.words or []]
+    assert [word.speaker for word in reduced_words] == ["A", "B", "A", "B"]
+    assert [word.extra["source_start"] for word in reduced_words] == [0, 0, 0, 0]
+    for segment in reduced.segments or []:
+        for word in segment.words or []:
+            assert segment.text[word.extra["source_start"] : word.extra["source_end"]] == word.text
     assert_compliant(events, engine)
 
 
 @pytest.mark.parametrize("granularity", ["word", "char", "segment"])
 @pytest.mark.parametrize("with_diarization", [False, True])
-def test_streaming_optional_outputs_preserve_segments_words_speakers_and_exact_text(
+def test_streaming_optional_outputs_preserve_segments_words_speakers_and_exact_event_text(
     engine, monkeypatch, granularity, with_diarization
 ):
     engine.config = engine.config.model_copy(
@@ -681,10 +690,12 @@ def test_streaming_optional_outputs_preserve_segments_words_speakers_and_exact_t
                     start=start,
                     end=end,
                     text=part,
-                    text_separator="",
                     words=[word] if granularity != "segment" else None,
                     speaker=speaker,
-                    extra={"source_start": index, "source_end": index + 1},
+                    extra={
+                        "source_start": sum(len(part) for part in parts[:index]),
+                        "source_end": sum(len(part) for part in parts[: index + 1]),
+                    },
                 )
                 for index, (part, (start, end), speaker, word) in enumerate(
                     zip(parts, boundaries, speakers, words, strict=True)
@@ -696,7 +707,6 @@ def test_streaming_optional_outputs_preserve_segments_words_speakers_and_exact_t
                     start=0.01,
                     end=0.45,
                     text=text,
-                    text_separator="",
                     words=words if granularity != "segment" else None,
                     speaker=None,
                     extra={"source_start": 0, "source_end": len(text)},
@@ -719,18 +729,23 @@ def test_streaming_optional_outputs_preserve_segments_words_speakers_and_exact_t
     closed = [event for event in events if event.type == "final"]
     assert len(closed) == (2 if with_diarization else 1)
     assert "".join(event.text or "" for event in closed) == text
-    assert [event.text_separator for event in closed] == [""] * len(closed)
     assert [event.speaker for event in closed] == (["A", "B"] if with_diarization else [None])
     assert all((event.words is not None) is (granularity != "segment") for event in closed)
     result = session.result()
-    assert result.text == text
+    expected_text = "甲 乙" if granularity == "char" and with_diarization else text
+    assert result.text == expected_text
     assert "".join(segment.text for segment in result.segments or []) == text
     assert [segment.speaker for segment in result.segments or []] == (
         ["A", "B"] if with_diarization else [None]
     )
-    assert (result.words is not None) is (granularity != "segment")
-    if result.words is not None:
-        assert [word.speaker for word in result.words] == (
+    assert result.words is None
+    assert all(
+        (segment.words is not None) is (granularity != "segment")
+        for segment in result.segments or []
+    )
+    if granularity != "segment":
+        words = [word for segment in result.segments or [] for word in segment.words or []]
+        assert [word.speaker for word in words] == (
             ["A", "B"] if with_diarization else [None, None]
         )
     assert_compliant(events, engine)
@@ -764,14 +779,12 @@ def test_segment_timestamps_and_diarization_keep_unknown_language_disclosure(eng
                     start=0.1,
                     end=0.4,
                     text="hello ",
-                    text_separator="",
                     speaker="A",
                 ),
                 Segment(
                     start=0.5,
                     end=0.9,
                     text="world",
-                    text_separator="",
                     speaker="B",
                 ),
             ],
@@ -855,12 +868,11 @@ def test_optional_postprocessing_failure_is_terminal_and_commits_no_closed_segme
 
     assert events[-1].type == "error" and events[-1].code == "engine_error"
     assert not any(event.type == "final" for event in events)
-    with pytest.raises(StreamFailedError) as caught:
-        session.result()
-    assert caught.value.code == "engine_error"
+    assert session.result().text == ""
+    assert session.result().segments == []
 
 
-def test_cjk_longform_windows_compose_without_an_invented_space(engine, monkeypatch):
+def test_cjk_longform_preserves_event_text_and_uses_standard_result_composition(engine, monkeypatch):
     engine._runtime.max_audio_seconds = 0.25
 
     def recognize(samples, params, **kwargs):
@@ -881,7 +893,6 @@ def test_cjk_longform_windows_compose_without_an_invented_space(engine, monkeypa
                     start=None,
                     end=None,
                     text="你好",
-                    text_separator="",
                     extra={"source_start": 0, "source_end": 2},
                 )
             ],
@@ -893,10 +904,14 @@ def test_cjk_longform_windows_compose_without_an_invented_space(engine, monkeypa
     events = asyncio.run(recorded(session, [WIRE]))
 
     closed = [event for event in events if event.type == "final"]
-    assert [event.text_separator for event in closed] == ["", ""]
-    assert [event.extra["source_start"] for event in closed] == [0, 2]
-    assert [event.extra["source_end"] for event in closed] == [2, 4]
-    assert session.result().text == "你好你好"
+    assert [event.text for event in closed] == ["你好", "你好"]
+    assert [event.extra["source_start"] for event in closed] == [0, 0]
+    assert [event.extra["source_end"] for event in closed] == [2, 2]
+    assert session.result().text == "你好 你好"
+    reducer = StreamReducer()
+    for event in events:
+        reducer.add(event)
+    assert session.result() == reducer.result()
 
 
 def test_cancellation_reaches_the_auxiliary_finalizer(engine, monkeypatch):
@@ -1014,8 +1029,11 @@ def test_streaming_provider_budget_is_frozen_per_session(engine):
     assert engine.config.max_new_tokens == 256
 
 
-def test_processing_frontier_does_not_rewind_at_an_earlier_low_energy_cut(engine):
-    engine.config = engine.config.model_copy(update={"stream_chunk_seconds": 0.1})
+def test_processing_frontier_does_not_rewind_at_an_earlier_low_energy_cut(engine, monkeypatch):
+    engine.config = engine.config.model_copy(
+        update={"stream_chunk_seconds": 0.1, "use_alignment": True}
+    )
+    monkeypatch.setattr(engine, "_require_request_artifacts", lambda params, *, mode: None)
     engine._runtime.max_audio_seconds = 2.0
     session = engine.start_transcription(audio_format=FORMAT)
     frames = [
@@ -1031,5 +1049,6 @@ def test_processing_frontier_does_not_rewind_at_an_earlier_low_energy_cut(engine
     assert cursors[-1] == 3.0
     closed = [event for event in events if event.type == "final"]
     assert len(closed) >= 2
-    assert session.result().duration == 3.0
+    assert events[-1].extra["std_qwen3asr_ane_input_duration_seconds"] == 3.0
+    assert session.result().duration is None
     assert_compliant(events, engine)

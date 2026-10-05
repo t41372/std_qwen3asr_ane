@@ -44,19 +44,17 @@ engine.acquire_artifacts()
 try:
     with SyncSession(engine.start_transcription(audio="recording.wav")) as stream:
         for event in stream:
+            if event.type == "error":
+                raise RuntimeError(event.code)
             print(event.type, event.segment_id, event.text, event.audio_processed_until)
-    status = stream.status()
-    if status.state == "succeeded":
-        result = stream.result()
-    else:
-        # An explicit snapshot may contain partial text; it is not success.
-        result = stream.partial_result()
-        print(status.state, status.terminal_event.code if status.terminal_event else None)
+    # result() is the snapshot of finalized segments. Handle error events
+    # in the loop before treating the transcript as completed work.
+    result = stream.result()
 finally:
     engine.close()
 ```
 
-`result()` is strict: it raises while the session is running, after a terminal error, or if the context closed before a terminal event. Use `status()` for the lifecycle verdict and `partial_result()` only when an intentional live/failure snapshot is useful.
+`result()` follows Standard ASR's snapshot contract: it contains finalized segments, including any completed work before an error. Completion is signaled by `done`; failure is signaled by `error`. Session diagnostics come from `session.diagnostics()` separately from result diagnostics. The reducer trims segment edges and joins nonempty segments with spaces, including CJK boundaries. Original fragments and measured word details remain in `result.segments`; the reducer does not aggregate top-level words or copy event extras.
 
 For microphone input, negotiate the wire format and feed mono 16 kHz PCM:
 
@@ -74,7 +72,7 @@ with SyncSession(session) as stream:
 
 For async applications, use the same session with `async with`, `session.send_audio`/`end_audio` and `async for`. The standard session owns input backpressure, deadlines, diagnostics, completion state and result reduction. Native calls already in flight finish under the engine lock before memory is reused.
 
-Partials are revisable (`stable_text=""`). A completed window is decoded again from its complete audio with provisional decoder-prefix state discarded, so its closed text is not locked to the last partial. Optional alignment supplies genuine final speech spans; without it, input cursor and duration are still reported but no speech timestamps are invented. Window rollover does not imply Standard ASR `re_segments`, reconnect, partial stability or mutable mid-stream guidance, so those flags remain false.
+Partials are revisable (`stable_text=""`). A completed window is decoded again from its complete audio with provisional decoder-prefix state discarded, so its closed text is not locked to the last partial. Optional alignment supplies genuine final speech spans; the standard audio cursor is emitted only when timestamp capability is enabled. Input window positions are also in event extras, and the `done` event carries `extra["std_qwen3asr_ane_input_duration_seconds"]`. These are plugin metadata; the standard reduced result leaves duration unset. Window rollover does not imply Standard ASR `re_segments`, reconnect, partial stability or mutable mid-stream guidance, so those flags remain false.
 
 ## Per-request provider parameters
 
@@ -96,11 +94,10 @@ result = engine.transcribe(
 )
 ```
 
-`max_new_tokens` overrides the output budget for one request. `disable_draft` forces the ANE target when a GPU draft is configured. `include_metrics` adds raw decoder text, token IDs, audio-token count and native timings under `result.extra["native"]`. The same model is available through CLI `--options` and the reference server because Standard ASR validates the JSON object against the selected engine's exact provider type:
+`max_new_tokens` overrides the output budget for one request. `disable_draft` forces the ANE target when a GPU draft is configured. `include_metrics` adds raw decoder text, token IDs, audio-token count and native timings under `result.extra["native"]`. Typed provider parameters are a Python-only interface. Standard ASR intentionally rejects them in CLI and server JSON. A CLI caller can instead configure the default budget:
 
 ```sh
-standard-asr transcribe std-qwen3asr-ane/1.7b recording.wav \
-  --options '{"provider_params":{"max_new_tokens":128,"disable_draft":true}}'
+standard-asr transcribe std-qwen3asr-ane/1.7b recording.wav --set max_new_tokens=128
 ```
 
 Parameters belonging to another engine are rejected. Exceeding native decoder capacity raises an error; it does not truncate a transcript.
@@ -121,7 +118,7 @@ finally:
     engine.close()
 ```
 
-The explicitly acquired Qwen forced-aligner model is about 1.8 GB and runs in an isolated CPU environment. It supports `zh`, `en`, `yue`, `fr`, `de`, `it`, `ja`, `ko`, `pt`, `ru` and `es`. Word, segment and character outputs contain measured spans and exact source-text offsets.
+The explicitly acquired Qwen forced-aligner model is about 1.8 GB and runs in an isolated CPU environment. It supports `zh`, `en`, `yue`, `fr`, `de`, `it`, `ja`, `ko`, `pt`, `ru` and `es`. Word, segment and character outputs contain measured spans. Batch source offsets refer to the complete result text. In streaming, each word's offsets refer to its containing event/segment text and carry `source_coordinate_space="segment_text"`, so standard whitespace normalization does not invalidate them.
 
 Speaker diarization requires the `std-qwen3asr-ane[diarization]` extra and `use_diarization=True`. That configuration also enables the aligner because speaker turns need measured text spans:
 
@@ -176,23 +173,15 @@ The target is always required. The GPU draft is required only for eligible confi
 
 ## Reference server
 
-Install the plugin's `server` extra and create an operator config file:
-
-```json
-{
-  "std-qwen3asr-ane/1.7b": {
-    "model_dir": "/absolute/path/to/qwen3-asr-1.7b",
-    "use_alignment": true
-  }
-}
-```
+Install the plugin's `server` extra, acquire the desired artifacts, and start the official server:
 
 ```sh
-standard-asr serve --engine-configs engines.json
+standard-asr pull std-qwen3asr-ane/1.7b --set use_alignment=true
+STANDARD_ASR_STD_QWEN3ASR_ANE__USE_ALIGNMENT=true standard-asr serve
 ```
 
-The Standard ASR server pools one configured engine per model and closes it after active REST/WebSocket work drains. `GET /v1/readiness/std-qwen3asr-ane/1.7b` reports safe aggregate readiness. REST accepts encoded files/base64 audio; WebSocket accepts incremental PCM. Both transports support portable runtime options and typed `provider_params`. Engine init config remains operator-owned and never crosses the request wire.
+The server accepts portable runtime options through REST and WebSocket. Init configuration uses environment defaults; there is no `--engine-configs` option or per-request init configuration. Both transports reject untyped `provider_params`. Each request constructs its own engine, so keep a Python engine instance when your application needs controlled warm-model reuse. Use `standard-asr status` for local artifact inspection; the server has no readiness endpoint.
 
 The plugin does not implement a second server or transcription CLI. `qwen3-asr-ane` contains conversion and compute-inspection tools only; use `standard-asr transcribe`, the Python protocol or the reference server for recognition.
 
-The current implementation and validation ledger is [release readiness](release-readiness-2026-09-22.md). The older [Standard ASR audit](standard-asr-audit.md) is retained as historical input, not the current feature description.
+The current implementation and validation ledger is [release readiness](release-readiness-2026-10-04.md). The older [Standard ASR audit](standard-asr-audit.md) is retained as historical input, not the current feature description.

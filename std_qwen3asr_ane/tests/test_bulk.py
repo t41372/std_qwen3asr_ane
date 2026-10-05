@@ -102,6 +102,7 @@ def test_bulk_prepares_each_input_with_standard_gating_and_preserves_order(
     assert captured_params[0].provider_params.max_new_tokens == 77
     assert captured_params[2].provider_params.include_metrics
     diagnostics = outcomes[0].result_or_raise().diagnostics
+    assert [item.code for item in diagnostics].count("resampled_with") == 1
     assert [item.code for item in diagnostics].count("language_refinement_accepted") == 1
 
 
@@ -330,3 +331,138 @@ def test_close_waits_for_an_active_bulk_operation(
         assert pending.result()[0].result_or_raise().text == "item-0"
         closing.result()
     assert fake_runtime.instances[0].closed
+
+
+def test_bulk_retains_standard_speaker_synthesis(bundle, fake_runtime, monkeypatch) -> None:
+    from standard_asr.engine import Segment, TranscriptionResult, Word
+
+    monkeypatch.setattr(
+        fake_runtime,
+        "transcribe_many",
+        lambda self, requests, **kwargs: tuple(_native_outcome(i) for i in range(len(requests))),
+        raising=False,
+    )
+    engine = create_engine(model_dir=bundle)
+    monkeypatch.setattr(
+        engine,
+        "_finalize_chunk",
+        lambda *args, **kwargs: TranscriptionResult(
+            text="hello",
+            segments=[
+                Segment(
+                    start=0,
+                    end=1,
+                    text="hello",
+                    words=[Word(start=0, end=1, text="hello", speaker="speaker-0")],
+                )
+            ],
+        ),
+    )
+
+    (outcome,) = engine.transcribe_many([(np.zeros(16_000, np.float32), 16_000)])
+
+    assert outcome.result_or_raise().segments[0].speaker == "speaker-0"
+
+
+def test_bulk_rejects_undeclared_language_like_public_transcribe(
+    bundle, fake_runtime, monkeypatch
+) -> None:
+    from standard_asr.contract.exceptions import UnsupportedFeatureError
+
+    monkeypatch.setattr(
+        fake_runtime,
+        "transcribe_many",
+        lambda *args, **kwargs: pytest.fail("Rejected inputs must not reach inference"),
+        raising=False,
+    )
+    engine = create_engine(model_dir=bundle)
+    audio = (np.zeros(16_000, np.float32), 16_000)
+    params = RuntimeParams(language="sw")
+
+    with pytest.raises(UnsupportedFeatureError) as single:
+        engine.transcribe(audio, params)
+    (outcome,) = engine.transcribe_many([audio], params)
+
+    assert type(outcome.error) is type(single.value)
+    assert str(outcome.error) == str(single.value)
+    assert outcome.execution == "not_run"
+    assert not fake_runtime.instances
+
+
+def test_bulk_recording_limit_is_shared_with_single_transcription(
+    bundle, fake_runtime, monkeypatch
+) -> None:
+    from standard_asr.contract.exceptions import AudioProcessingError
+
+    monkeypatch.setattr(
+        fake_runtime,
+        "transcribe_many",
+        lambda self, requests, **kwargs: tuple(_native_outcome(i) for i in range(len(requests))),
+        raising=False,
+    )
+    engine = create_engine(model_dir=bundle, max_recording_seconds=1)
+    too_long = (np.zeros(16_001, np.float32), 16_000)
+    valid = (np.zeros(16_000, np.float32), 16_000)
+
+    with pytest.raises(AudioProcessingError) as single:
+        engine.transcribe(too_long)
+    outcomes = engine.transcribe_many([too_long, valid])
+
+    assert type(outcomes[0].error) is type(single.value)
+    assert str(outcomes[0].error) == str(single.value)
+    assert outcomes[0].execution == "not_run"
+    assert outcomes[1].result_or_raise().text == "item-0"
+
+
+def test_bulk_coordinator_interruption_releases_waiting_workers(
+    bundle, fake_runtime, monkeypatch
+) -> None:
+    class Interrupted(BaseException):
+        pass
+
+    def transcribe_many(self, requests, **kwargs):
+        raise Interrupted("native dispatch interrupted")
+
+    monkeypatch.setattr(fake_runtime, "transcribe_many", transcribe_many, raising=False)
+    engine = create_engine(model_dir=bundle)
+    audio = (np.zeros(16_000, np.float32), 16_000)
+    # The injected interruption reaches the coordinator while every pipeline
+    # worker waits for its reply. Returning proves shutdown released them all.
+    with pytest.raises(Interrupted):
+        engine.transcribe_many([audio, audio])
+    engine.close()
+    assert fake_runtime.instances[0].closed
+
+
+def test_bulk_interruption_during_preparation_releases_late_workers(
+    bundle, fake_runtime, monkeypatch
+) -> None:
+    from queue import Queue
+
+    from std_qwen3asr_ane import bulk
+
+    class Interrupted(BaseException):
+        pass
+
+    entered, release = Event(), Event()
+    engine = create_engine(model_dir=bundle)
+    prepare = engine._prepare_audio
+
+    def delayed_prepare(audio):
+        entered.set()
+        assert release.wait(2)
+        return prepare(audio)
+
+    class InterruptedQueue(Queue):
+        def get(self, *args, **kwargs):
+            assert entered.wait(1)
+            release.set()
+            raise Interrupted("interrupted before the prepared group is ready")
+
+    monkeypatch.setattr(engine, "_prepare_audio", delayed_prepare)
+    monkeypatch.setattr(bulk, "Queue", InterruptedQueue)
+    audio = (np.zeros(16_000, np.float32), 16_000)
+
+    with pytest.raises(Interrupted):
+        engine.transcribe_many([audio, audio])
+    assert not fake_runtime.instances
