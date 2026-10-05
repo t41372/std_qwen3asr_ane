@@ -185,7 +185,7 @@ class Qwen3ASRSession(TranscriptionSession):
         return TranscriptionEvent.partial(
             self._segment_id,
             result.text,
-            stable_until=0,
+            stable_text="",
             detected_language=detected,
             audio_processed_until=(
                 self._processed_samples / SAMPLE_RATE if self._audio_progress_supported else None

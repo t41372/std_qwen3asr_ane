@@ -146,6 +146,8 @@ def test_discovered_qwen_engine_serves_http_and_websocket(
         closed = [event for event in events if event["type"] == "final"]
         assert len(closed) == 1
         assert closed[0]["text"] == "hello"
+        assert closed[0]["stable_text"] == "hello"
+        assert "stable_until" not in closed[0]
         assert closed[0]["segment_id"] == "utterance-0"
         assert closed[0]["audio_processed_until"] == pytest.approx(0.1)
 

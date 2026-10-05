@@ -74,7 +74,7 @@ with SyncSession(session) as stream:
 
 For async applications, use the same session with `async with`, `session.send_audio`/`end_audio` and `async for`. The standard session owns input backpressure, deadlines, diagnostics, completion state and result reduction. Native calls already in flight finish under the engine lock before memory is reused.
 
-Partials are revisable (`stable_until=0`). A completed window is decoded again from its complete audio with provisional decoder-prefix state discarded, so its closed text is not locked to the last partial. Optional alignment supplies genuine final speech spans; without it, input cursor and duration are still reported but no speech timestamps are invented. Window rollover does not imply Standard ASR `re_segments`, reconnect, word stability or mutable mid-stream guidance, so those flags remain false.
+Partials are revisable (`stable_text=""`). A completed window is decoded again from its complete audio with provisional decoder-prefix state discarded, so its closed text is not locked to the last partial. Optional alignment supplies genuine final speech spans; without it, input cursor and duration are still reported but no speech timestamps are invented. Window rollover does not imply Standard ASR `re_segments`, reconnect, partial stability or mutable mid-stream guidance, so those flags remain false.
 
 ## Per-request provider parameters
 

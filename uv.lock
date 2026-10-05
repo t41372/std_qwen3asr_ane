@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'win32' and extra != 'extra-16-std-qwen3asr-ane-gpu-draft' and extra == 'group-16-std-qwen3asr-ane-convert'",
@@ -2115,7 +2115,7 @@ wheels = [
 [[package]]
 name = "standard-asr"
 version = "0.2.0.dev0"
-source = { git = "https://github.com/standard-voice/standard_asr.git?rev=5f6eef25e35e5e66e9010474e6dee531021e61f1#5f6eef25e35e5e66e9010474e6dee531021e61f1" }
+source = { git = "https://github.com/standard-voice/standard_asr.git?rev=9adc2463c53dce11d58da2afeb2f0f133a638030#9adc2463c53dce11d58da2afeb2f0f133a638030" }
 dependencies = [
     { name = "numpy" },
     { name = "pydantic" },
@@ -2200,7 +2200,7 @@ requires-dist = [
     { name = "sherpa-onnx", marker = "extra == 'diarization'", specifier = "==1.13.8" },
     { name = "sherpa-onnx-core", marker = "extra == 'diarization'", specifier = "==1.13.8" },
     { name = "soundfile", specifier = ">=0.13" },
-    { name = "standard-asr", git = "https://github.com/standard-voice/standard_asr.git?rev=5f6eef25e35e5e66e9010474e6dee531021e61f1" },
+    { name = "standard-asr", git = "https://github.com/standard-voice/standard_asr.git?rev=9adc2463c53dce11d58da2afeb2f0f133a638030" },
     { name = "standard-asr", extras = ["server"], marker = "extra == 'server'" },
     { name = "tokenizers", specifier = ">=0.22" },
     { name = "uv", specifier = ">=0.12,<0.13" },

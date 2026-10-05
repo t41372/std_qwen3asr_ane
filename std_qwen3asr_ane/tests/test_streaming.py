@@ -164,7 +164,10 @@ def test_incremental_pcm_tail_prefix_and_closed_event(engine):
     assert engine._runtime.calls[2]["prefix"] == expected
     assert events[-1].type == "done"
     assert events[-2].type == "final" and events[-2].finality == "closed"
-    assert all(event.stable_until == 0 for event in events if event.type == "partial")
+    assert all(event.stable_text == "" for event in events if event.type == "partial")
+    assert events[-2].stable_text == events[-2].text
+    assert not engine.supports("streaming.partial_stability")
+    assert all("stable_until" not in event.model_dump() for event in events)
     assert all(
         event.start is None and event.end is None and event.words is None for event in events
     )
@@ -173,6 +176,23 @@ def test_incremental_pcm_tail_prefix_and_closed_event(engine):
     assert session.result().text == "hello world again today"
     assert not session.diagnostics()
     assert_compliant(events, engine)
+
+
+def test_live_session_enforces_effective_partial_capability(engine, monkeypatch):
+    declaration = engine.declared_capabilities.model_dump()
+    declaration["streaming"]["emits_partials"]["supported"] = False
+    capabilities = type(engine.declared_capabilities).model_validate(declaration)
+    monkeypatch.setattr(engine, "declared_capabilities", capabilities)
+    session = engine.start_transcription(audio_format=FORMAT)
+
+    events = asyncio.run(recorded(session, [WIRE]))
+
+    assert events[-1].type == "error"
+    assert events[-1].code == "engine_error"
+    assert not any(event.type == "partial" for event in events)
+    assert "emits_partials" in events[-1].extra["detail"]
+    with pytest.raises(StreamFailedError):
+        session.result()
 
 
 def test_whole_audio_streaming_output_and_language_override(engine):
@@ -463,7 +483,7 @@ def test_closed_window_is_rescored_without_a_provisional_text_prefix(engine, mon
     assert calls[-1] == {"samples": 24000, "prefix": ""}
     closed = next(event for event in events if event.type == "final" and event.finality == "closed")
     assert closed.text == "independent-24000"
-    assert all(event.stable_until == 0 for event in events if event.type == "partial")
+    assert all(event.stable_text == "" for event in events if event.type == "partial")
     assert_compliant(events, engine)
 
 
@@ -951,7 +971,7 @@ def test_three_minute_session_segments_without_losing_or_overlapping_audio(engin
     events = asyncio.run(recorded(session, [wire[:12345], wire[12345:]]))
     decoded = [call["samples"] for call in engine._runtime.calls]
     assert decoded and all(len(window) <= 30 * 16000 for window in decoded)
-    assert all(event.stable_until == 0 for event in events if event.type == "partial")
+    assert all(event.stable_text == "" for event in events if event.type == "partial")
     closed = [event for event in events if event.type == "final" and event.finality == "closed"]
     assert [event.segment_id for event in closed] == [
         f"utterance-{index}" for index in range(len(closed))
