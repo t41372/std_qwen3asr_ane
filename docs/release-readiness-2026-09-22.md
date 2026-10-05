@@ -1,5 +1,7 @@
 # Release preparation: Standard ASR capability closure
 
+> Historical verification on the dependency pinned on October 2. The [October 4 follow-up](release-readiness-2026-10-04.md) records the newer Standard ASR contract, additional defects, and renewed release validation. PR #106 was closed without merging; the old completion statement below does not establish compatibility with current upstream main.
+
 This work implements the findings in `standard-asr-comprehensive-audit-2026-09-22.md`. The user authorized fixing the complete set and advancing the engine's missing capabilities before release. This file is the durable work ledger; an item is complete only when its behavior and relevant validation are recorded. Publishing a release is a separate final operation.
 
 The user resumed the task on 2026-10-02. The implementation, integration repairs, and release validation are complete on `feat/standard-asr-release-readiness`. The package is prepared as `0.2.0a1`; no package or tag has been published. The [September handoff](handoff-2026-09-22.md) remains a historical checkpoint. The current [capability coverage](standard-asr-capability-coverage.md) records supported behavior and intentional limits.

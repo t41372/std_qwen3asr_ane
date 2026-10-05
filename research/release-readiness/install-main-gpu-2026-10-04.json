@@ -1,0 +1,461 @@
+{
+  "archives": [
+    {
+      "base_dependencies": [
+        "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@97bfdb28134c114088ec335596aa6bca53f9204f",
+        "coremltools>=9.0,<10",
+        "numpy>=2.0",
+        "tokenizers>=0.22",
+        "soundfile>=0.13",
+        "scipy>=1.15",
+        "uv>=0.12,<0.13"
+      ],
+      "bytes": 166382,
+      "file_count": 57,
+      "filename": "std_qwen3asr_ane-0.2.0a1-py3-none-any.whl",
+      "forbidden_workspace_entries": [],
+      "metadata_path": "std_qwen3asr_ane-0.2.0a1.dist-info/METADATA",
+      "optional_dependencies": {
+        "diarization": [
+          "sherpa-onnx==1.13.8",
+          "sherpa-onnx-core==1.13.8"
+        ],
+        "gpu-draft": [
+          "mlx-audio[stt]==0.5.3"
+        ],
+        "server": [
+          "standard-asr[server]"
+        ]
+      },
+      "required_content_present": [
+        "std_qwen3asr_ane/conversion_worker.py",
+        ".dist-info/METADATA",
+        ".dist-info/entry_points.txt",
+        ".dist-info/licenses/LICENSE",
+        ".dist-info/licenses/std_qwen3asr_ane/NOTICE"
+      ],
+      "requires_python": ">=3.12,<3.14",
+      "sha256": "ebcab341dbd6ec6731da295a823771574cdd21dbe5bed1c35610ef903bc96e76",
+      "source_file_count": 46,
+      "source_tree_sha256": "32d6e6e67930fad09e0534a693f998a33a2fbe9e00a8e2a779f2b047ceaa333d"
+    },
+    {
+      "base_dependencies": [
+        "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@97bfdb28134c114088ec335596aa6bca53f9204f",
+        "coremltools>=9.0,<10",
+        "numpy>=2.0",
+        "tokenizers>=0.22",
+        "soundfile>=0.13",
+        "scipy>=1.15",
+        "uv>=0.12,<0.13"
+      ],
+      "bytes": 145360,
+      "file_count": 52,
+      "filename": "std_qwen3asr_ane-0.2.0a1.tar.gz",
+      "forbidden_workspace_entries": [],
+      "metadata_path": "std_qwen3asr_ane-0.2.0a1/PKG-INFO",
+      "optional_dependencies": {
+        "diarization": [
+          "sherpa-onnx==1.13.8",
+          "sherpa-onnx-core==1.13.8"
+        ],
+        "gpu-draft": [
+          "mlx-audio[stt]==0.5.3"
+        ],
+        "server": [
+          "standard-asr[server]"
+        ]
+      },
+      "required_content_present": [
+        "/pyproject.toml",
+        "/README.md",
+        "/LICENSE",
+        "/std_qwen3asr_ane/NOTICE",
+        "/std_qwen3asr_ane/src/std_qwen3asr_ane/conversion_worker.py",
+        "/PKG-INFO"
+      ],
+      "requires_python": ">=3.12,<3.14",
+      "sha256": "c4184a03202399cce3b3684307f8e3fb11320603a8058e5107478284264974b7",
+      "source_file_count": 46,
+      "source_tree_sha256": "32d6e6e67930fad09e0534a693f998a33a2fbe9e00a8e2a779f2b047ceaa333d"
+    }
+  ],
+  "contracts": {
+    "base_and_server_converter_only_distributions_absent": [
+      "gradio",
+      "jiwer",
+      "qwen-asr",
+      "safetensors",
+      "torch",
+      "transformers"
+    ],
+    "base_runtime_transitive": {
+      "distribution": "huggingface-hub",
+      "reason": "tokenizers is a direct runtime dependency",
+      "required_by": "tokenizers"
+    },
+    "diarization_runtime": "sherpa-onnx and sherpa-onnx-core pinned together at 1.13.8",
+    "gpu_and_diarization_coexistence": true,
+    "offline_readiness": "unavailable with downloads_disabled; model root remains absent",
+    "source_tree_base_installs": [
+      "3.12",
+      "3.13"
+    ],
+    "wheel_profiles": [
+      "base",
+      "server",
+      "diarization",
+      "gpu-draft",
+      "server+diarization",
+      "server+gpu-draft",
+      "diarization+gpu-draft",
+      "server+diarization+gpu-draft"
+    ]
+  },
+  "generated_date": "2026-10-04",
+  "matrix": {
+    "cells": [
+      {
+        "extras": [
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.12-gpu-draft",
+        "package_count": 52,
+        "passed": true,
+        "profile": "gpu-draft",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.12.11",
+        "python_requested": "3.12",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "mlx": "0.32.3",
+          "mlx-audio": "0.5.3",
+          "numpy": "2.5.3",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2",
+          "transformers": "5.18.0"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "extras": [
+          "server",
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.12-server+gpu-draft",
+        "package_count": 58,
+        "passed": true,
+        "profile": "server+gpu-draft",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.12.11",
+        "python_requested": "3.12",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "fastapi": "0.142.2",
+          "mlx": "0.32.3",
+          "mlx-audio": "0.5.3",
+          "numpy": "2.5.3",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2",
+          "transformers": "5.18.0"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "extras": [
+          "diarization",
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.12-diarization+gpu-draft",
+        "package_count": 54,
+        "passed": true,
+        "profile": "diarization+gpu-draft",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.12.11",
+        "python_requested": "3.12",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "mlx": "0.32.3",
+          "mlx-audio": "0.5.3",
+          "numpy": "2.5.3",
+          "sherpa-onnx": "1.13.8",
+          "sherpa-onnx-core": "1.13.8",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2",
+          "transformers": "5.18.0"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "extras": [
+          "server",
+          "diarization",
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.12-server+diarization+gpu-draft",
+        "package_count": 60,
+        "passed": true,
+        "profile": "server+diarization+gpu-draft",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.12.11",
+        "python_requested": "3.12",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "fastapi": "0.142.2",
+          "mlx": "0.32.3",
+          "mlx-audio": "0.5.3",
+          "numpy": "2.5.3",
+          "sherpa-onnx": "1.13.8",
+          "sherpa-onnx-core": "1.13.8",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2",
+          "transformers": "5.18.0"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "extras": [
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.13-gpu-draft",
+        "package_count": 52,
+        "passed": true,
+        "profile": "gpu-draft",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.13.11",
+        "python_requested": "3.13",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "mlx": "0.32.3",
+          "mlx-audio": "0.5.3",
+          "numpy": "2.5.3",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2",
+          "transformers": "5.18.0"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "extras": [
+          "server",
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.13-server+gpu-draft",
+        "package_count": 58,
+        "passed": true,
+        "profile": "server+gpu-draft",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.13.11",
+        "python_requested": "3.13",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "fastapi": "0.142.2",
+          "mlx": "0.32.3",
+          "mlx-audio": "0.5.3",
+          "numpy": "2.5.3",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2",
+          "transformers": "5.18.0"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "extras": [
+          "diarization",
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.13-diarization+gpu-draft",
+        "package_count": 54,
+        "passed": true,
+        "profile": "diarization+gpu-draft",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.13.11",
+        "python_requested": "3.13",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "mlx": "0.32.3",
+          "mlx-audio": "0.5.3",
+          "numpy": "2.5.3",
+          "sherpa-onnx": "1.13.8",
+          "sherpa-onnx-core": "1.13.8",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2",
+          "transformers": "5.18.0"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      },
+      {
+        "extras": [
+          "server",
+          "diarization",
+          "gpu-draft"
+        ],
+        "install_kind": "wheel",
+        "name": "wheel-py3.13-server+diarization+gpu-draft",
+        "package_count": 60,
+        "passed": true,
+        "profile": "server+diarization+gpu-draft",
+        "project_version": "0.2.0a1",
+        "python_installed": "3.13.11",
+        "python_requested": "3.13",
+        "readiness": {
+          "std-qwen3asr-ane/1.7b": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          },
+          "std-qwen3asr-ane/1.7b-short-dictation": {
+            "readiness": "unavailable",
+            "required_blockers": [
+              "downloads_disabled"
+            ]
+          }
+        },
+        "selected_versions": {
+          "coremltools": "9.0",
+          "fastapi": "0.142.2",
+          "mlx": "0.32.3",
+          "mlx-audio": "0.5.3",
+          "numpy": "2.5.3",
+          "sherpa-onnx": "1.13.8",
+          "sherpa-onnx-core": "1.13.8",
+          "standard-asr": "0.2.0.dev0",
+          "std-qwen3asr-ane": "0.2.0a1",
+          "tokenizers": "0.23.2",
+          "transformers": "5.18.0"
+        },
+        "standard_asr_vcs_commit": "97bfdb28134c114088ec335596aa6bca53f9204f"
+      }
+    ],
+    "passed": true,
+    "passed_cells": 8,
+    "total_cells": 8
+  },
+  "platform": {
+    "machine": "arm64",
+    "release": "27.0.0",
+    "system": "Darwin"
+  },
+  "project_commit": "9f0a325da4e66e4e3a24e01f6eb3b2ba0c1793b6",
+  "project_version": "0.2.0a1",
+  "schema_version": 1,
+  "uv_version": "uv 0.12.22 (Homebrew 2026-10-01 aarch64-apple-darwin)",
+  "verifier": {
+    "path": "research/release-readiness/verify_install_matrix.py",
+    "sha256": "d0b916ca80bdfe771d094933da3932f94024f90a2ab7ba0423711f18992073c3"
+  },
+  "worktree_dirty": true
+}

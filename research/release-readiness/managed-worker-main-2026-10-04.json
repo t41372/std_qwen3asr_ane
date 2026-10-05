@@ -1,0 +1,52 @@
+{
+  "status": "passed",
+  "standard_asr": {
+    "url": "https://github.com/standard-voice/standard_asr.git",
+    "vcs_info": {
+      "vcs": "git",
+      "commit_id": "97bfdb28134c114088ec335596aa6bca53f9204f",
+      "requested_revision": "97bfdb28134c114088ec335596aa6bca53f9204f"
+    }
+  },
+  "worker_receipt": {
+    "dependencies": [
+      "standard-asr @ git+https://github.com/standard-voice/standard_asr.git@97bfdb28134c114088ec335596aa6bca53f9204f",
+      "coremltools==9.0",
+      "torch==2.14.0",
+      "numpy==2.5.3",
+      "transformers==4.57.6",
+      "huggingface-hub==0.36.2",
+      "safetensors==0.8.0",
+      "scipy==1.18.1",
+      "tokenizers==0.22.2"
+    ],
+    "name": "conversion",
+    "python": {
+      "abi": "cpython-313",
+      "implementation": "CPython",
+      "version": "3.13"
+    },
+    "python_executable": "bin/python",
+    "schema_version": 1,
+    "version": 1
+  },
+  "head_manifest_sha256": "5b2e4aa9a129656665e456819a33c08a41a2ef913232ae605ecbec4fa3fe8644",
+  "head_target_binding_valid": true,
+  "head_token_batch_size": 16,
+  "repeat_pull_downloads_disabled": true,
+  "repeat_manifest_unchanged": true,
+  "scope": "Clean base wheel used a fresh isolated converter from the local package cache and existing verified source checkpoint. Target binding and repeat pull checked; no new performance claim.",
+  "command": [
+    "/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-readiness/main-install-2026-10-04/wheel-py3.13-base/environment/bin/standard-asr",
+    "pull",
+    "std-qwen3asr-ane/1.7b",
+    "--set",
+    "model_dir=/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-2026-10-04/models/std-qwen3asr-ane/qwen3-asr-1.7b",
+    "--set",
+    "source_dir=/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-2026-10-04/models/std-qwen3asr-ane/source/Qwen3-ASR-1.7B",
+    "--set",
+    "use_batching=true",
+    "--set",
+    "batch_head_dir=/Users/tim/LocalData/coding/2026/Lab/21_std_qwen3asr_ane/artifacts/release-2026-10-04/models/std-qwen3asr-ane/qwen3-asr-1.7b-main-batch-head"
+  ]
+}

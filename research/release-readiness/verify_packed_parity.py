@@ -16,8 +16,10 @@ import numpy as np
 import soundfile as sf
 from evidence_provenance import evidence_date, module_sha256, runtime_provenance
 from scipy.signal import resample_poly
+from standard_asr.engine import RuntimeParams
 
 from std_qwen3asr_ane.batching import OfflineRecognitionRequest
+from std_qwen3asr_ane.plugin import Qwen3ASREngine, Qwen3ASRParams
 from std_qwen3asr_ane.runtime import CoreMLRuntime
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -77,12 +79,71 @@ def write_evidence(document: dict[str, Any], output: Path) -> None:
     temporary.replace(output)
 
 
+def verify_public_bulk(
+    inputs: list[tuple[str, Path, str, np.ndarray]],
+    serial: list[Any],
+    max_new_tokens: int,
+) -> list[dict[str, Any]]:
+    """Exercise the real public pipeline with the same audio and per-input language.
+
+    Called only after the direct native runtime and compact head are closed, so
+    public loading does not retain a second set of Core ML models concurrently.
+    """
+    engine = Qwen3ASREngine(
+        model_dir=TARGET,
+        batch_head_dir=HEAD,
+        use_batching=True,
+    )
+    try:
+        outcomes = engine.transcribe_many(
+            [(samples, 16_000) for _, _, _, samples in inputs],
+            [
+                RuntimeParams(
+                    language=language,
+                    provider_params=Qwen3ASRParams(
+                        max_new_tokens=max_new_tokens, include_metrics=True
+                    ),
+                )
+                for _, _, language, _ in inputs
+            ],
+            batch_size=len(inputs),
+        )
+        if [outcome.request_index for outcome in outcomes] != list(range(len(inputs))):
+            raise RuntimeError("Public bulk did not return exactly one ordered outcome per input")
+        rows = []
+        for (name, _, _, _), expected, outcome in zip(inputs, serial, outcomes, strict=True):
+            result = outcome.result_or_raise()
+            native = result.extra["native"]
+            equality = {
+                "text_equal": result.text == expected.text,
+                "raw_text_equal": native["raw_text"] == expected.raw_text,
+                "token_ids_equal": native["token_ids"] == list(expected.token_ids),
+                "eos_equal": native["timings"]["eos_token_id"] == expected.timings["eos_token_id"],
+                "execution_is_packed": outcome.execution == "packed",
+            }
+            rows.append(
+                {
+                    "name": name,
+                    "request_index": outcome.request_index,
+                    "execution": outcome.execution,
+                    "fallback_reason": outcome.fallback_reason,
+                    "result": result.model_dump(mode="json"),
+                    "exact_parity": equality,
+                    "passed": all(equality.values()),
+                }
+            )
+        return rows
+    finally:
+        engine.close()
+
+
 def verify(max_new_tokens: int) -> dict[str, Any]:
     provenance = runtime_provenance()
     inputs = [(name, path, language, load_audio(path)) for name, path, language in FIXTURES]
     runtime = CoreMLRuntime(TARGET)
-    head = runtime.load_batch_head(HEAD)
+    head = None
     try:
+        head = runtime.load_batch_head(HEAD)
         serial = [
             runtime.transcribe(samples, language=language, max_new_tokens=max_new_tokens)
             for _, _, language, samples in inputs
@@ -151,11 +212,14 @@ def verify(max_new_tokens: int) -> dict[str, Any]:
         if stats is None or any(outcome.stats != stats for outcome in outcomes):
             raise RuntimeError("Packed outcomes do not share one truthful group measurement")
         passed = all(row["passed"] for row in rows)
-        return {
+        document = {
             "schema_version": 1,
             "date": evidence_date(),
             "status": "passed" if passed else "failed",
-            "purpose": "Exact serial-versus-packed native parity and telemetry-shape validation.",
+            "purpose": (
+                "Exact serial-versus-packed native parity, telemetry-shape validation, "
+                "and public Standard ASR bulk pipeline parity."
+            ),
             "environment": {
                 "python": sys.version,
                 "executable": sys.executable,
@@ -171,6 +235,8 @@ def verify(max_new_tokens: int) -> dict[str, Any]:
             "source_sha256": {
                 "runtime": module_sha256("std_qwen3asr_ane.runtime"),
                 "batching": module_sha256("std_qwen3asr_ane.batching"),
+                "plugin": module_sha256("std_qwen3asr_ane.plugin"),
+                "bulk": module_sha256("std_qwen3asr_ane.bulk"),
                 "verifier": sha256(Path(__file__)),
                 "provenance": module_sha256("evidence_provenance"),
             },
@@ -185,8 +251,18 @@ def verify(max_new_tokens: int) -> dict[str, Any]:
             "failures": [] if passed else ["one or more parity or telemetry gates failed"],
         }
     finally:
-        head.close()
+        if head is not None:
+            head.close()
         runtime.close()
+
+    public_rows = verify_public_bulk(inputs, serial, max_new_tokens)
+    for row, public_row in zip(rows, public_rows, strict=True):
+        row["public_bulk"] = public_row
+        row["passed"] = row["passed"] and public_row["passed"]
+    passed = all(row["passed"] for row in rows)
+    document["status"] = "passed" if passed else "failed"
+    document["failures"] = [] if passed else ["one or more parity or telemetry gates failed"]
+    return document
 
 
 def main() -> None:

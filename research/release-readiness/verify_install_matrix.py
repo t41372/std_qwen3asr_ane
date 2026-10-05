@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from evidence_provenance import evidence_date
+
 PROJECT_NAME = "std-qwen3asr-ane"
 PROJECT_VERSION = "0.2.0a1"
 MODEL_IDS = ("std-qwen3asr-ane/1.7b", "std-qwen3asr-ane/1.7b-short-dictation")
@@ -542,7 +544,7 @@ def main() -> int:
     ).stdout.strip()
     detailed: dict[str, Any] = {
         "schema_version": 1,
-        "generated_date": "2026-10-02",
+        "generated_date": evidence_date(),
         "project_commit": commit,
         "worktree_dirty": worktree_dirty,
         "project_version": PROJECT_VERSION,

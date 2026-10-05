@@ -45,6 +45,7 @@ jobs:
         run: |
           uv run --no-sync ruff check std_qwen3asr_ane/src std_qwen3asr_ane/tests
           uv run --no-sync pytest -q
+          uv run --no-sync pytest -q research/release-readiness/test_evidence_provenance.py
           for workflow in experiments/workflows/*.sh; do bash -n "$workflow"; done
       - name: Build wheel from source distribution
         run: uv build

@@ -5,6 +5,7 @@ Work from the repository root. User installation does not require these steps.
 ```sh
 uv sync --locked --python 3.12 --group convert --group server-test
 uv run --no-sync pytest
+uv run --no-sync pytest research/release-readiness/test_evidence_provenance.py
 uv run --no-sync ruff check std_qwen3asr_ane/src std_qwen3asr_ane/tests
 uv run --no-sync standard-asr compliance run
 ```
@@ -15,7 +16,7 @@ CI runs the package checks on [macos-15 arm64 runners](https://docs.github.com/e
 
 CI does not download target, alignment or diarization model weights and does not run real ANE inference. Native parity, real long-form audio, auxiliary-model and corpus checks remain separate release evidence; do not describe them as ordinary CI coverage.
 
-The implementation and validation state is recorded in the [release readiness ledger](docs/release-readiness-2026-09-22.md). The [Standard ASR audit](docs/standard-asr-audit.md) is historical input to that work.
+The implementation and validation state is recorded in the [release readiness ledger](docs/release-readiness-2026-10-04.md). The [Standard ASR audit](docs/standard-asr-audit.md) is historical input to that work.
 
 ## Manual conversion
 

@@ -30,6 +30,7 @@ from evidence_provenance import evidence_date, module_sha256, runtime_provenance
 from scipy.signal import resample_poly
 from standard_asr import DIARIZE, AudioArray, AudioFormat
 from standard_asr.engine import RuntimeParams
+from standard_asr.runtime.streaming import StreamReducer
 
 from std_qwen3asr_ane.plugin import Qwen3ASREngine, ShortDictationEngine
 
@@ -79,14 +80,13 @@ class Case:
 
 
 class StreamExecutionError(RuntimeError):
-    """Retain the public terminal/events when ``session.result()`` rejects."""
+    """Retain events and the standard snapshot when a stream fails to complete."""
 
     def __init__(self, session: Any, events: list[Any], elapsed: float, cause: Exception):
         super().__init__(str(cause))
         self.public_evidence = {
             "events": serializable_events(events),
-            "partial_result": serializable_result(session.partial_result()),
-            "status": session.status().model_dump(mode="json"),
+            "snapshot": serializable_result(session.result()),
             "observed_wall_seconds_no_latency_claim": elapsed,
             "result_exception": {
                 "type": type(cause).__name__,
@@ -459,14 +459,11 @@ def closed_window_groups(events: list[Any]) -> list[dict[str, Any]]:
 
 
 def compose_closed_event_text(events: list[Any]) -> str:
-    """Compose closed events with their protocol-declared exact separators."""
-
-    closed = [event for event in events if event.type == "final" and event.finality == "closed"]
-    if not closed:
-        return ""
-    return (closed[0].text or "") + "".join(
-        event.text_separator + (event.text or "") for event in closed[1:]
-    )
+    """Compare the session with an independent consumer of standard events."""
+    reducer = StreamReducer()
+    for event in events:
+        reducer.add(event)
+    return reducer.result().text
 
 
 def public_batch(engine: Any, samples: np.ndarray, params: RuntimeParams) -> tuple[Any, float]:
@@ -615,9 +612,11 @@ def evaluate_batch_case(
 
 
 def validate_stream_lifecycle(
-    events: list[Any], result: Any, duration: float, *, batch_text: str, metric: str, limit: float
+    events: list[Any], result: Any, duration: float, *, batch_text: str, metric: str, limit: float,
+    timestamps: bool,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     terminals = [event for event in events if event.is_terminal]
+    reported_duration = events[-1].extra.get("std_qwen3asr_ane_input_duration_seconds")
     cursors = [
         event.audio_processed_until for event in events if event.audio_processed_until is not None
     ]
@@ -642,18 +641,18 @@ def validate_stream_lifecycle(
             "exactly one terminal done event, delivered last",
         ),
         gate(
-            "result_duration",
-            result.duration is not None and abs(result.duration - duration) <= 1 / SAMPLE_RATE,
-            result.duration,
+            "plugin_done_input_duration",
+            reported_duration is not None and abs(reported_duration - duration) <= 1 / SAMPLE_RATE,
+            reported_duration,
             f"absolute error <= {1 / SAMPLE_RATE}",
         ),
         gate(
             "cursor_monotonic_and_bounded",
-            bool(cursors)
-            and all(left <= right for left, right in pairwise(cursors))
-            and cursors[-1] <= duration + 1 / SAMPLE_RATE,
+            (bool(cursors)
+             and all(left <= right for left, right in pairwise(cursors))
+             and cursors[-1] <= duration + 1 / SAMPLE_RATE) if timestamps else not cursors,
             cursors,
-            "nondecreasing and final cursor no later than input duration",
+            "nondecreasing and bounded when timestamp capability is enabled; otherwise absent",
         ),
         gate(
             "closed_input_spans_cover_recording",
@@ -668,7 +667,7 @@ def validate_stream_lifecycle(
             "closed_event_text_matches_result",
             bool(closed) and event_text == result.text,
             {"closed_event_text": event_text, "result_text": result.text},
-            "exact text_separator composition of closed events equals result.text",
+            "official StreamReducer composition of emitted events equals session.result().text",
         ),
         gate(
             "stream_vs_batch_error_rate",
@@ -708,8 +707,11 @@ async def incremental_stream(
         producer = asyncio.create_task(produce())
         events = [event async for event in session]
         await producer
+    elapsed = time.monotonic() - started
+    if not events or events[-1].type != "done":
+        raise StreamExecutionError(session, events, elapsed, RuntimeError("Stream did not complete"))
     result = session.result()
-    return events, result, time.monotonic() - started, len(frames)
+    return events, result, elapsed, len(frames)
 
 
 async def whole_input_stream(
@@ -720,10 +722,9 @@ async def whole_input_stream(
     async with session:
         events = [event async for event in session]
     elapsed = time.monotonic() - started
-    try:
-        result = session.result()
-    except Exception as error:
-        raise StreamExecutionError(session, events, elapsed, error) from error
+    if not events or events[-1].type != "done":
+        raise StreamExecutionError(session, events, elapsed, RuntimeError("Stream did not complete"))
+    result = session.result()
     return events, result, elapsed
 
 
@@ -906,6 +907,7 @@ def run_profile(
                 batch_text=batch_results[case.name].text,
                 metric=case.metric,
                 limit=STREAMING_PLAN["whole_input"]["batch_text_error_max"],
+                timestamps=engine.supports("streaming.timestamps"),
             )
             document["results"]["whole_input_streaming"] = {
                 "case": case.name,
@@ -931,6 +933,7 @@ def run_profile(
                 batch_text=batch_results[case.name].text,
                 metric=case.metric,
                 limit=STREAMING_PLAN["incremental"]["batch_text_error_max"],
+                timestamps=engine.supports("streaming.timestamps"),
             )
             document["results"]["incremental_streaming"] = {
                 "case": case.name,
@@ -967,6 +970,7 @@ def run_default_partial_regression(
             batch_text=batch_text,
             metric=case.metric,
             limit=STREAMING_PLAN["whole_input_partial_regression"]["batch_text_error_max"],
+            timestamps=engine.supports("streaming.timestamps"),
         )
         document["results"]["whole_input_default_2s_partial_regression"] = {
             "case": case.name,
@@ -1038,6 +1042,7 @@ def validate_diarization(document: dict[str, Any], clips: dict[str, Clip], outpu
             batch_text=baseline,
             metric="word",
             limit=STREAMING_PLAN["diarized_whole_input"]["baseline_error_max"],
+                timestamps=engine.supports("streaming.timestamps"),
         )
         reference_edits = edit_alignment(word_units(reference), word_units(result.text))
         words = result.words or [
@@ -1074,9 +1079,14 @@ def validate_diarization(document: dict[str, Any], clips: dict[str, Clip], outpu
         source_offsets_exact = bool(offset_events) and all(
             isinstance(event.extra["source_start"], int)
             and isinstance(event.extra["source_end"], int)
-            and 0 <= event.extra["source_start"] <= event.extra["source_end"] <= len(result.text)
-            and result.text[event.extra["source_start"] : event.extra["source_end"]]
-            == (event.text or "")
+            and event.extra.get("source_coordinate_space") == "segment_text"
+            and event.extra["source_start"] == 0
+            and event.extra["source_end"] == len(event.text or "")
+            and all(
+                word.extra.get("source_coordinate_space") == "segment_text"
+                and (event.text or "")[word.extra["source_start"]:word.extra["source_end"]] == word.text
+                for word in event.words or []
+            )
             for event in offset_events
         )
         plan = STREAMING_PLAN["diarized_whole_input"]
@@ -1113,7 +1123,7 @@ def validate_diarization(document: dict[str, Any], clips: dict[str, Clip], outpu
                 "at least one model-measured speaker turn in streamed finals",
             ),
             gate(
-                "global_source_offsets",
+                "segment_source_offsets",
                 source_offsets_exact,
                 [
                     {
@@ -1124,7 +1134,7 @@ def validate_diarization(document: dict[str, Any], clips: dict[str, Clip], outpu
                     }
                     for event in offset_events
                 ],
-                "every exposed source range is globally bounded and slices its exact event text",
+                "each word source range slices its containing segment text exactly",
             ),
         ]
         document["results"]["diarized_whole_input_streaming"] = {

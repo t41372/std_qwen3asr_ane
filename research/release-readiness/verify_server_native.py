@@ -5,8 +5,8 @@ environment, installs the wheel with its server and diarization extras, and
 re-executes this file with that environment's Python. The installed mode runs
 Uvicorn on loopback and uses real Core ML, forced alignment, and diarization.
 
-Lifecycle wrappers only count construction, cancellation, and close calls.
-They delegate to the original implementation and never replace inference.
+Each preset runs in a separate process with official environment configuration.
+Observation wrappers only record cancellation; they never replace inference.
 """
 
 from __future__ import annotations
@@ -25,12 +25,12 @@ import threading
 import time
 import traceback
 import urllib.parse
-from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-DATE = "2026-10-02"
+from evidence_provenance import evidence_date, runtime_provenance
+
 MODEL_GENERAL = "std-qwen3asr-ane/1.7b"
 MODEL_SHORT = "std-qwen3asr-ane/1.7b-short-dictation"
 EXPECTED_EN = (
@@ -58,16 +58,16 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 def _run_logged(command: list[str], *, cwd: Path, log: Path, env: dict[str, str]) -> None:
     started = time.perf_counter()
-    completed = subprocess.run(
-        command,
-        cwd=cwd,
-        env=env,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-    )
-    log.write_text(completed.stdout)
+    with log.open("w") as stream:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            env=env,
+            text=True,
+            stdout=stream,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
     if completed.returncode:
         raise RuntimeError(
             f"Command failed with exit code {completed.returncode} after "
@@ -83,8 +83,18 @@ def _orchestrate(args: argparse.Namespace) -> int:
     dist_dir = run_dir / "dist"
     environment = run_dir / "venv"
     dist_dir.mkdir(parents=True)
+    _write_json(
+        output,
+        {
+            "status": "running",
+            "stage": "build_and_install",
+            "run_directory": str(run_dir),
+            "recorded_date": evidence_date(),
+        },
+    )
 
     command_env = os.environ.copy()
+    command_env["UV_OFFLINE"] = "1"
     command_env["UV_CACHE_DIR"] = str(root / ".cache/uv")
     command_env["STANDARD_ASR_ALLOW_DOWNLOAD"] = "0"
 
@@ -200,9 +210,7 @@ def _pcm16_16khz(path: Path) -> bytes:
     assert samples.ndim == 1, f"Expected a mono fixture: {path}"
     if sample_rate != 16_000:
         divisor = int(np.gcd(sample_rate, 16_000))
-        samples = resample_poly(
-            samples, 16_000 // divisor, sample_rate // divisor
-        )
+        samples = resample_poly(samples, 16_000 // divisor, sample_rate // divisor)
     pcm = np.clip(np.rint(samples * 32768.0), -32768, 32767).astype("<i2")
     return pcm.tobytes()
 
@@ -267,267 +275,267 @@ def _record_package(name: str) -> dict[str, Any]:
     }
 
 
-class _Instrumentation:
+class _CancellationProbe:
+    """Observe real cancellation without retaining engines or native resources."""
+
     def __init__(self) -> None:
-        self.engines: list[Any] = []
-        self.runtimes: list[Any] = []
-        self.aligners: list[Any] = []
-        self.auxiliary: list[Any] = []
-        self.sessions: list[Any] = []
-        self.engine_close_calls: Counter[int] = Counter()
-        self.runtime_close_calls: Counter[int] = Counter()
-        self.aligner_close_calls: Counter[int] = Counter()
-        self.auxiliary_close_calls: Counter[int] = Counter()
-        self.session_cancel_calls: Counter[int] = Counter()
-        self.session_close_calls: Counter[int] = Counter()
-        self.cancellation_armed = threading.Event()
-        self.cancellation_native_started = threading.Event()
+        self.armed = threading.Event()
+        self.native_started = threading.Event()
+        self.session_closed = threading.Event()
+        self.native_cancelled = False
 
     def install(self) -> None:
-        from std_qwen3asr_ane.alignment import ForcedAligner
-        from std_qwen3asr_ane.auxiliary import AuxiliaryModels
-        from std_qwen3asr_ane.plugin import Qwen3ASREngine
         from std_qwen3asr_ane.runtime import CoreMLRuntime
         from std_qwen3asr_ane.streaming import Qwen3ASRSession
 
-        instrumentation = self
+        transcribe = CoreMLRuntime.transcribe
+        close = Qwen3ASRSession._close
+        probe = self
 
-        engine_init = Qwen3ASREngine.__init__
-        engine_close = Qwen3ASREngine.close
-        runtime_init = CoreMLRuntime.__init__
-        runtime_close = CoreMLRuntime.close
-        aligner_init = ForcedAligner.__init__
-        aligner_close = ForcedAligner.close
-        auxiliary_init = AuxiliaryModels.__init__
-        auxiliary_close = AuxiliaryModels.close
-        session_init = Qwen3ASRSession.__init__
-        session_cancel = Qwen3ASRSession.cancel
-        session_close = Qwen3ASRSession._close
-        recognize = Qwen3ASRSession._recognize_via_engine
+        def observed_transcribe(instance: Any, *args: Any, **kwargs: Any) -> Any:
+            if probe.armed.is_set():
+                probe.native_started.set()
+            return transcribe(instance, *args, **kwargs)
 
-        def counted_engine_init(instance: Any, *args: Any, **kwargs: Any) -> None:
-            engine_init(instance, *args, **kwargs)
-            instrumentation.engines.append(instance)
+        async def observed_close(instance: Any) -> None:
+            await close(instance)
+            if probe.armed.is_set():
+                probe.native_cancelled = instance._native_cancelled.is_set()
+                probe.session_closed.set()
 
-        def counted_engine_close(instance: Any, *args: Any, **kwargs: Any) -> None:
-            instrumentation.engine_close_calls[id(instance)] += 1
-            engine_close(instance, *args, **kwargs)
-
-        def counted_runtime_init(instance: Any, *args: Any, **kwargs: Any) -> None:
-            runtime_init(instance, *args, **kwargs)
-            instrumentation.runtimes.append(instance)
-
-        def counted_runtime_close(instance: Any, *args: Any, **kwargs: Any) -> None:
-            instrumentation.runtime_close_calls[id(instance)] += 1
-            runtime_close(instance, *args, **kwargs)
-
-        def counted_aligner_init(instance: Any, *args: Any, **kwargs: Any) -> None:
-            aligner_init(instance, *args, **kwargs)
-            instrumentation.aligners.append(instance)
-
-        def counted_aligner_close(instance: Any, *args: Any, **kwargs: Any) -> None:
-            instrumentation.aligner_close_calls[id(instance)] += 1
-            aligner_close(instance, *args, **kwargs)
-
-        def counted_auxiliary_init(instance: Any, *args: Any, **kwargs: Any) -> None:
-            auxiliary_init(instance, *args, **kwargs)
-            instrumentation.auxiliary.append(instance)
-
-        def counted_auxiliary_close(instance: Any, *args: Any, **kwargs: Any) -> None:
-            instrumentation.auxiliary_close_calls[id(instance)] += 1
-            auxiliary_close(instance, *args, **kwargs)
-
-        def counted_session_init(instance: Any, *args: Any, **kwargs: Any) -> None:
-            session_init(instance, *args, **kwargs)
-            instrumentation.sessions.append(instance)
-
-        async def counted_session_cancel(instance: Any) -> None:
-            instrumentation.session_cancel_calls[id(instance)] += 1
-            await session_cancel(instance)
-
-        async def counted_session_close(instance: Any) -> None:
-            instrumentation.session_close_calls[id(instance)] += 1
-            await session_close(instance)
-
-        def observed_recognize(instance: Any, *args: Any, **kwargs: Any) -> Any:
-            if instrumentation.cancellation_armed.is_set():
-                instrumentation.cancellation_native_started.set()
-            return recognize(instance, *args, **kwargs)
-
-        Qwen3ASREngine.__init__ = counted_engine_init
-        Qwen3ASREngine.close = counted_engine_close
-        CoreMLRuntime.__init__ = counted_runtime_init
-        CoreMLRuntime.close = counted_runtime_close
-        ForcedAligner.__init__ = counted_aligner_init
-        ForcedAligner.close = counted_aligner_close
-        AuxiliaryModels.__init__ = counted_auxiliary_init
-        AuxiliaryModels.close = counted_auxiliary_close
-        Qwen3ASRSession.__init__ = counted_session_init
-        Qwen3ASRSession.cancel = counted_session_cancel
-        Qwen3ASRSession._close = counted_session_close
-        Qwen3ASRSession._recognize_via_engine = observed_recognize
+        CoreMLRuntime.transcribe = observed_transcribe
+        Qwen3ASRSession._close = observed_close
 
 
-def _cancel_stream(
-    port: int,
-    model: str,
-    pcm: bytes,
-    instrumentation: _Instrumentation,
-) -> dict[str, Any]:
+def _cancel_stream(port: int, model: str, pcm: bytes, probe: _CancellationProbe) -> dict[str, Any]:
     from websockets.sync.client import connect
 
-    prior_sessions = len(instrumentation.sessions)
-    instrumentation.cancellation_native_started.clear()
-    instrumentation.cancellation_armed.set()
-    connection = connect(f"ws://127.0.0.1:{port}/v1/stream/{model}", open_timeout=30)
-    websocket = connection.__enter__()
+    probe.armed.set()
     try:
-        websocket.send(
-            json.dumps(
-                {
-                    "audio_format": {"encoding": "pcm_s16le", "sample_rate": 16_000},
-                    "options": {},
-                }
+        with connect(f"ws://127.0.0.1:{port}/v1/stream/{model}", open_timeout=30) as websocket:
+            websocket.send(
+                json.dumps(
+                    {
+                        "audio_format": {"encoding": "pcm_s16le", "sample_rate": 16_000},
+                        "options": {},
+                    }
+                )
             )
-        )
-        websocket.send(pcm)
-        assert instrumentation.cancellation_native_started.wait(60), (
-            "Cancellation probe never reached genuine native recognition"
-        )
+            websocket.send(pcm)
+            assert probe.native_started.wait(60), "No native transcription started"
+        assert probe.session_closed.wait(60), "Disconnected session did not close"
+        assert probe.native_cancelled, "Native cancellation token was not set"
     finally:
-        connection.__exit__(None, None, None)
-        instrumentation.cancellation_armed.clear()
-
-    deadline = time.monotonic() + 60
-    session = None
-    while time.monotonic() < deadline:
-        if len(instrumentation.sessions) > prior_sessions:
-            session = instrumentation.sessions[-1]
-            if (
-                session._native_cancelled.is_set()
-                and instrumentation.session_close_calls[id(session)] >= 1
-            ):
-                break
-        time.sleep(0.02)
-    assert session is not None
-    assert session._native_cancelled.is_set()
-    assert instrumentation.session_close_calls[id(session)] >= 1
+        probe.armed.clear()
     return {
-        "client_disconnected_during_native_recognition": True,
-        "session_teardown_called": True,
-        "public_cancel_calls": instrumentation.session_cancel_calls[id(session)],
+        "client_disconnected_after_native_transcription_started": True,
+        "session_teardown_observed": True,
         "native_cancellation_token_set": True,
-        "scope": (
-            "Cooperative cancellation after the current Core ML prediction boundary; "
-            "this does not claim mid-prediction preemption."
-        ),
+        "scope": "Cooperative cancellation at prediction boundaries, not preemption.",
     }
 
 
-def _installed(args: argparse.Namespace) -> int:
+def _failure(error: BaseException) -> dict[str, str]:
+    return {
+        "type": type(error).__name__,
+        "message": str(error),
+        "traceback": traceback.format_exc(),
+    }
+
+
+def _configured_environment(root: Path, preset: str) -> dict[str, str]:
+    """Use the official engine-scoped init-config environment convention."""
+    short = preset == "short"
+    bundle = "qwen3-asr-1.7b-short-dictation" if short else "qwen3-asr-1.7b"
+    values = {
+        "MODEL_DIR": str(root / "artifacts" / bundle),
+        "USE_ALIGNMENT": "false" if short else "true",
+        "ALIGNMENT_DIR": str(root / "artifacts/auxiliary/alignment"),
+        "USE_DIARIZATION": "false" if short else "true",
+        "DIARIZATION_DIR": str(root / "artifacts/auxiliary/diarization"),
+        "STREAM_CHUNK_SECONDS": "2.0",
+    }
+    return {f"STANDARD_ASR_STD_QWEN3ASR_ANE__{key}": value for key, value in values.items()}
+
+
+def _check_stream(events: list[dict[str, Any]], expected: str) -> list[dict[str, Any]]:
+    assert events[-1]["type"] == "done", events
+    closed = [event for event in events if event["type"] == "final"]
+    assert closed, events
+    text = "".join(event["text"] for event in closed)
+    assert text == expected, text
+    assert all(event["finality"] == "closed" for event in closed), closed
+    assert all(event["stable_text"] == event["text"] for event in closed), closed
+    assert all("stable_until" not in event for event in closed), closed
+    return closed
+
+
+def _probe_installed(args: argparse.Namespace) -> int:
     import uvicorn
     from standard_asr import discover_models
     from standard_asr.toolchain.server import create_app
 
+    root = args.root.resolve()
+    output = args.output.resolve()
+    evidence: dict[str, Any] = {"status": "running", "preset": args.preset}
+    server = None
+    thread = None
+    try:
+        evidence["runtime_provenance"] = runtime_provenance()
+        configured = _configured_environment(root, args.preset)
+        os.environ.update(configured)
+        os.environ["STANDARD_ASR_ALLOW_DOWNLOAD"] = "0"
+        os.environ["UV_OFFLINE"] = "1"
+        evidence["environment"] = {
+            key: value.replace(str(root), "<repository>") for key, value in configured.items()
+        }
+        model = MODEL_SHORT if args.preset == "short" else MODEL_GENERAL
+        bundle = Path(configured["STANDARD_ASR_STD_QWEN3ASR_ANE__MODEL_DIR"])
+        evidence["manifest_sha256"] = _sha256(bundle / "manifest.json")
+        registry = discover_models(strict=True)
+        assert set(registry.names()) == {MODEL_GENERAL, MODEL_SHORT}, registry.names()
+        probe = _CancellationProbe()
+        probe.install()
+        port = _free_port()
+        server = uvicorn.Server(
+            uvicorn.Config(
+                create_app(registry=registry),
+                host="127.0.0.1",
+                port=port,
+                log_level="warning",
+                ws_max_size=16 * 1024 * 1024,
+            )
+        )
+        thread = threading.Thread(target=server.run, name="server-native-uvicorn", daemon=True)
+        thread.start()
+        _wait_for_server(port, server, thread)
+        status, health = _request_json(port, "GET", "/v1/health")
+        assert status == 200 and health == {"status": "ok"}, health
+        status, models = _request_json(port, "GET", "/v1/models")
+        assert status == 200 and {item["key"] for item in models} == {MODEL_GENERAL, MODEL_SHORT}, (
+            models
+        )
+        evidence["discovered_models"] = models
+        for endpoint in ("capabilities", "metadata", "params-schema", "config-schema"):
+            status, body = _request_json(port, "GET", f"/v1/{endpoint}/{model}")
+            assert status == 200, body
+            evidence[endpoint] = body
+
+        audio = (
+            root
+            / "artifacts/evaluation/smoke"
+            / ("qwen_official_zh.wav" if args.preset == "short" else "qwen_official_en.wav")
+        )
+        expected = EXPECTED_ZH if args.preset == "short" else EXPECTED_EN
+        encoded = base64.b64encode(audio.read_bytes()).decode("ascii")
+        evidence["http_input"] = {"sha256": _sha256(audio), "expected_text": expected}
+        options = {} if args.preset == "short" else {"word_timestamps": "word", "diarization": {}}
+        status, body = _request_json(
+            port,
+            "POST",
+            "/v1/transcribe:json",
+            {
+                "model": model,
+                "audio": encoded,
+                "options": options,
+            },
+        )
+        evidence["http"] = {"status": status, "response": body}
+        assert status == 200, body
+        result = body["result"]
+        assert result["text"] == expected, result["text"]
+        if args.preset == "general":
+            assert result["words"], result
+            evidence["http"]["timestamps"] = _assert_bounded(
+                result["words"], _audio_duration(audio)
+            )
+            assert any(word.get("speaker") is not None for word in result["words"])
+
+        # Provider params remain Python-only; schema discovery does not permit wire submission.
+        status, body = _request_json(
+            port,
+            "POST",
+            "/v1/transcribe:json",
+            {
+                "model": model,
+                "audio": encoded,
+                "options": {"provider_params": {"include_metrics": True}},
+            },
+        )
+        evidence["provider_params_rejected"] = {"status": status, "response": body}
+        assert status == 422, body
+
+        zh_audio = root / "artifacts/evaluation/smoke/qwen_official_zh.wav"
+        options = {} if args.preset == "short" else {"word_timestamps": "char", "diarization": {}}
+        events = _stream(port, model, _pcm16_16khz(zh_audio), options)
+        evidence["websocket"] = {"input_sha256": _sha256(zh_audio), "events": events}
+        closed = _check_stream(events, EXPECTED_ZH)
+        if args.preset == "general":
+            words = [word for event in closed for word in event.get("words") or []]
+            assert words, closed
+            evidence["websocket"]["timestamps"] = _assert_bounded(words, _audio_duration(zh_audio))
+            assert any(word.get("speaker") is not None for word in words)
+            assert abs(closed[-1]["audio_processed_until"] - _audio_duration(zh_audio)) <= 1e-3
+            evidence["cancellation"] = _cancel_stream(port, model, _pcm16_16khz(audio), probe)
+        else:
+            # Main gates all timing fields when the negotiated timestamp mode is none.
+            assert all(event["audio_processed_until"] is None for event in closed)
+        evidence["status"] = "passed"
+    except BaseException as error:
+        evidence["status"] = "failed"
+        evidence["failure"] = _failure(error)
+        raise
+    finally:
+        if server is not None:
+            server.should_exit = True
+        if thread is not None:
+            thread.join(timeout=60)
+            evidence["uvicorn_thread_stopped"] = not thread.is_alive()
+            if thread.is_alive():
+                evidence["status"] = "failed"
+                evidence["shutdown_failure"] = "Uvicorn did not stop within 60 seconds"
+        _write_json(output, evidence)
+    return 0 if evidence["status"] == "passed" else 1
+
+
+def _installed(args: argparse.Namespace) -> int:
+    import sys
+
     import std_qwen3asr_ane
 
     root = args.root.resolve()
-    output = args.output.resolve()
-    wheel = args.wheel.resolve()
     run_dir = args.run_dir.resolve()
-    installed_module = Path(std_qwen3asr_ane.__file__).resolve()
-    assert installed_module.is_relative_to(run_dir / "venv"), installed_module
-    general_dir = root / "artifacts/qwen3-asr-1.7b"
-    short_dir = root / "artifacts/qwen3-asr-1.7b-short-dictation"
-    alignment_dir = root / "artifacts/auxiliary/alignment"
-    diarization_dir = root / "artifacts/auxiliary/diarization"
-    en_audio = root / "artifacts/evaluation/smoke/qwen_official_en.wav"
-    zh_audio = root / "artifacts/evaluation/smoke/qwen_official_zh.wav"
-
-    instrumentation = _Instrumentation()
-    instrumentation.install()
-    registry = discover_models(strict=True)
-    assert set(registry.names()) == {MODEL_GENERAL, MODEL_SHORT}, registry.names()
-    configs = {
-        MODEL_GENERAL: {
-            "model_dir": str(general_dir),
-            "use_alignment": True,
-            "alignment_dir": str(alignment_dir),
-            "use_diarization": True,
-            "diarization_dir": str(diarization_dir),
-            "stream_chunk_seconds": 2.0,
-        },
-        MODEL_SHORT: {
-            "model_dir": str(short_dir),
-            "stream_chunk_seconds": 12.0,
-        },
-    }
-    app = create_app(registry=registry, engine_configs=configs)
-    port = _free_port()
-    server = uvicorn.Server(
-        uvicorn.Config(
-            app,
-            host="127.0.0.1",
-            port=port,
-            log_level="warning",
-            ws_max_size=16 * 1024 * 1024,
-        )
-    )
-    thread = threading.Thread(target=server.run, name="server-native-uvicorn", daemon=True)
-    thread.start()
-    _wait_for_server(port, server, thread)
-
     evidence: dict[str, Any] = {
-        "schema_version": 1,
-        "recorded_date": DATE,
+        "schema_version": 2,
+        "recorded_date": evidence_date(),
         "recorded_at": datetime.now(UTC).isoformat(),
         "status": "running",
-        "scope": (
-            "Installed-wheel loopback Uvicorn deployment with genuine Core ML inference, "
-            "CPU forced alignment, and sherpa-onnx diarization."
-        ),
-        "reproduction": {
-            "command": ".venv/bin/python research/release-readiness/verify_server_native.py",
-            "build_output": (
-                "A unique artifacts/release-readiness/server-native-<UTC>-<PID>/dist directory."
-            ),
-            "installed_module": "<isolated-env>/site-packages/std_qwen3asr_ane/__init__.py",
-        },
+        "scope": "Installed-wheel official main server; genuine Core ML, alignment and diarization.",
         "limitations": [
-            "This is a fixed official-fixture release test, not a corpus-quality benchmark.",
-            "No concurrency throughput or performance claim is made.",
-            "Cancellation is cooperative at native prediction boundaries.",
-        ],
-        "resolved_during_verification": [
-            {
-                "defect": (
-                    "The forced-alignment worker inherited the server wheel's site-packages "
-                    "through PYTHONPATH, allowing parent dependencies to shadow its pinned runtime."
-                ),
-                "observed_failure": (
-                    "Parent tokenizers 0.23.2 shadowed worker tokenizers 0.22.2 and was rejected "
-                    "by pinned Transformers 4.57.6."
-                ),
-                "resolution": (
-                    "Launch Python in isolated mode with a package-only importlib bootstrap and "
-                    "remove inherited PYTHONPATH."
-                ),
-            }
+            "Fixed official fixtures, not a corpus-quality or throughput benchmark.",
+            "Each preset uses its own process and engine-scoped environment configuration.",
+            "No server pool, readiness endpoint, or engine-close contract is assumed.",
+            "Cancellation is cooperative at prediction boundaries.",
         ],
         "platform": {
             "system": platform.system(),
-            "release": platform.release(),
             "machine": platform.machine(),
             "python": platform.python_version(),
         },
         "wheel": {
-            "filename": wheel.name,
+            "filename": args.wheel.name,
             "sha256": args.wheel_sha256,
-            "bytes": wheel.stat().st_size,
-            "isolated_environment": True,
+            "bytes": args.wheel.stat().st_size,
             "extras": ["server", "diarization"],
         },
-        "packages": {
+        "presets": {},
+    }
+    try:
+        installed_module = Path(std_qwen3asr_ane.__file__).resolve()
+        assert installed_module.is_relative_to(run_dir / "venv"), installed_module
+        assert _sha256(args.wheel) == args.wheel_sha256
+        evidence["runtime_provenance"] = runtime_provenance()
+        evidence["packages"] = {
             name: _record_package(name)
             for name in (
                 "std-qwen3asr-ane",
@@ -539,252 +547,67 @@ def _installed(args: argparse.Namespace) -> int:
                 "uvicorn",
                 "websockets",
             )
-        },
-        "inputs": {
-            "en": {
-                "path": "artifacts/evaluation/smoke/qwen_official_en.wav",
-                "sha256": _sha256(en_audio),
-                "expected_text": EXPECTED_EN,
-            },
-            "zh": {
-                "path": "artifacts/evaluation/smoke/qwen_official_zh.wav",
-                "sha256": _sha256(zh_audio),
-                "expected_text": EXPECTED_ZH,
-            },
-        },
-        "configs": {
-            MODEL_GENERAL: {
-                "model_dir": "artifacts/qwen3-asr-1.7b",
-                "manifest_sha256": _sha256(general_dir / "manifest.json"),
-                "alignment_dir": "artifacts/auxiliary/alignment",
-                "diarization_dir": "artifacts/auxiliary/diarization",
-                "use_alignment": True,
-                "use_diarization": True,
-                "stream_chunk_seconds": 2.0,
-            },
-            MODEL_SHORT: {
-                "model_dir": "artifacts/qwen3-asr-1.7b-short-dictation",
-                "manifest_sha256": _sha256(short_dir / "manifest.json"),
-            },
-        },
-    }
-
-    try:
-        health_status, health = _request_json(port, "GET", "/v1/health")
-        assert health_status == 200 and health == {"status": "ok"}
-
-        readiness: dict[str, Any] = {}
-        for model in (MODEL_GENERAL, MODEL_SHORT):
-            status, body = _request_json(port, "GET", f"/v1/readiness/{model}")
-            assert status == 200, body
-            assert isinstance(body, dict) and body["ready"] is True, body
-            readiness[model] = body
-        evidence["readiness"] = readiness
-
-        en_wav = en_audio.read_bytes()
-        en_duration = _audio_duration(en_audio)
-        status, response = _request_json(
-            port,
-            "POST",
-            "/v1/transcribe:json",
-            {
-                "model": MODEL_GENERAL,
-                "audio": base64.b64encode(en_wav).decode("ascii"),
-                "options": {
-                    "word_timestamps": "word",
-                    "diarization": {},
-                    "provider_params": {"include_metrics": True},
-                },
-            },
-        )
-        assert status == 200, response
-        assert isinstance(response, dict)
-        en_result = response["result"]
-        assert en_result["text"] == EXPECTED_EN, en_result["text"]
-        en_words = en_result["words"]
-        assert en_words
-        en_speakers = sorted(
-            {word["speaker"] for word in en_words if word.get("speaker") is not None}
-        )
-        assert en_speakers
-        evidence["http_general_en"] = {
-            "status": status,
-            "text": en_result["text"],
-            "detected_language": en_result["detected_language"],
-            "timestamps": _assert_bounded(en_words, en_duration),
-            "speaker_labels": en_speakers,
-            "native_metrics_present": "native" in en_result["extra"],
         }
-
-        status, response = _request_json(
-            port,
-            "POST",
-            "/v1/transcribe:json",
-            {
-                "model": MODEL_SHORT,
-                "audio": base64.b64encode(zh_audio.read_bytes()).decode("ascii"),
-            },
-        )
-        assert status == 200, response
-        assert isinstance(response, dict)
-        short_result = response["result"]
-        assert short_result["text"] == EXPECTED_ZH, short_result["text"]
-        evidence["http_short_zh"] = {
-            "status": status,
-            "text": short_result["text"],
-            "detected_language": short_result["detected_language"],
-        }
-
-        zh_pcm = _pcm16_16khz(zh_audio)
-        zh_duration = _audio_duration(zh_audio)
-        ws_events = _stream(
-            port,
-            MODEL_GENERAL,
-            zh_pcm,
-            {"word_timestamps": "char", "diarization": {}},
-        )
-        assert ws_events[-1]["type"] == "done", ws_events[-1]
-        closed = [
-            event
-            for event in ws_events
-            if event["type"] == "final" and event.get("finality") == "closed"
-        ]
-        assert closed, ws_events
-        ws_text = "".join(event["text"] for event in closed)
-        assert ws_text == EXPECTED_ZH, ws_text
-        ws_words = [word for event in closed for word in (event.get("words") or [])]
-        assert ws_words
-        evidence["websocket_general_zh"] = {
-            "terminal_event": ws_events[-1]["type"],
-            "event_types": [event["type"] for event in ws_events],
-            "closed_text": ws_text,
-            "timestamps": _assert_bounded(ws_words, zh_duration),
-            "audio_processed_until": closed[-1]["audio_processed_until"],
-            "speaker_labels": sorted(
-                {word["speaker"] for word in ws_words if word.get("speaker") is not None}
-            ),
-        }
-        assert abs(closed[-1]["audio_processed_until"] - zh_duration) <= 1e-3
-
-        evidence["websocket_disconnect_cancellation"] = _cancel_stream(
-            port,
-            MODEL_GENERAL,
-            _pcm16_16khz(en_audio),
-            instrumentation,
-        )
-
-        profiles = Counter(engine.config.profile for engine in instrumentation.engines)
-        assert profiles == Counter({"general": 1, "short-dictation": 1}), profiles
-        assert len(instrumentation.runtimes) == 2
-        assert len(instrumentation.aligners) == 1
-        assert len(instrumentation.auxiliary) == 1
-        assert instrumentation.auxiliary[0]._diarizer is not None
-        evidence["pool_before_shutdown"] = {
-            "engine_constructions": dict(sorted(profiles.items())),
-            "native_runtime_constructions": len(instrumentation.runtimes),
-            "forced_aligner_constructions": len(instrumentation.aligners),
-            "diarization_backend_loaded": True,
-            "one_engine_per_configured_model": True,
-            "lease_reuse": (
-                "Readiness, repeated HTTP requests, completed WebSocket, and disconnected "
-                "WebSocket used the same general-profile engine construction."
-            ),
-        }
+        for preset in ("general", "short"):
+            probe_output = run_dir / f"{preset}.json"
+            command = [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "--run-installed",
+                "--preset",
+                preset,
+                "--root",
+                str(root),
+                "--output",
+                str(probe_output),
+            ]
+            try:
+                _run_logged(
+                    command, cwd=run_dir, log=run_dir / f"{preset}.log", env=os.environ.copy()
+                )
+            finally:
+                if probe_output.exists():
+                    evidence["presets"][preset] = json.loads(probe_output.read_text())
+        evidence["status"] = "passed"
     except BaseException as error:
         evidence["status"] = "failed"
-        evidence["failure"] = {
-            "type": type(error).__name__,
-            "message": str(error),
-            "traceback": traceback.format_exc(),
-        }
+        evidence["failure"] = _failure(error)
         raise
     finally:
-        server.should_exit = True
-        thread.join(timeout=180)
-        evidence["shutdown"] = {"uvicorn_thread_stopped": not thread.is_alive()}
-        if not thread.is_alive():
-            engine_closed = [
-                instrumentation.engine_close_calls[id(engine)] for engine in instrumentation.engines
-            ]
-            runtime_closed = [
-                instrumentation.runtime_close_calls[id(runtime)]
-                for runtime in instrumentation.runtimes
-            ]
-            aligner_closed = [
-                instrumentation.aligner_close_calls[id(aligner)]
-                for aligner in instrumentation.aligners
-            ]
-            auxiliary_closed = [
-                instrumentation.auxiliary_close_calls[id(auxiliary)]
-                for auxiliary in instrumentation.auxiliary
-            ]
-            native_handles_closed = all(
-                all(model._resources["model"] is None for model in runtime._prediction_models())
-                for runtime in instrumentation.runtimes
-            )
-            native_buffers_released = all(
-                all(not model._resources["buffers"] for model in runtime._prediction_models())
-                for runtime in instrumentation.runtimes
-            )
-            auxiliary_resources_released = all(
-                auxiliary._aligner is None and auxiliary._diarizer is None
-                for auxiliary in instrumentation.auxiliary
-            )
-            evidence["shutdown"].update(
-                {
-                    "engine_close_calls": engine_closed,
-                    "native_runtime_close_calls": runtime_closed,
-                    "forced_aligner_close_calls": aligner_closed,
-                    "auxiliary_close_calls": auxiliary_closed,
-                    "native_model_handles_closed": native_handles_closed,
-                    "native_input_buffers_released": native_buffers_released,
-                    "auxiliary_resources_released": auxiliary_resources_released,
-                }
-            )
-            if evidence["status"] != "failed":
-                assert engine_closed == [1, 1], engine_closed
-                assert runtime_closed == [1, 1], runtime_closed
-                assert aligner_closed == [1], aligner_closed
-                assert auxiliary_closed == [1], auxiliary_closed
-                assert native_handles_closed
-                assert native_buffers_released
-                assert auxiliary_resources_released
-                evidence["status"] = "passed"
-        _write_json(output, evidence)
-
-    print(json.dumps({"status": evidence["status"], "evidence": str(output)}))
+        _write_json(args.output.resolve(), evidence)
+    print(json.dumps({"status": evidence["status"], "evidence": str(args.output)}))
     return 0
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--root",
-        type=Path,
-        default=Path(__file__).resolve().parents[2],
-        help="Repository root.",
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path(__file__).with_name(f"server-native-{DATE}.json"),
-        help="Portable JSON evidence path.",
-    )
-    parser.add_argument("--python", default="3.12", help="Python version for the isolated env.")
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument("--output", type=Path, required=True, help="JSON evidence path.")
+    parser.add_argument("--python", default="3.13", help="Isolated Python version.")
     parser.add_argument("--run-installed", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--preset", choices=("general", "short"), help=argparse.SUPPRESS)
     parser.add_argument("--run-dir", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--wheel", type=Path, help=argparse.SUPPRESS)
-    parser.add_argument("--wheel-sha256", help=argparse.SUPPRESS)
+    parser.add_argument("--wheel-sha256", dest="wheel_sha256", help=argparse.SUPPRESS)
     return parser
 
 
 def main() -> int:
     args = _parser().parse_args()
     if args.run_installed:
+        if args.preset:
+            return _probe_installed(args)
         if args.run_dir is None or args.wheel is None or args.wheel_sha256 is None:
             raise SystemExit("Installed mode needs --run-dir, --wheel, and --wheel-sha256")
         return _installed(args)
-    return _orchestrate(args)
+    try:
+        return _orchestrate(args)
+    except BaseException as error:
+        evidence = json.loads(args.output.read_text()) if args.output.exists() else {}
+        if evidence.get("status") != "failed":
+            evidence.update(status="failed", failure=_failure(error))
+            _write_json(args.output, evidence)
+        raise
 
 
 if __name__ == "__main__":
